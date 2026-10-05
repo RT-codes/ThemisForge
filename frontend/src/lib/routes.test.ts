@@ -8,5 +8,6 @@ test('the tasks sub page', () => assert.deepEqual(parse('/projects/3/tasks'), { 
 test('an unknown sub page is not found', () => assert.deepEqual(parse('/projects/3/foo'), { name: 'not-found' }))
 test('other routes are untouched', () => {
   assert.deepEqual(parse('/'), { name: 'home' })
+  assert.deepEqual(parse('/account'), { name: 'account' })
   assert.deepEqual(parse('/docs/tasks'), { name: 'docs', slug: 'tasks' })
 })

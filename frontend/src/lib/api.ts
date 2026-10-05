@@ -143,6 +143,25 @@ export interface Secret {
   created_at: string
 }
 
+export interface CodexLogin {
+  status: 'starting' | 'waiting' | 'connected' | 'failed' | 'cancelled'
+  verification_url: string
+  code: string
+  expires_at: string | null
+  error: string
+}
+
+export interface CodexStatus {
+  cli_installed: boolean
+  secret_key_secure: boolean
+  connected: boolean
+  needs_reconnect: boolean
+  account: string
+  connected_at: string | null
+  refreshed_at: string | null
+  login: CodexLogin | null
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -223,4 +242,9 @@ export const api = {
   createSecret: (name: string, kind: string, value: string) =>
     request<Secret>('/secrets', send('POST', { name, kind, value })),
   deleteSecret: (id: number) => request<void>(`/secrets/${id}`, send('DELETE')),
+
+  codex: () => request<CodexStatus>('/codex'),
+  codexStartLogin: () => request<CodexLogin>('/codex/login', send('POST')),
+  codexCancelLogin: () => request<void>('/codex/login', send('DELETE')),
+  codexDisconnect: () => request<void>('/codex', send('DELETE')),
 }

@@ -22,3 +22,8 @@ __pycache__/
 
 # OS
 .DS_Store
+
+# Codex logins must never be committed
+auth.json
+.codex/
+codex-home/

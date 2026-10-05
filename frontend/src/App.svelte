@@ -9,6 +9,7 @@
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
 	import ProjectPage from '$lib/pages/ProjectPage.svelte'
+	import AccountPage from '$lib/pages/AccountPage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
 	import { inbox } from '$lib/inbox.svelte'
 	import { projects } from '$lib/projects.svelte'
@@ -40,11 +41,13 @@
 				? 'Settings'
 				: route.name === 'access'
 					? 'Access'
-					: route.name === 'docs'
-						? 'Docs'
-						: route.name === 'home'
-							? 'Home'
-							: 'Not found'
+					: route.name === 'account'
+						? 'Account'
+						: route.name === 'docs'
+							? 'Docs'
+							: route.name === 'home'
+								? 'Home'
+								: 'Not found'
 	)
 </script>
 
@@ -86,6 +89,8 @@
 					<SettingsPage />
 				{:else if route.name === 'access'}
 					<AccessPage />
+				{:else if route.name === 'account'}
+					<AccountPage />
 				{:else if route.name === 'docs'}
 					{#await loadDocs() then docs}
 						<docs.default slug={route.slug} />

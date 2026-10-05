@@ -70,7 +70,7 @@ Until agent harnesses arrive, each cell runs a small placeholder program: it pri
 contract above are the real thing.
 
 > [!NOTE]
-> Stored keys and connections are not passed into cells yet. That arrives together with agents. See the
+> Stored keys are not passed into cells yet. A connected Codex login can be (see [Connecting Codex](/docs/codex)). That arrives together with agents. See the
 > [roadmap](/docs/roadmap).
 
 ## Using your own image

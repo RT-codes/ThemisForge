@@ -7,10 +7,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .cells import make_cell_manager
+from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
 from .db import SessionLocal
 from .migrate import upgrade_database
-from .routers import access, auth, projects, system
+from .routers import access, auth, codex, projects, system
 from .scheduler import Scheduler
 
 log = logging.getLogger("themis")
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await scheduler.start()
     yield
     await scheduler.stop()
+    await app.state.codex_logins.shutdown()
 
 
 # The interactive API reference lives under /api so that /docs is the user documentation (a frontend page).
@@ -40,11 +42,14 @@ app.state.scheduler = Scheduler(
     SessionLocal, make_cell_manager(), interval=settings.scheduler_interval_seconds
 )
 
+app.state.codex_logins = CodexLogins(SessionLocal)
+
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(access.router)
 api.include_router(projects.router)
 api.include_router(system.router)
+api.include_router(codex.router)
 
 
 @api.get("/health")

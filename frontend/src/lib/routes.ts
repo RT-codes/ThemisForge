@@ -5,6 +5,7 @@ export type Route =
   | { name: 'project'; id: number; page: ProjectPageName }
   | { name: 'settings' }
   | { name: 'access' }
+  | { name: 'account' }
   | { name: 'docs'; slug: string }
   | { name: 'invite'; token: string }
   | { name: 'not-found' }
@@ -13,6 +14,7 @@ export function parse(path: string): Route {
   if (path === '/' || path === '') return { name: 'home' }
   if (path === '/settings') return { name: 'settings' }
   if (path === '/access') return { name: 'access' }
+  if (path === '/account') return { name: 'account' }
   const docs = path.match(/^\/docs(?:\/([\w-]+))?\/?$/)
   if (docs) return { name: 'docs', slug: docs[1] ?? 'overview' }
   const invite = path.match(/^\/invite\/([\w-]+)\/?$/)

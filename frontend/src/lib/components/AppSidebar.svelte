@@ -5,6 +5,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down'
 	import HouseIcon from '@lucide/svelte/icons/house'
+	import BookOpenIcon from '@lucide/svelte/icons/book-open'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
 	import PlusIcon from '@lucide/svelte/icons/plus'
@@ -46,6 +47,13 @@
 						<Sidebar.MenuButton isActive={route.name === 'home'}>
 							{#snippet child({ props })}
 								<a href="/" {...props}><HouseIcon /><span>Home</span></a>
+							{/snippet}
+						</Sidebar.MenuButton>
+					</Sidebar.MenuItem>
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton isActive={route.name === 'docs'}>
+							{#snippet child({ props })}
+								<a href="/docs" {...props}><BookOpenIcon /><span>Docs</span></a>
 							{/snippet}
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>

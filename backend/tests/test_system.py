@@ -100,3 +100,11 @@ async def test_system_status_reports_scheduler(client, scheduler):
     assert status["scheduler"]["active_cells"] == 0 and status["scheduler"]["max_cells"] == 2
     assert status["timezone"] == "UTC"
     assert status["insecure_secret_key"] is True  # the test environment uses the default key
+
+
+async def test_api_reference_is_under_api_so_docs_is_free_for_the_frontend(client):
+    assert (await client.get("/api/openapi.json")).json()["info"]["title"] == "ThemisForge"
+    assert "swagger" in (await client.get("/api/docs")).text.lower()
+    # /docs is not an API route: it must not be answered by the backend's own Swagger page
+    page = await client.get("/docs")
+    assert "swagger" not in page.text.lower()

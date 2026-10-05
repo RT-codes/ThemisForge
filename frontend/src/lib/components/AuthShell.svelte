@@ -31,5 +31,8 @@
 				<Card.Footer class="justify-center text-sm text-muted-foreground">{@render footer()}</Card.Footer>
 			{/if}
 		</Card.Root>
+		<p class="mt-6 text-center text-xs text-muted-foreground">
+			<a href="/docs" class="hover:text-foreground hover:underline">Read the documentation</a>
+		</p>
 	</div>
 </main>

@@ -9,6 +9,9 @@ created for the task and removed afterwards.
   Managed with [uv](https://docs.astral.sh/uv/).
 - `frontend/` - Svelte 5 + TypeScript + Tailwind, shadcn-svelte and Svelte Flow. Built with Vite.
 
+Full documentation is in [`docs/`](docs/) and in the app itself at `/docs` (no login needed): getting started, tasks and
+scheduling, cells, access, settings, operations, troubleshooting and the architecture.
+
 ## Install on a server (Debian/Ubuntu VM)
 
 ```bash

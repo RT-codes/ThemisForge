@@ -14,6 +14,9 @@
 	import { router } from '$lib/router.svelte'
 	import { onMount } from 'svelte'
 
+	// the docs are only loaded when someone opens them
+	const loadDocs = () => import('$lib/pages/DocsPage.svelte')
+
 	onMount(() => auth.init())
 
 	// the sidebar's project list (and its running badges) follow the signed-in user
@@ -36,9 +39,11 @@
 				? 'Settings'
 				: route.name === 'access'
 					? 'Access'
-					: route.name === 'home'
-						? 'Home'
-						: 'Not found'
+					: route.name === 'docs'
+						? 'Docs'
+						: route.name === 'home'
+							? 'Home'
+							: 'Not found'
 	)
 </script>
 
@@ -47,6 +52,12 @@
 {:else if !auth.user}
 	{#if route.name === 'invite'}
 		<InviteScreen token={route.token} />
+	{:else if route.name === 'docs'}
+		<div class="flex min-h-svh flex-col">
+			{#await loadDocs() then docs}
+				<docs.default slug={route.slug} standalone />
+			{/await}
+		</div>
 	{:else}
 		<LoginScreen />
 	{/if}
@@ -70,6 +81,10 @@
 					<SettingsPage />
 				{:else if route.name === 'access'}
 					<AccessPage />
+				{:else if route.name === 'docs'}
+					{#await loadDocs() then docs}
+						<docs.default slug={route.slug} />
+					{/await}
 				{:else if route.name === 'invite'}
 					<div class="m-auto max-w-sm text-center">
 						<p class="text-lg font-medium">You are already signed in</p>

@@ -15,6 +15,9 @@
 	import { router } from '$lib/router.svelte'
 	import { onMount } from 'svelte'
 
+	// the editor pulls in the flow library, so it loads on first visit
+	const loadWorkflow = () => import('$lib/pages/WorkflowEditorPage.svelte')
+
 	// the docs are only loaded when someone opens them
 	const loadDocs = () => import('$lib/pages/DocsPage.svelte')
 
@@ -35,7 +38,7 @@
 	const route = $derived(router.route)
 	const title = $derived(
 		route.name === 'project'
-			? (projects.get(route.id)?.name ?? 'Project') + (route.page === 'tasks' ? ' / Tasks' : '')
+			? (projects.get(route.id)?.name ?? 'Project') + (route.page === 'tasks' ? ' / Tasks' : route.page === 'workflow' ? ' / Workflow editor' : '')
 			: route.name === 'settings'
 				? 'Settings'
 				: route.name === 'access'
@@ -76,7 +79,11 @@
 					<HomePage />
 				{:else if route.name === 'project'}
 					{#key route.id}
-						{#if route.page === 'tasks'}
+						{#if route.page === 'workflow'}
+							{#await loadWorkflow() then editor}
+								<editor.default id={route.id} />
+							{/await}
+						{:else if route.page === 'tasks'}
 							<ProjectPage id={route.id} />
 						{:else}
 							<ProjectOverview id={route.id} />

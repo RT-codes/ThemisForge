@@ -1,4 +1,4 @@
-export type ProjectPageName = 'overview' | 'tasks'
+export type ProjectPageName = 'overview' | 'tasks' | 'workflow'
 
 export type Route =
   | { name: 'home' }
@@ -17,7 +17,7 @@ export function parse(path: string): Route {
   if (docs) return { name: 'docs', slug: docs[1] ?? 'overview' }
   const invite = path.match(/^\/invite\/([\w-]+)\/?$/)
   if (invite) return { name: 'invite', token: invite[1] }
-  const m = path.match(/^\/projects\/(\d+)(?:\/(tasks))?\/?$/)
-  if (m) return { name: 'project', id: Number(m[1]), page: m[2] ? 'tasks' : 'overview' }
+  const m = path.match(/^\/projects\/(\d+)(?:\/(tasks|workflow))?\/?$/)
+  if (m) return { name: 'project', id: Number(m[1]), page: (m[2] as ProjectPageName | undefined) ?? 'overview' }
   return { name: 'not-found' }
 }

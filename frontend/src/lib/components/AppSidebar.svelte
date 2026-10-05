@@ -12,6 +12,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
+	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus'
 	import { inbox } from '$lib/inbox.svelte'
 	import { projects } from '$lib/projects.svelte'
@@ -94,6 +95,13 @@
 										<Sidebar.MenuSubButton isActive={route.page === 'tasks'}>
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem>
+										<Sidebar.MenuSubButton isActive={route.page === 'workflow'}>
+											{#snippet child({ props })}
+												<a href="/projects/{p.id}/workflow" {...props}><WorkflowIcon /><span>Workflow editor</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>

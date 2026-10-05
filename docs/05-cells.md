@@ -16,7 +16,9 @@ Whatever runs in a cell (today a placeholder, later an agent harness) gets the s
 
 | Path or signal | Meaning |
 | --- | --- |
-| `/workspace` | The project's **durable workspace**, read and write. Files here survive cells and are shared by all tasks in the project. |
+| `/workspace` | This attempt's **private working folder**, read and write. Nothing else sees it, and it is removed after the retention period (default 7 days, see Settings). |
+| `/cell/prompt.md` | Agent tasks only: the instructions handed to the agent. |
+| `/run/themis-secrets` | Agent tasks only: credentials for this attempt (such as the Codex login), in memory and gone with the cell. |
 | `/cell/input.json` | The task, written before the cell starts: title, description and properties. |
 | `/cell/result.md` | Optional. Whatever the cell writes here is stored as the attempt's **result**. |
 | Exit code `0` | The attempt **succeeded**. Any other exit code means it **failed**. |
@@ -29,12 +31,14 @@ The cell also receives the environment variables `THEMIS_TASK_ID` and `THEMIS_TA
 Under the ThemisForge data directory (`data/` next to the code by default, change it with `THEMIS_DATA_DIR`):
 
 ```text
-data/projects/<project id>/workspace/           durable files, mounted at /workspace
-data/projects/<project id>/attempts/<attempt>/  input.json and result.md for one attempt
+data/projects/<project id>/workspaces/<attempt>/ private working folder, mounted at /workspace
+data/projects/<project id>/attempts/<attempt>/   input.json, prompt.md and result.md for one attempt
 ```
 
 Cells run as your ThemisForge user, so files they create are owned by you and easy to inspect or back up.
-Deleting a project removes its database records but **keeps** these folders.
+Deleting a project removes its database records but **keeps** these folders. Working folders of finished attempts
+are deleted automatically after **Settings, Cells, Keep working folders for** days; keep what matters in the
+result. Shared folders that outlive a run are planned (see the [roadmap](/docs/roadmap)).
 
 ## Resource limits
 

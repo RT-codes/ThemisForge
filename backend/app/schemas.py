@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -165,6 +165,7 @@ class TaskIn(_ScheduleFields):
     status: TaskStatus = TaskStatus.INBOX
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
+    harness: Literal["", "codex"] = ""
 
     @field_validator("title")
     @classmethod
@@ -196,6 +197,7 @@ class TaskPatch(BaseModel):
     cron: str | None = None
     run_at: AwareDatetime | None = None
     review_on_success: bool | None = None
+    harness: Literal["", "codex"] | None = None
 
     @field_validator("status")
     @classmethod
@@ -221,6 +223,7 @@ class TaskOut(BaseModel):
     next_run_at: datetime | None
     last_run_at: datetime | None
     review_on_success: bool
+    harness: str
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None

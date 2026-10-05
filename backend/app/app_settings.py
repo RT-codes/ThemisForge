@@ -18,6 +18,10 @@ class AppSettings(BaseModel):
     cell_memory_mb: int = Field(default=1024, ge=64, le=1_048_576)
     cell_timeout_seconds: int = Field(default=3600, ge=10, le=86_400)
     max_concurrent_cells: int = Field(default=2, ge=1, le=64)
+    codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
+    keep_workspaces_days: int = Field(
+        default=7, ge=0, le=3650
+    )  # attempt working folders; 0 = delete right away
 
     @field_validator("timezone")
     @classmethod
@@ -36,7 +40,7 @@ class AppSettings(BaseModel):
             raise ValueError("Docker host must start with unix://, tcp:// or ssh://")
         return v
 
-    @field_validator("cell_image")
+    @field_validator("cell_image", "codex_image")
     @classmethod
     def valid_image(cls, v: str) -> str:
         v = v.strip()

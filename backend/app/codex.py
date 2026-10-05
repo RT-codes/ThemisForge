@@ -118,9 +118,19 @@ class CodexLease:
         self.auth_json = auth_json
 
     async def save_back(self, text: str) -> None:
+        """Store a refreshed login. It must belong to the same ChatGPT account: a cell is not trusted to swap it."""
+        old = parse_auth(self.auth_json)["tokens"].get("account_id")
+        new = parse_auth(text)["tokens"].get("account_id")
+        if old and old != new:
+            raise CodexError("The refreshed login belongs to a different account, so it was not stored")
         async with self._maker() as session:
             await save_auth(session, self._user_id, text)
         self.auth_json = text
+
+
+def lease_is_busy(user_id: int) -> bool:
+    lock = _locks.get(user_id)
+    return lock is not None and lock.locked()
 
 
 @asynccontextmanager
@@ -132,7 +142,9 @@ async def lease_codex(maker: async_sessionmaker[AsyncSession], user_id: int) -> 
             conn = await get_connection(session, user_id)
             text = decrypt(conn.auth_encrypted) if conn else None
         if text is None:
-            raise CodexError("Codex is not connected (or needs reconnecting) for this user")
+            raise CodexError(
+                "Codex is not connected for the project owner (or needs reconnecting). Connect it in Settings."
+            )
         yield CodexLease(maker, user_id, text)
 
 

@@ -50,6 +50,9 @@ its history. The next occurrence still happens.
 - **Schedule**: manual, once, or recurring. See [Scheduling](/docs/scheduling).
 - **Ask for review when it succeeds**: one-off tasks end in **Review** instead of **Done**, so a human looks at the
   result first.
+- **Run with**: what works on the task. The **placeholder program** prints the task and finishes (good for trying out
+  scheduling). A **Codex agent** does the task for real in its own container, using the project owner's
+  [Codex connection](/docs/codex).
 - **Properties**: your own fields, see below.
 
 ## Custom properties

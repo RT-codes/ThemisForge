@@ -31,6 +31,8 @@ export interface ProjectSummary extends Project {
   next_run_at: string | null
 }
 
+export type Harness = '' | 'codex'
+
 export interface Task {
   id: number
   project_id: number
@@ -45,6 +47,7 @@ export interface Task {
   next_run_at: string | null
   last_run_at: string | null
   review_on_success: boolean
+  harness: Harness
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
@@ -59,6 +62,7 @@ export interface TaskInput {
   cron?: string | null
   run_at?: string | null
   review_on_success?: boolean
+  harness?: Harness
 }
 
 export type TaskPatch = Partial<TaskInput> & { position?: number }
@@ -92,6 +96,8 @@ export interface AppSettings {
   cell_memory_mb: number
   cell_timeout_seconds: number
   max_concurrent_cells: number
+  codex_image: string
+  keep_workspaces_days: number
 }
 
 export interface DockerStatus {

@@ -184,6 +184,7 @@ async def create_task(
         cron=body.cron,
         run_at=body.run_at,
         review_on_success=body.review_on_success,
+        harness=body.harness,
     )
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     session.add(task)
@@ -223,6 +224,8 @@ async def update_task(
             raise _bad(str(e)) from None
     if "review_on_success" in fields and body.review_on_success is not None:
         task.review_on_success = body.review_on_success
+    if "harness" in fields and body.harness is not None:
+        task.harness = body.harness
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:

@@ -108,6 +108,8 @@ class Task(Base):
     next_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None, index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     review_on_success: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # What runs in the cell: "" = the placeholder program, "codex" = Codex (see app/harness.py).
+    harness: Mapped[str] = mapped_column(String(20), default="", server_default="")
 
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)

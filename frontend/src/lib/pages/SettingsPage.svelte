@@ -209,6 +209,16 @@
 						<Label for="cell-max">Cells at the same time</Label>
 						<Input id="cell-max" type="number" min="1" max="64" bind:value={form.max_concurrent_cells} required />
 					</div>
+					<div class="grid gap-2 sm:col-span-2">
+						<Label for="codex-image">Codex image</Label>
+						<Input id="codex-image" bind:value={form.codex_image} class="font-mono" required />
+						<p class="text-xs text-muted-foreground">Used by tasks that run with a Codex agent. Build the default with <code>./themis build-images</code>.</p>
+					</div>
+					<div class="grid gap-2 sm:col-span-2">
+						<Label for="keep-days">Keep working folders for (days)</Label>
+						<Input id="keep-days" type="number" min="0" max="3650" bind:value={form.keep_workspaces_days} required />
+						<p class="text-xs text-muted-foreground">Every run gets its own private working folder. Old ones are deleted after this many days; 0 deletes them right away.</p>
+					</div>
 				</Card.Content>
 			</Card.Root>
 

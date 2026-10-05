@@ -45,3 +45,20 @@ Every user connects their own Codex. Nobody else, administrators included, can s
 
 **Disconnect** removes the login from ThemisForge. To also revoke it at OpenAI, sign out of Codex in your ChatGPT
 security settings.
+
+## Running a task with Codex
+
+Set a task's **Run with** to **Codex agent**. When it runs, ThemisForge:
+
+1. starts a cell from the **Codex image** (Settings, Cells),
+2. hands it the project owner's Codex login (see above) and the task as instructions,
+3. runs Codex there with its own sandbox off. The container is the sandbox, which also works for any other agent
+   later,
+4. shows what the agent said and ran in the attempt **log**, and stores its final message as the **result**,
+5. saves the login back if Codex refreshed it during the run.
+
+Build the image once with `./themis build-images`. Each run gets its own private working folder at `/workspace`,
+so two agents never edit the same files. If the owner has not connected Codex, the attempt fails and says so.
+
+Runs of the same user take turns: Codex rotates its refresh tokens, so two cells refreshing the same login at once
+could lock each other out. A second run waits and says so in its log.

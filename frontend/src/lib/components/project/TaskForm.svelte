@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, ApiError, type PropertyDef, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Harness, type PropertyDef, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -37,6 +37,7 @@
 		cron: task?.cron ?? '0 9 * * *',
 		runAt: toLocalInput(task?.run_at ?? null),
 		review: task?.review_on_success ?? false,
+		harness: (task?.harness ?? '') as Harness,
 		properties: { ...(task?.properties ?? {}) } as Record<string, PropertyValue>,
 	}))
 
@@ -47,6 +48,7 @@
 	let cron = $state(initial.cron)
 	let runAt = $state(initial.runAt)
 	let review = $state(initial.review)
+	let harness = $state<Harness>(initial.harness)
 	let properties = $state<Record<string, PropertyValue>>(initial.properties)
 
 	let saving = $state(false)
@@ -84,11 +86,12 @@
 						status,
 						properties,
 						review_on_success: review,
+						harness,
 						...schedule,
 					})
 				)
 			} else {
-				const patch: TaskPatch = { title, description, properties, review_on_success: review }
+				const patch: TaskPatch = { title, description, properties, review_on_success: review, harness }
 				if (status !== task.status) patch.status = status
 				if (scheduleChanged) Object.assign(patch, schedule)
 				onsaved(await api.updateTask(task.id, patch))
@@ -173,6 +176,24 @@
 				</p>
 			</div>
 		{/if}
+
+		<div class="grid gap-2 pt-1">
+			<Label for="task-harness">Run with</Label>
+			<Select.Root type="single" bind:value={harness}>
+				<Select.Trigger id="task-harness" class="w-full">{harness === 'codex' ? 'Codex agent' : 'Placeholder program'}</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
+					<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+				</Select.Content>
+			</Select.Root>
+			<p class="text-xs text-muted-foreground">
+				{#if harness === 'codex'}
+					An agent works on the task in its own container, using the project owner's Codex connection (Settings). Its working folder is private to each run.
+				{:else}
+					Prints the task and finishes. Useful to try out scheduling.
+				{/if}
+			</p>
+		</div>
 
 		<div class="flex items-center justify-between gap-3 pt-1">
 			<div>

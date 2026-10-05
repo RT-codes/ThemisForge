@@ -1,0 +1,144 @@
+"""Harnesses: what runs inside a cell for a task.
+
+A harness turns a task into a plan (image, command, files to hand over) and turns the cell's raw output back into
+a readable log. The cell contract (app/cells.py) stays the same for every harness, so adding another one (Pi, Claude
+Code...) means adding a plan and a renderer here, nothing else.
+
+Cells run the agent without the agent's own sandbox: the container is the sandbox, which is the one that works for
+every harness.
+"""
+
+import json
+import re
+from dataclasses import dataclass
+
+from .app_settings import AppSettings
+from .cells import SECRETS_DIR
+
+HARNESSES = ("", "codex")  # "" = the placeholder program
+
+CODEX_HOME = f"{SECRETS_DIR}/codex"
+CODEX_AUTH = f"{CODEX_HOME}/auth.json"
+
+# Codex may refresh its login while it runs. The refreshed file is printed (base64, between markers) on exit so the
+# host can store it: the cell has nowhere durable to put it, and a lost refresh would force a reconnect.
+CODEX_SCRIPT = f"""\
+export CODEX_HOME={CODEX_HOME}
+trap 'echo "@@THEMIS-WRITEBACK-BEGIN {CODEX_AUTH}@@"; base64 < "$CODEX_HOME/auth.json" | tr -d "\\n"; echo; echo "@@THEMIS-WRITEBACK-END@@"' EXIT
+codex exec --json --skip-git-repo-check --ephemeral --dangerously-bypass-approvals-and-sandbox \\
+  -C /workspace -o /cell/result.md -- "$(cat /cell/prompt.md)" < /dev/null
+"""
+
+
+@dataclass(frozen=True)
+class HarnessPlan:
+    image: str
+    script: str
+    writeback: tuple[str, ...] = ()
+    uses_codex: bool = False
+
+
+def plan_for(harness: str, cfg: AppSettings) -> HarnessPlan | None:
+    """None means the placeholder program, which needs nothing special."""
+    if harness == "codex":
+        return HarnessPlan(
+            image=cfg.codex_image, script=CODEX_SCRIPT, writeback=(CODEX_AUTH,), uses_codex=True
+        )
+    return None
+
+
+def build_prompt(title: str, description: str, properties: dict) -> str:
+    parts = [f"# {title}"]
+    if description.strip():
+        parts.append(description.strip())
+    props = {k: v for k, v in properties.items() if v not in (None, "", [])}
+    if props:
+        parts.append("Task properties:\n" + "\n".join(f"- {k}: {v}" for k, v in props.items()))
+    parts.append(
+        "You are running unattended inside a throwaway container. Your working directory /workspace is private to "
+        "this run. Do the task, then finish with a short summary of what you did and what you produced."
+    )
+    return "\n\n".join(parts) + "\n"
+
+
+_NOISE = {"Reading additional input from stdin..."}  # printed by codex exec whenever stdin is not a terminal
+
+
+class CodexRenderer:
+    """Turns `codex exec --json` events into a readable log, line by line. Unknown events are kept, shortened."""
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self.usage: dict[str, int] = {}
+
+    def feed(self, text: str) -> str:
+        self._buf += text
+        *lines, self._buf = self._buf.split("\n")
+        return "".join(self._line(line) for line in lines)
+
+    def flush(self) -> str:
+        rest, self._buf = self._buf, ""
+        return self._line(rest) if rest else ""
+
+    def _line(self, line: str) -> str:
+        line = line.rstrip("\r")
+        if not line.strip():
+            return ""
+        if line.strip() in _NOISE:
+            return ""
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return line + "\n"  # a warning or anything else that is not an event
+        if not isinstance(event, dict):
+            return line + "\n"
+        return self._event(event)
+
+    def _event(self, e: dict) -> str:
+        kind = e.get("type", "")
+        item = e.get("item") if isinstance(e.get("item"), dict) else {}
+        if kind == "thread.started":
+            return f"[codex] session {e.get('thread_id', '')}\n"
+        if kind == "turn.started":
+            return ""
+        if kind == "turn.completed":
+            u = e.get("usage") or {}
+            self.usage = {k: int(v) for k, v in u.items() if isinstance(v, int)}
+            return f"[codex] done - {u.get('input_tokens', 0)} tokens in, {u.get('output_tokens', 0)} out\n"
+        if kind in ("turn.failed", "error"):
+            detail = e.get("message") or (e.get("error") or {}).get("message") or ""
+            return f"[codex] error: {detail}\n"
+        item_type = item.get("type", "")
+        if kind == "item.started":
+            if item_type == "command_execution":
+                return f"$ {_shell(item.get('command', ''))}\n"
+            return ""
+        if kind == "item.completed":
+            if item_type == "agent_message":
+                return item.get("text", "").rstrip() + "\n"
+            if item_type == "command_execution":
+                out = (item.get("aggregated_output") or "").rstrip()
+                code = item.get("exit_code")
+                tail = f"[exit {code}]" if code not in (0, None) else ""
+                return "".join(f"{s}\n" for s in (out, tail) if s)
+            if item_type == "reasoning":
+                return ""
+            return f"[codex] {item_type or kind}\n"
+        return f"[codex] {kind}\n" if kind else ""
+
+
+def _shell(command: str) -> str:
+    """Codex wraps commands as `/bin/bash -lc "..."`; show the part a person wrote."""
+    for prefix in ("/bin/bash -lc ", "bash -lc ", "/bin/sh -c ", "sh -c "):
+        if command.startswith(prefix):
+            inner = command[len(prefix) :].strip()
+            if len(inner) >= 2 and inner[0] == inner[-1] and inner[0] in "\"'":
+                quote, inner = inner[0], inner[1:-1]
+                if quote == '"':  # undo the escaping that quoting a command inside double quotes needs
+                    inner = re.sub(r'\\(["\\$`])', r"\1", inner)
+            return inner
+    return command
+
+
+def renderer_for(harness: str) -> CodexRenderer | None:
+    return CodexRenderer() if harness == "codex" else None

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ThemisForge CLI: ./themis start | build | stop | status | logs (development)  install | doctor | service (server)
+# ThemisForge CLI: ./themis start | build | build-images | stop | status | logs (development)  install | doctor | service (server)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,6 +56,10 @@ case "${1:-}" in
   build)
     build_frontend
     ;;
+  build-images)
+    # The cell image for Codex agents. Rebuild after changing docker/cell-codex/Dockerfile.
+    docker build -t themisforge/cell-codex:latest "$ROOT/docker/cell-codex"
+    ;;
   start)
     (cd "$ROOT/backend" && uv sync --quiet)
     build_frontend
@@ -93,7 +97,7 @@ case "${1:-}" in
     esac
     ;;
   *)
-    echo "Usage: ./themis {start|build|stop|status|logs|install|doctor|service}"
+    echo "Usage: ./themis {start|build|build-images|stop|status|logs|install|doctor|service}"
     exit 1
     ;;
 esac

@@ -3,14 +3,20 @@
 import asyncio
 import contextlib
 import logging
+import shutil
 import time
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .app_settings import AppSettings, load_settings
 from .cells import CellError, CellManager, CellSpec
+from .codex import CodexError, lease_codex, lease_is_busy
+from .config import settings
+from .harness import CODEX_AUTH, build_prompt, plan_for, renderer_for
 from .models import Attempt, AttemptStatus, Project, Task, TaskStatus, utcnow
 from .scheduling import finish_task
 
@@ -18,6 +24,7 @@ log = logging.getLogger("themis.scheduler")
 
 MAX_LOG_CHARS = 200_000
 LOG_FLUSH_SECONDS = 1.0
+PRUNE_EVERY_SECONDS = 3600
 
 
 @dataclass
@@ -65,6 +72,7 @@ class Scheduler:
         self._loop_task: asyncio.Task | None = None
         self._wake = asyncio.Event()
         self.max_cells = 0
+        self._last_prune = float("-inf")
 
     # lifecycle
 
@@ -99,6 +107,9 @@ class Scheduler:
         while True:
             try:
                 await self.tick()
+                if time.monotonic() - self._last_prune >= PRUNE_EVERY_SECONDS:
+                    self._last_prune = time.monotonic()
+                    await self.prune_workspaces()
             except Exception:
                 log.exception("scheduler tick failed")
             with contextlib.suppress(TimeoutError):
@@ -176,8 +187,37 @@ class Scheduler:
             live.task.add_done_callback(lambda _t, aid=attempt_id: self._live.pop(aid, None))
         return len(started)
 
+    async def prune_workspaces(self) -> int:
+        """Remove the private working folders of attempts that finished more than the retention period ago,
+        and those whose attempt no longer exists. Returns how many folders were removed."""
+        folders = [d for d in (settings.data_dir / "projects").glob("*/workspaces/*") if d.name.isdigit()]
+        if not folders:
+            return 0
+        async with self.maker() as s:
+            cfg = await load_settings(s)
+            attempts = {
+                a.id: a
+                for a in (
+                    await s.scalars(select(Attempt).where(Attempt.id.in_([int(d.name) for d in folders])))
+                ).all()
+            }
+        cutoff = utcnow() - timedelta(days=cfg.keep_workspaces_days)
+        stale = []
+        for d in folders:
+            a = attempts.get(int(d.name))
+            if a is None or (
+                a.status != AttemptStatus.RUNNING and a.finished_at is not None and a.finished_at <= cutoff
+            ):
+                stale.append(d)
+        for d in stale:
+            await asyncio.to_thread(shutil.rmtree, d, True)
+        if stale:
+            log.info("removed %d old attempt workspace(s)", len(stale))
+        return len(stale)
+
     @staticmethod
     def _spec(attempt_id: int, task: Task, project: Project, cfg: AppSettings) -> CellSpec:
+        plan = plan_for(task.harness, cfg)
         return CellSpec(
             attempt_id=attempt_id,
             task_id=task.id,
@@ -185,7 +225,12 @@ class Scheduler:
             title=task.title,
             description=task.description,
             properties=task.properties,
-            image=cfg.cell_image,
+            owner_id=project.owner_id,
+            harness=task.harness,
+            image=plan.image if plan else cfg.cell_image,
+            script=plan.script if plan else None,
+            writeback=plan.writeback if plan else (),
+            prompt=build_prompt(task.title, task.description, task.properties) if plan else "",
             cpus=cfg.cell_cpus,
             memory_mb=cfg.cell_memory_mb,
             timeout_seconds=cfg.cell_timeout_seconds,
@@ -198,7 +243,33 @@ class Scheduler:
         buf = _LogBuffer(self.maker, attempt_id)
         outcome, exit_code, result = AttemptStatus.FAILED, None, ""
         try:
-            res = await self.cells.run(spec, buf.write)
+            async with AsyncExitStack() as stack:
+                lease = None
+                if spec.harness == "codex":
+                    if lease_is_busy(spec.owner_id):
+                        await buf.write("[Waiting for another Codex run of the same user to finish]\n")
+                    lease = await stack.enter_async_context(lease_codex(self.maker, spec.owner_id))
+                    spec.secret_files[CODEX_AUTH] = lease.auth_json
+                renderer = renderer_for(spec.harness)
+
+                async def sink(chunk: str) -> None:
+                    if renderer is None:
+                        await buf.write(chunk)
+                    elif text := renderer.feed(chunk):
+                        await buf.write(text)
+
+                res = await self.cells.run(spec, sink)
+                if renderer is not None and (tail := renderer.flush()):
+                    await buf.write(tail)
+                if (
+                    lease is not None
+                    and (fresh := res.writeback.get(CODEX_AUTH))
+                    and fresh != lease.auth_json
+                ):
+                    try:
+                        await lease.save_back(fresh)
+                    except CodexError as e:
+                        await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
             exit_code, result = res.exit_code, res.result
             outcome = AttemptStatus.SUCCEEDED if res.exit_code == 0 else AttemptStatus.FAILED
         except asyncio.CancelledError:
@@ -208,7 +279,7 @@ class Scheduler:
             else:
                 outcome = AttemptStatus.CANCELLED
                 await buf.write("\n[Cancelled]\n")
-        except CellError as e:
+        except (CellError, CodexError) as e:
             await buf.write(f"\n[Cell error] {e}\n")
         except Exception as e:
             log.exception("attempt %s crashed", attempt_id)

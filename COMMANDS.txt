@@ -3,6 +3,7 @@ ThemisForge - commands (run from the project root)
 Development (hot reload)
   ./themis start     rebuild the frontend, then start backend (8000) + frontend (5173) with hot reload
   ./themis build     only rebuild the frontend (what http://localhost:8000 serves)
+  ./themis build-images  build the cell image for Codex agents (once, and after Dockerfile changes)
   ./themis stop      stop both
   ./themis status    show what is running
   ./themis logs      follow both logs (Ctrl+C to leave)

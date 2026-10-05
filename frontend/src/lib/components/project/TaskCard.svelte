@@ -2,6 +2,7 @@
 	import type { PropertyDef, Task } from '$lib/api'
 	import { describeCron, relative } from '$lib/format'
 	import { cn } from '$lib/utils'
+	import BotIcon from '@lucide/svelte/icons/bot'
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
 	import ClockIcon from '@lucide/svelte/icons/clock'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
@@ -60,8 +61,11 @@
 		<p class="mt-1 line-clamp-2 text-xs text-muted-foreground">{task.description}</p>
 	{/if}
 
-	{#if chips.length}
+	{#if chips.length || task.harness}
 		<div class="mt-2 flex flex-wrap gap-1">
+			{#if task.harness === 'codex'}
+				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] text-primary"><BotIcon class="size-3" />Codex</span>
+			{/if}
 			{#each chips as chip (chip.key)}
 				<span class="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-secondary-foreground">{chip.text}</span>
 			{/each}

@@ -57,8 +57,9 @@
 	function drop(status: TaskStatus) {
 		const task = dragged
 		const index = overIndex
+		const allowed = canDrop(status) // before reset(): it clears the drag, so `dragged` becomes null
 		reset()
-		if (!task || !canDrop(status)) return
+		if (!task || !allowed) return
 		const siblings = byStatus[status].filter((t) => t.id !== task.id)
 		if (status === task.status && byStatus[status].findIndex((t) => t.id === task.id) === index) return // same spot
 		const position = dropPosition(

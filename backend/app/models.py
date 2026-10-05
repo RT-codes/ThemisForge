@@ -182,6 +182,19 @@ class Secret(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
 
+class CodexConnection(Base):
+    """One user's Codex login (ChatGPT plan). The whole auth.json is encrypted at rest (see app/codex.py)."""
+
+    __tablename__ = "codex_connections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    auth_encrypted: Mapped[str] = mapped_column(Text)
+    account: Mapped[str] = mapped_column(String(320), default="")
+    connected_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    refreshed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+
+
 class AppSetting(Base):
     """Key/value store for operator settings edited from the Settings page."""
 

@@ -10,6 +10,7 @@
 	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks'
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
+	import PlugZapIcon from '@lucide/svelte/icons/plug-zap'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus'
@@ -150,6 +151,10 @@
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content side="top" align="start" class="w-(--bits-dropdown-menu-anchor-width) min-w-56">
+						<DropdownMenu.Item onSelect={() => router.navigate('/account')}>
+							<PlugZapIcon />
+							Connections
+						</DropdownMenu.Item>
 						<DropdownMenu.Item onSelect={() => auth.logout()}>
 							<LogOutIcon />
 							Log out

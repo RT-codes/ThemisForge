@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # "docker" runs real containers, "fake" simulates a cell (development and tests).
     cell_backend: str = "docker"
+    # The Codex CLI used for "Connect Codex". Set a full path if it is not on PATH (on Windows, e.g. codex.cmd).
+    codex_bin: str = "codex"
     scheduler_enabled: bool = True
     scheduler_interval_seconds: float = 3.0
 

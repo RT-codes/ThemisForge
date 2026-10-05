@@ -8,13 +8,16 @@ The cell contract (what runs inside a cell, whatever the harness):
   /cell/input.json    the task, written before the cell starts
   /cell/result.md     optional: the cell writes its result here; it is stored with the attempt
   exit code 0         success, anything else is a failure
+  /run/themis-secrets credentials for this attempt (see CellSpec.secret_files): in memory only, gone with the cell
 """
 
 import asyncio
 import contextlib
+import io
 import json
 import os
 import random
+import tarfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +27,8 @@ from .config import settings
 from .docker_check import docker_env
 
 LogSink = Callable[[str], Awaitable[None]]
+
+SECRETS_DIR = "/run/themis-secrets"
 
 # Placeholder cell program until agent harnesses exist: echoes the task and writes a result.
 DEFAULT_CELL_SCRIPT = (
@@ -53,6 +58,9 @@ class CellSpec:
     timeout_seconds: int
     docker_host: str = ""
     env: dict[str, str] = field(default_factory=dict)
+    # Credentials to hand to the cell, as {path under SECRETS_DIR: content}. They are streamed in memory-only
+    # (never an env var, argument, host file or log line) and live on a tmpfs that vanishes with the cell.
+    secret_files: dict[str, str] = field(default_factory=dict, repr=False)
 
     @property
     def workspace_dir(self) -> Path:
@@ -93,6 +101,20 @@ def prepare_dirs(spec: CellSpec) -> None:
     )
 
 
+def secrets_archive(files: dict[str, str], uid: int = 0, gid: int = 0) -> bytes:
+    """A tar stream with the secret files, owner-only (0600), for `tar -x` inside the cell."""
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w") as tar:
+        for path, content in files.items():
+            if not path.startswith(SECRETS_DIR + "/") or ".." in path.split("/"):
+                raise CellError(f"Secret files must live under {SECRETS_DIR}")
+            data = content.encode()
+            info = tarfile.TarInfo(path.lstrip("/"))
+            info.size, info.mode, info.uid, info.gid = len(data), 0o600, uid, gid
+            tar.addfile(info, io.BytesIO(data))
+    return out.getvalue()
+
+
 def read_result(spec: CellSpec) -> str:
     path = spec.cell_dir / "result.md"
     return path.read_text(errors="replace")[:100_000] if path.is_file() else ""
@@ -129,34 +151,59 @@ class DockerCellManager:
     def _name(spec: CellSpec) -> str:
         return f"themis-cell-{spec.attempt_id}"
 
-    async def run(self, spec: CellSpec, on_log: LogSink) -> CellResult:
-        prepare_dirs(spec)
-        args = [
+    @staticmethod
+    def _owner() -> tuple[int, int] | None:
+        """The uid/gid cells run as, so files written to the mounts stay ours. None on Windows."""
+        return (os.getuid(), os.getgid()) if hasattr(os, "getuid") else None
+
+    def build_args(self, spec: CellSpec) -> list[str]:
+        owner = self._owner()
+        script = DEFAULT_CELL_SCRIPT
+        extra: list[str] = []
+        if owner:
+            extra += ["--user", f"{owner[0]}:{owner[1]}"]
+        if spec.secret_files:
+            owner_opts = f",uid={owner[0]},gid={owner[1]}" if owner else ""
+            extra += ["-i", "--tmpfs", f"{SECRETS_DIR}:rw,noexec,nosuid,nodev,size=1m,mode=0700{owner_opts}"]
+            script = f"tar -xf - -C / && {script}"
+        return [
             "docker", "run", "--rm",
             "--name", self._name(spec),
             "--label", "themis.cell=1",
             "--label", f"themis.attempt={spec.attempt_id}",
             "--cpus", str(spec.cpus),
             "--memory", f"{spec.memory_mb}m",
-            "--user", f"{os.getuid()}:{os.getgid()}",  # so files written to the mounts stay ours
+            *extra,
             "-v", f"{spec.workspace_dir}:/workspace",
             "-v", f"{spec.cell_dir}:/cell",
             "-e", f"THEMIS_TASK_ID={spec.task_id}",
             "-e", f"THEMIS_TASK_TITLE={spec.title}",
             *[a for k, v in spec.env.items() for a in ("-e", f"{k}={v}")],
             spec.image,
-            "sh", "-c", DEFAULT_CELL_SCRIPT,
+            "sh", "-c", script,
         ]  # fmt: skip
+
+    async def run(self, spec: CellSpec, on_log: LogSink) -> CellResult:
+        prepare_dirs(spec)
+        args = self.build_args(spec)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 env=docker_env(spec.docker_host),
+                stdin=asyncio.subprocess.PIPE if spec.secret_files else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
         except FileNotFoundError:
             raise CellError("The docker CLI was not found on this machine") from None
         try:
+            if spec.secret_files:
+                assert proc.stdin is not None
+                owner = self._owner() or (0, 0)
+                proc.stdin.write(secrets_archive(spec.secret_files, *owner))
+                with contextlib.suppress(ConnectionError):
+                    await proc.stdin.drain()
+                    proc.stdin.close()
             async with asyncio.timeout(spec.timeout_seconds):
                 assert proc.stdout is not None
                 while chunk := await proc.stdout.read(4096):

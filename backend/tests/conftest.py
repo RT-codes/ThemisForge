@@ -54,11 +54,28 @@ async def drain(scheduler: Scheduler) -> None:
 
 
 async def register(client: AsyncClient, email: str = "a@b.co", name: str = "Ada") -> dict:
-    r = await client.post(
-        "/api/auth/register", json={"email": email, "name": name, "password": "password123"}
-    )
+    """Sign up and end up logged in as that user. The first user becomes the administrator; every
+    later one joins through an invite created by the administrator who is currently logged in."""
+    if (await client.get("/api/auth/setup")).json()["needs_admin"]:
+        r = await client.post(
+            "/api/auth/register", json={"email": email, "name": name, "password": "password123"}
+        )
+    else:
+        invite = await client.post("/api/invites", json={"email": email})
+        assert invite.status_code == 201, invite.text
+        client.cookies.clear()
+        r = await client.post(
+            f"/api/invites/by-token/{invite.json()['token']}/accept",
+            json={"name": name, "password": "password123"},
+        )
     assert r.status_code == 201, r.text
     return r.json()
+
+
+async def login(client: AsyncClient, email: str) -> None:
+    client.cookies.clear()
+    r = await client.post("/api/auth/login", json={"email": email, "password": "password123"})
+    assert r.status_code == 200, r.text
 
 
 async def make_project(client: AsyncClient, name: str = "Alpha") -> dict:

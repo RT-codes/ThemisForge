@@ -10,7 +10,6 @@ from tests.conftest import register
 async def test_settings_are_admin_only(client):
     await register(client, "a@b.co")
     assert (await client.get("/api/settings")).json()["max_concurrent_cells"] == 2
-    client.cookies.clear()
     await register(client, "c@d.co", "Bob")
     assert (await client.get("/api/settings")).status_code == 403
     assert (await client.put("/api/settings", json={})).status_code == 403

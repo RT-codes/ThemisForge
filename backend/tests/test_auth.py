@@ -16,19 +16,14 @@ async def test_register_login_me_logout(client):
     assert (await client.get("/api/auth/me")).status_code == 200
 
 
-async def test_duplicate_register(client):
+async def test_registration_is_closed_after_the_administrator(client):
+    assert (await client.get("/api/auth/setup")).json() == {"needs_admin": True}
     body = {"email": "a@b.co", "name": "Ada", "password": "password123"}
-    assert (await client.post("/api/auth/register", json=body)).status_code == 201
-    assert (await client.post("/api/auth/register", json=body)).status_code == 409
+    first = await client.post("/api/auth/register", json=body)
+    assert first.status_code == 201 and first.json()["is_admin"] is True
 
-
-async def test_first_account_is_admin_second_is_not(client):
-    first = await client.post(
-        "/api/auth/register", json={"email": "a@b.co", "name": "Ada", "password": "password123"}
-    )
-    assert first.json()["is_admin"] is True
+    assert (await client.get("/api/auth/setup")).json() == {"needs_admin": False}
     client.cookies.clear()
-    second = await client.post(
-        "/api/auth/register", json={"email": "c@d.co", "name": "Bob", "password": "password123"}
-    )
-    assert second.json()["is_admin"] is False
+    again = await client.post("/api/auth/register", json={**body, "email": "c@d.co", "name": "Bob"})
+    assert again.status_code == 403 and "invite" in again.json()["detail"].lower()
+    assert (await client.get("/api/auth/me")).status_code == 401  # and no session was created

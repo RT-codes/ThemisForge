@@ -135,6 +135,40 @@ class Attempt(Base):
     task: Mapped[Task] = relationship(back_populates="attempts")
 
 
+class RequestStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+
+
+class AccessRequest(Base):
+    """Someone without an account asking the administrator for access."""
+
+    __tablename__ = "access_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(10), default=RequestStatus.PENDING, index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+
+
+class Invite(Base):
+    """A single-use link that lets one email address create an account. Only a hash of the token is stored."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime())
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+
+
 class Secret(Base):
     """A named credential. The value is encrypted at rest (see app/crypto.py)."""
 

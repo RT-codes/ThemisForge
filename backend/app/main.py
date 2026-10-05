@@ -10,7 +10,7 @@ from .cells import make_cell_manager
 from .config import DEFAULT_SECRET_KEY, settings
 from .db import SessionLocal
 from .migrate import upgrade_database
-from .routers import auth, projects, system
+from .routers import access, auth, projects, system
 from .scheduler import Scheduler
 
 log = logging.getLogger("themis")
@@ -35,6 +35,7 @@ app.state.scheduler = Scheduler(
 
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
+api.include_router(access.router)
 api.include_router(projects.router)
 api.include_router(system.router)
 

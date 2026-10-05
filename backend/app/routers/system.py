@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from ..app_settings import AppSettings, load_settings, save_settings
@@ -11,7 +11,7 @@ from ..config import settings as boot_settings
 from ..crypto import encrypt, hint_for
 from ..deps import AdminUser, CurrentUser, SessionDep
 from ..docker_check import check_docker
-from ..models import Secret
+from ..models import AccessRequest, Secret
 from ..schemas import SecretIn, SecretOut
 
 router = APIRouter(tags=["system"])
@@ -26,19 +26,26 @@ class SchedulerStatus(BaseModel):
 class SystemStatus(BaseModel):
     scheduler: SchedulerStatus
     timezone: str
+    pending_access_requests: int  # only filled in for administrators
     insecure_secret_key: bool
     cell_backend: str
 
 
 @router.get("/system/status", response_model=SystemStatus)
-async def system_status(request: Request, session: SessionDep, _: CurrentUser) -> SystemStatus:
+async def system_status(request: Request, session: SessionDep, user: CurrentUser) -> SystemStatus:
     scheduler = request.app.state.scheduler
     cfg = await load_settings(session)
+    pending = 0
+    if user.is_admin:
+        pending = await session.scalar(
+            select(func.count()).select_from(AccessRequest).where(AccessRequest.status == "pending")
+        )
     return SystemStatus(
         scheduler=SchedulerStatus(
             running=scheduler.running, active_cells=scheduler.active_cells, max_cells=cfg.max_concurrent_cells
         ),
         timezone=cfg.timezone,
+        pending_access_requests=pending or 0,
         insecure_secret_key=boot_settings.secret_key == DEFAULT_SECRET_KEY,
         cell_backend=boot_settings.cell_backend,
     )

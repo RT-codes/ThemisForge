@@ -16,7 +16,9 @@ git clone <this repo> && cd ThemisForge
 ./themis install        # Docker, uv, Node, build, backend/.env, systemd service
 ```
 
-Then open http://127.0.0.1:8000 and create your account (the first account is the administrator). See
+Then open http://127.0.0.1:8000 and create the administrator account (the first account). ThemisForge is invite only after
+that: people use "Request access" on the sign in screen, and the administrator approves them on the **Access** page, which
+creates a one-time invite link (valid 7 days) to send them. There is no email sending yet, so the link is shared by hand. See
 `./themis install --help` for `--host`, `--port` and `--https`. Docker, the cell defaults, the time zone and
 provider keys are managed on the **Settings** page; `./themis doctor` checks the machine from the terminal.
 

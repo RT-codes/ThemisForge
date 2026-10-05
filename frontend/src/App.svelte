@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte'
 	import AppSidebar from '$lib/components/AppSidebar.svelte'
+	import InviteScreen from '$lib/components/InviteScreen.svelte'
 	import LoginScreen from '$lib/components/LoginScreen.svelte'
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import { Separator } from '$lib/components/ui/separator/index.js'
+	import AccessPage from '$lib/pages/AccessPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectPage from '$lib/pages/ProjectPage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
+	import { inbox } from '$lib/inbox.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { onMount } from 'svelte'
@@ -16,8 +19,12 @@
 	// the sidebar's project list (and its running badges) follow the signed-in user
 	$effect(() => {
 		if (!auth.user) return
-		projects.refresh()
-		const timer = setInterval(() => !document.hidden && projects.refresh().catch(() => {}), 10_000)
+		const tick = () => {
+			projects.refresh().catch(() => {})
+			if (auth.user?.is_admin) inbox.refresh()
+		}
+		tick()
+		const timer = setInterval(() => !document.hidden && tick(), 10_000)
 		return () => clearInterval(timer)
 	})
 
@@ -27,16 +34,22 @@
 			? (projects.get(route.id)?.name ?? 'Project')
 			: route.name === 'settings'
 				? 'Settings'
-				: route.name === 'home'
-					? 'Home'
-					: 'Not found'
+				: route.name === 'access'
+					? 'Access'
+					: route.name === 'home'
+						? 'Home'
+						: 'Not found'
 	)
 </script>
 
 {#if auth.loading}
 	<div class="min-h-svh"></div>
 {:else if !auth.user}
-	<LoginScreen />
+	{#if route.name === 'invite'}
+		<InviteScreen token={route.token} />
+	{:else}
+		<LoginScreen />
+	{/if}
 {:else}
 	<Sidebar.Provider>
 		<AppSidebar />
@@ -55,6 +68,13 @@
 					{/key}
 				{:else if route.name === 'settings'}
 					<SettingsPage />
+				{:else if route.name === 'access'}
+					<AccessPage />
+				{:else if route.name === 'invite'}
+					<div class="m-auto max-w-sm text-center">
+						<p class="text-lg font-medium">You are already signed in</p>
+						<p class="mt-1 text-sm text-muted-foreground">Invite links are for people without an account. Log out first to use this one.</p>
+					</div>
 				{:else}
 					<div class="m-auto text-center">
 						<p class="text-lg font-medium">Page not found</p>

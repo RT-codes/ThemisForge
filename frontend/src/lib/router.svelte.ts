@@ -1,8 +1,17 @@
-export type Route = { name: 'home' } | { name: 'project'; id: number } | { name: 'settings' } | { name: 'not-found' }
+export type Route =
+  | { name: 'home' }
+  | { name: 'project'; id: number }
+  | { name: 'settings' }
+  | { name: 'access' }
+  | { name: 'invite'; token: string }
+  | { name: 'not-found' }
 
 function parse(path: string): Route {
   if (path === '/' || path === '') return { name: 'home' }
   if (path === '/settings') return { name: 'settings' }
+  if (path === '/access') return { name: 'access' }
+  const invite = path.match(/^\/invite\/([\w-]+)\/?$/)
+  if (invite) return { name: 'invite', token: invite[1] }
   const m = path.match(/^\/projects\/(\d+)\/?$/)
   if (m) return { name: 'project', id: Number(m[1]) }
   return { name: 'not-found' }

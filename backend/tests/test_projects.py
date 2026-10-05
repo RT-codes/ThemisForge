@@ -6,7 +6,6 @@ async def test_projects_are_private_to_their_owner(client):
     project = await make_project(client)
     assert [p["name"] for p in (await client.get("/api/projects")).json()] == ["Alpha"]
 
-    client.cookies.clear()
     await register(client, "c@d.co", "Bob")
     assert (await client.get("/api/projects")).json() == []
     assert (await client.get(f"/api/projects/{project['id']}")).status_code == 404

@@ -9,6 +9,8 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
+	import UserPlusIcon from '@lucide/svelte/icons/user-plus'
+	import { inbox } from '$lib/inbox.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import Logo from './Logo.svelte'
@@ -82,6 +84,16 @@
 	<Sidebar.Footer>
 		<Sidebar.Menu>
 			{#if user?.is_admin}
+				<Sidebar.MenuItem>
+					<Sidebar.MenuButton isActive={route.name === 'access'}>
+						{#snippet child({ props })}
+							<a href="/access" {...props}><UserPlusIcon /><span>Access</span></a>
+						{/snippet}
+					</Sidebar.MenuButton>
+					{#if inbox.pendingAccess > 0}
+						<Sidebar.MenuBadge>{inbox.pendingAccess}</Sidebar.MenuBadge>
+					{/if}
+				</Sidebar.MenuItem>
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton isActive={route.name === 'settings'}>
 						{#snippet child({ props })}

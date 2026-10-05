@@ -5,13 +5,13 @@ from sqlalchemy.exc import IntegrityError
 from ..config import settings
 from ..deps import COOKIE_NAME, CurrentUser, SessionDep
 from ..models import User
-from ..schemas import LoginIn, RegisterIn, UserOut
+from ..schemas import LoginIn, RegisterIn, SetupOut, UserOut
 from ..security import create_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _set_session_cookie(response: Response, user: User) -> None:
+def set_session_cookie(response: Response, user: User) -> None:
     response.set_cookie(
         COOKIE_NAME,
         create_token(user.id),
@@ -22,22 +22,31 @@ def _set_session_cookie(response: Response, user: User) -> None:
     )
 
 
+@router.get("/setup", response_model=SetupOut)
+async def setup(session: SessionDep) -> SetupOut:
+    return SetupOut(needs_admin=await session.scalar(select(User.id).limit(1)) is None)
+
+
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterIn, response: Response, session: SessionDep) -> User:
-    is_first = await session.scalar(select(User.id).limit(1)) is None  # the first account is the operator
+    """Creates the administrator. Everyone after that joins through an invite."""
+    if await session.scalar(select(User.id).limit(1)) is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Registration is invite only. Request access instead.")
     user = User(
         email=body.email,
         name=body.name.strip(),
         password_hash=await hash_password(body.password),
-        is_admin=is_first,
+        is_admin=True,
     )
     session.add(user)
     try:
         await session.commit()
-    except IntegrityError:
+    except IntegrityError:  # two first registrations at once: the loser is just another stranger
         await session.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists") from None
-    _set_session_cookie(response, user)
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Registration is invite only. Request access instead."
+        ) from None
+    set_session_cookie(response, user)
     return user
 
 
@@ -46,7 +55,7 @@ async def login(body: LoginIn, response: Response, session: SessionDep) -> User:
     user = await session.scalar(select(User).where(User.email == body.email))
     if user is None or not await verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
-    _set_session_cookie(response, user)
+    set_session_cookie(response, user)
     return user
 
 

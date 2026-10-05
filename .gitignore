@@ -1,5 +1,24 @@
+# Secrets and local config (keep templates)
 .env
-*.db
-.DS_Store
-.run/
+.env.*
+!.env.example
+
+# Runtime data
 data/
+.run/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store

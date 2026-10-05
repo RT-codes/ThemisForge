@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# ThemisForge dev CLI: ./themis start | stop | status | logs
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUN="$ROOT/.run"
+mkdir -p "$RUN"
+
+is_running() {
+  [[ -f "$RUN/$1.pid" ]] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null
+}
+
+start_one() { # name, dir, command...
+  local name=$1 dir=$2
+  shift 2
+  if is_running "$name"; then
+    echo "$name already running (pid $(cat "$RUN/$name.pid"))"
+    return
+  fi
+  # the child writes its own pid then execs, so the pid is also its process group id
+  (cd "$ROOT/$dir" && setsid bash -c 'echo $$ >"$0"; exec "$@"' "$RUN/$name.pid" "$@" >"$RUN/$name.log" 2>&1 &)
+  sleep 0.2
+  echo "$name started (pid $(cat "$RUN/$name.pid"))"
+}
+
+stop_one() {
+  local name=$1
+  if is_running "$name"; then
+    local pid
+    pid=$(cat "$RUN/$name.pid")
+    kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true # the pid is the group leader, so this takes the whole tree
+    echo "$name stopped"
+  else
+    echo "$name not running"
+  fi
+  rm -f "$RUN/$name.pid"
+}
+
+case "${1:-}" in
+  start)
+    (cd "$ROOT/backend" && uv sync --quiet)
+    [[ -d "$ROOT/frontend/node_modules" ]] || (cd "$ROOT/frontend" && npm install --silent)
+    start_one backend backend uv run uvicorn app.main:app --reload --port 8000
+    start_one frontend frontend npm run dev -- --port 5173 --strictPort
+    echo
+    echo "Open http://localhost:5173  (API on http://localhost:8000)"
+    echo "Stop with: ./themis stop   Logs: ./themis logs"
+    ;;
+  stop)
+    stop_one frontend
+    stop_one backend
+    ;;
+  status)
+    for n in backend frontend; do
+      if is_running "$n"; then echo "$n running (pid $(cat "$RUN/$n.pid"))"; else echo "$n stopped"; fi
+    done
+    ;;
+  logs)
+    tail -n 30 -f "$RUN/backend.log" "$RUN/frontend.log"
+    ;;
+  *)
+    echo "Usage: ./themis {start|stop|status|logs}"
+    exit 1
+    ;;
+esac

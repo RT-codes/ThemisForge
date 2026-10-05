@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ThemisForge dev CLI: ./themis start | stop | status | logs
+# ThemisForge CLI: ./themis start | stop | status | logs (development)  install | doctor | service (server)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,8 +58,23 @@ case "${1:-}" in
   logs)
     tail -n 30 -f "$RUN/backend.log" "$RUN/frontend.log"
     ;;
+  install)
+    shift
+    exec "$ROOT/install.sh" "$@"
+    ;;
+  doctor)
+    cd "$ROOT/backend" && uv sync --quiet && exec uv run python -m app.doctor
+    ;;
+  service)
+    case "${2:-}" in
+      status) exec systemctl status themisforge --no-pager ;;
+      logs) exec journalctl -u themisforge -f -n 50 ;;
+      restart | start | stop) exec sudo systemctl "$2" themisforge ;;
+      *) echo "Usage: ./themis service {status|logs|start|stop|restart}"; exit 1 ;;
+    esac
+    ;;
   *)
-    echo "Usage: ./themis {start|stop|status|logs}"
+    echo "Usage: ./themis {start|stop|status|logs|install|doctor|service}"
     exit 1
     ;;
 esac

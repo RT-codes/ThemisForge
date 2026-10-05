@@ -24,7 +24,13 @@ def _set_session_cookie(response: Response, user: User) -> None:
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterIn, response: Response, session: SessionDep) -> User:
-    user = User(email=body.email, name=body.name.strip(), password_hash=await hash_password(body.password))
+    is_first = await session.scalar(select(User.id).limit(1)) is None  # the first account is the operator
+    user = User(
+        email=body.email,
+        name=body.name.strip(),
+        password_hash=await hash_password(body.password),
+        is_admin=is_first,
+    )
     session.add(user)
     try:
         await session.commit()

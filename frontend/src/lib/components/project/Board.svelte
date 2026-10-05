@@ -1,0 +1,142 @@
+<script lang="ts">
+	import type { PropertyDef, Task, TaskStatus } from '$lib/api'
+	import { STATUSES } from '$lib/format'
+	import { dropPosition } from '$lib/kanban'
+	import { cn } from '$lib/utils'
+	import PlusIcon from '@lucide/svelte/icons/plus'
+	import TaskCard from './TaskCard.svelte'
+
+	let {
+		tasks,
+		defs,
+		now,
+		onopen,
+		onadd,
+		onmove,
+	}: {
+		tasks: Task[]
+		defs: PropertyDef[]
+		now: number
+		onopen: (task: Task) => void
+		onadd: (status: TaskStatus) => void
+		onmove: (task: Task, status: TaskStatus, position: number) => void
+	} = $props()
+
+	const byStatus = $derived(
+		Object.fromEntries(
+			STATUSES.map((s) => [s.id, tasks.filter((t) => t.status === s.id).sort((a, b) => a.position - b.position)])
+		) as Record<TaskStatus, Task[]>
+	)
+
+	let dragId = $state<number | null>(null)
+	let overColumn = $state<TaskStatus | null>(null)
+	let overIndex = $state(0)
+
+	const dragged = $derived(tasks.find((t) => t.id === dragId) ?? null)
+
+	function canDrop(status: TaskStatus) {
+		return dragged !== null && status !== 'running' // only the scheduler starts tasks
+	}
+
+	function dragOver(e: DragEvent, status: TaskStatus, column: HTMLElement) {
+		if (!canDrop(status)) return
+		e.preventDefault()
+		overColumn = status
+		const cards = [...column.querySelectorAll<HTMLElement>('[data-card]')].filter((c) => Number(c.dataset.card) !== dragId)
+		let index = cards.length
+		for (let i = 0; i < cards.length; i++) {
+			const box = cards[i].getBoundingClientRect()
+			if (e.clientY < box.top + box.height / 2) {
+				index = i
+				break
+			}
+		}
+		overIndex = index
+	}
+
+	function drop(status: TaskStatus) {
+		const task = dragged
+		const index = overIndex
+		reset()
+		if (!task || !canDrop(status)) return
+		const siblings = byStatus[status].filter((t) => t.id !== task.id)
+		if (status === task.status && byStatus[status].findIndex((t) => t.id === task.id) === index) return // same spot
+		const position = dropPosition(
+			siblings.map((t) => t.position),
+			index
+		)
+		onmove(task, status, position)
+	}
+
+	function reset() {
+		dragId = null
+		overColumn = null
+	}
+</script>
+
+<div class="flex h-full gap-3 overflow-x-auto pb-2">
+	{#each STATUSES as column (column.id)}
+		{@const items = byStatus[column.id]}
+		{@const target = overColumn === column.id}
+		{@const slots = new Map(items.filter((t) => t.id !== dragId).map((t, i) => [t.id, i]))}
+		<section
+			role="list"
+			aria-label={column.label}
+			class={cn(
+				'flex w-72 shrink-0 flex-col rounded-xl border bg-card/40 transition-colors',
+				target && 'border-primary/50 bg-primary/5',
+				dragged && column.id === 'running' && 'opacity-50'
+			)}
+			ondragover={(e) => dragOver(e, column.id, e.currentTarget)}
+			ondragleave={(e) => {
+				if (!e.currentTarget.contains(e.relatedTarget as Node)) overColumn = null
+			}}
+			ondrop={(e) => (e.preventDefault(), drop(column.id))}
+		>
+			<header class="flex h-12 items-center gap-2 px-3 pt-1">
+				<h3 class="text-sm font-medium" title={column.hint}>{column.label}</h3>
+				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">{items.length}</span>
+				{#if column.id !== 'running'}
+					<button
+						type="button"
+						class="ms-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						aria-label={`Add task to ${column.label}`}
+						onclick={() => onadd(column.id)}
+					>
+						<PlusIcon class="size-4" />
+					</button>
+				{/if}
+			</header>
+			<div class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+				{#each items as task (task.id)}
+					{@const slot = slots.get(task.id)}
+					{#if target && slot !== undefined && overIndex === slot}
+						<div class="h-1 shrink-0 rounded-full bg-primary"></div>
+					{/if}
+					<TaskCard
+						{task}
+						{defs}
+						{now}
+						dragging={task.id === dragId}
+						data-card={task.id}
+						onopen={() => onopen(task)}
+						ondragstart={(e: DragEvent) => {
+							dragId = task.id
+							e.dataTransfer?.setData('text/plain', String(task.id))
+							if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+						}}
+						ondragend={reset}
+					/>
+				{/each}
+				{#if target && overIndex >= items.length - (items.some((t) => t.id === dragId) ? 1 : 0)}
+					<div class="h-1 shrink-0 rounded-full bg-primary"></div>
+				{/if}
+				{#if items.length === 0 && !target}
+					<p class="m-auto px-2 py-6 text-center text-xs text-muted-foreground/70">
+						{column.id === 'running' ? 'Cells working on tasks show up here' : 'Drop tasks here'}
+					</p>
+				{/if}
+			</div>
+		</section>
+	{/each}
+</div>

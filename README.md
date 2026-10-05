@@ -1,7 +1,29 @@
 # ThemisForge
 
-- `backend/` - FastAPI (async) API, accounts and auth. Managed with [uv](https://docs.astral.sh/uv/).
+ThemisForge is a self-hosted harness for agent projects. A **project** has a dashboard with a task board
+(Kanban, list and a schedule timeline). **Tasks** can be manual, one-off or recurring (cron), and an always-on
+scheduler runs them around the clock. Each task executes in a short-lived **cell** (a Docker container) that is
+created for the task and removed afterwards.
+
+- `backend/` - FastAPI (async) API, scheduler, cell manager, accounts and auth. SQLite with Alembic migrations.
+  Managed with [uv](https://docs.astral.sh/uv/).
 - `frontend/` - Svelte 5 + TypeScript + Tailwind, shadcn-svelte and Svelte Flow. Built with Vite.
+
+## Install on a server (Debian/Ubuntu VM)
+
+```bash
+git clone <this repo> && cd ThemisForge
+./themis install        # Docker, uv, Node, build, backend/.env, systemd service
+```
+
+Then open http://127.0.0.1:8000 and create your account (the first account is the administrator). See
+`./themis install --help` for `--host`, `--port` and `--https`. Docker, the cell defaults, the time zone and
+provider keys are managed on the **Settings** page; `./themis doctor` checks the machine from the terminal.
+
+How a task runs: the scheduler picks up Ready tasks that are due, starts a cell with the project workspace mounted
+at `/workspace` and the task at `/cell/input.json`, streams its output into the task's History, stores
+`/cell/result.md` as the result, and removes the cell. Recurring tasks go back to Ready for their next occurrence.
+The cell currently runs a placeholder program; agent harnesses plug in here.
 
 ## Run (production-style, one server)
 

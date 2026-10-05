@@ -1,19 +1,35 @@
 ThemisForge - commands (run from the project root)
 
+Development (hot reload)
   ./themis start     start backend (8000) + frontend (5173) with hot reload
   ./themis stop      stop both
   ./themis status    show what is running
   ./themis logs      follow both logs (Ctrl+C to leave)
 
-Then open http://localhost:5173
+  Then open http://localhost:5173
 
-First time only, if ./themis start fails: it installs dependencies itself, so just make sure
-uv and npm are installed.
+  First time only, if ./themis start fails: it installs dependencies itself, so just make sure
+  uv and npm are installed.
 
-Checks:
+Server install (a VM that runs ThemisForge 24/7)
+  ./themis install               install Docker, uv and Node if missing, build, write backend/.env,
+                                 register the systemd service (starts on boot, restarts on crash)
+  ./themis install --help        options: --host, --port, --https, --skip-docker, --no-service, --dry-run
+  ./themis doctor                check Python, secret key, database, Docker and the build
+  ./themis service status        status of the systemd service
+  ./themis service logs          follow its log
+  ./themis service restart       also: start, stop
+
+  After an update (git pull), run ./themis install again: it rebuilds and restarts.
+
+Checks
   cd backend && uv run pytest && uv run ruff check .
   cd frontend && npm run check
 
-Production-style (one server, serves the built frontend on http://localhost:8000):
+Database changes
+  cd backend && uv run alembic revision --autogenerate -m "what changed"   (then review the file)
+  Migrations run automatically when the server starts.
+
+Production-style (one server, serves the built frontend on http://localhost:8000)
   cd frontend && npm run build
   cd backend && uv run uvicorn app.main:app

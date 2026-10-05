@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -5,21 +6,37 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import settings
-from .db import init_db
-from .routers import auth
+from .cells import make_cell_manager
+from .config import DEFAULT_SECRET_KEY, settings
+from .db import SessionLocal
+from .migrate import upgrade_database
+from .routers import auth, projects, system
+from .scheduler import Scheduler
+
+log = logging.getLogger("themis")
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    await init_db()
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if settings.secret_key == DEFAULT_SECRET_KEY:
+        log.warning("THEMIS_SECRET_KEY is the insecure default: set a real one before exposing this server")
+    await upgrade_database()
+    scheduler: Scheduler = app.state.scheduler
+    if settings.scheduler_enabled:
+        await scheduler.start()
     yield
+    await scheduler.stop()
 
 
 app = FastAPI(title="ThemisForge", lifespan=lifespan)
+app.state.scheduler = Scheduler(
+    SessionLocal, make_cell_manager(), interval=settings.scheduler_interval_seconds
+)
 
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
+api.include_router(projects.router)
+api.include_router(system.router)
 
 
 @api.get("/health")

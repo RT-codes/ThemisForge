@@ -1,0 +1,87 @@
+<script lang="ts">
+	import type { PropertyDef, Task } from '$lib/api'
+	import { describeCron, relative } from '$lib/format'
+	import { cn } from '$lib/utils'
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
+	import ClockIcon from '@lucide/svelte/icons/clock'
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
+	import RepeatIcon from '@lucide/svelte/icons/repeat'
+
+	let {
+		task,
+		defs,
+		now,
+		dragging = false,
+		onopen,
+		...rest
+	}: {
+		task: Task
+		defs: PropertyDef[]
+		now: number
+		dragging?: boolean
+		onopen: () => void
+		[key: string]: unknown
+	} = $props()
+
+	const chips = $derived(
+		defs
+			.filter((d) => task.properties[d.key] !== undefined)
+			.map((d) => {
+				const v = task.properties[d.key]
+				return { key: d.key, text: d.type === 'checkbox' ? d.name : d.type === 'select' ? String(v) : `${d.name}: ${v}` }
+			})
+	)
+	const running = $derived(task.status === 'running')
+</script>
+
+<div
+	role="button"
+	tabindex="0"
+	draggable={!running}
+	onclick={onopen}
+	onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onopen())}
+	class={cn(
+		'group w-full cursor-pointer rounded-lg border bg-card p-3 text-start transition-colors select-none hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+		running && 'border-primary/40',
+		dragging && 'opacity-40'
+	)}
+	{...rest}
+>
+	<div class="flex items-start gap-2">
+		<p class="min-w-0 flex-1 text-sm leading-snug font-medium break-words">{task.title}</p>
+		{#if running}
+			<LoaderCircleIcon class="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
+		{:else if task.last_attempt_status === 'failed' && task.status !== 'failed'}
+			<span title="The last attempt failed"><CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" /></span>
+		{/if}
+	</div>
+
+	{#if task.description}
+		<p class="mt-1 line-clamp-2 text-xs text-muted-foreground">{task.description}</p>
+	{/if}
+
+	{#if chips.length}
+		<div class="mt-2 flex flex-wrap gap-1">
+			{#each chips as chip (chip.key)}
+				<span class="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-secondary-foreground">{chip.text}</span>
+			{/each}
+		</div>
+	{/if}
+
+	{#if task.schedule_kind !== 'none'}
+		<div class="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+			{#if task.schedule_kind === 'cron'}
+				<RepeatIcon class="size-3 shrink-0" />
+				<span class="truncate">{describeCron(task.cron)}</span>
+			{:else}
+				<ClockIcon class="size-3 shrink-0" />
+				<span class="truncate">One-off</span>
+			{/if}
+			{#if task.next_run_at && task.status === 'ready'}
+				<span class="ms-auto shrink-0 text-foreground/70">{relative(task.next_run_at, now)}</span>
+			{:else if task.schedule_kind === 'cron' && task.status === 'inbox'}
+				<span class="ms-auto shrink-0">paused</span>
+			{/if}
+		</div>
+	{/if}
+</div>

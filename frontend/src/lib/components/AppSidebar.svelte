@@ -5,8 +5,17 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down'
 	import HouseIcon from '@lucide/svelte/icons/house'
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
+	import PlusIcon from '@lucide/svelte/icons/plus'
+	import SettingsIcon from '@lucide/svelte/icons/settings'
+	import { projects } from '$lib/projects.svelte'
+	import { router } from '$lib/router.svelte'
 	import Logo from './Logo.svelte'
+	import ProjectDialog from './project/ProjectDialog.svelte'
+
+	let createOpen = $state(false)
+	const route = $derived(router.route)
 
 	const user = $derived(auth.user)
 	const initials = $derived(
@@ -32,7 +41,7 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
-						<Sidebar.MenuButton isActive>
+						<Sidebar.MenuButton isActive={route.name === 'home'}>
 							{#snippet child({ props })}
 								<a href="/" {...props}><HouseIcon /><span>Home</span></a>
 							{/snippet}
@@ -41,10 +50,46 @@
 				</Sidebar.Menu>
 			</Sidebar.GroupContent>
 		</Sidebar.Group>
+
+		<Sidebar.Group>
+			<Sidebar.GroupLabel>Projects</Sidebar.GroupLabel>
+			<Sidebar.GroupAction title="New project" onclick={() => (createOpen = true)}>
+				<PlusIcon /><span class="sr-only">New project</span>
+			</Sidebar.GroupAction>
+			<Sidebar.GroupContent>
+				<Sidebar.Menu>
+					{#each projects.list as p (p.id)}
+						<Sidebar.MenuItem>
+							<Sidebar.MenuButton isActive={route.name === 'project' && route.id === p.id}>
+								{#snippet child({ props })}
+									<a href="/projects/{p.id}" {...props}><FolderKanbanIcon /><span>{p.name}</span></a>
+								{/snippet}
+							</Sidebar.MenuButton>
+							{#if (p.task_counts.running ?? 0) > 0}
+								<Sidebar.MenuBadge>{p.task_counts.running}</Sidebar.MenuBadge>
+							{/if}
+						</Sidebar.MenuItem>
+					{:else}
+						{#if projects.loaded}
+							<p class="px-2 py-1.5 text-xs text-sidebar-foreground/60">No projects yet</p>
+						{/if}
+					{/each}
+				</Sidebar.Menu>
+			</Sidebar.GroupContent>
+		</Sidebar.Group>
 	</Sidebar.Content>
 
 	<Sidebar.Footer>
 		<Sidebar.Menu>
+			{#if user?.is_admin}
+				<Sidebar.MenuItem>
+					<Sidebar.MenuButton isActive={route.name === 'settings'}>
+						{#snippet child({ props })}
+							<a href="/settings" {...props}><SettingsIcon /><span>Settings</span></a>
+						{/snippet}
+					</Sidebar.MenuButton>
+				</Sidebar.MenuItem>
+			{/if}
 			<Sidebar.MenuItem>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -74,3 +119,5 @@
 		</Sidebar.Menu>
 	</Sidebar.Footer>
 </Sidebar.Root>
+
+<ProjectDialog bind:open={createOpen} onsaved={async (p) => (await projects.refresh(), router.navigate(`/projects/${p.id}`))} />

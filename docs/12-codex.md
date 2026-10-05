@@ -11,7 +11,7 @@ connecting Codex this way means task runs draw from your plan's Codex allowance,
 
 ## Connect
 
-1. Open your name in the sidebar, then **Connections**.
+1. Open **Settings** in the sidebar. The Codex section is at the top for everyone, and administrators see the rest below.
 2. Press **Connect Codex**. ThemisForge shows a link and a one-time code.
 3. Open the link on any device, sign in with ChatGPT and enter the code.
 

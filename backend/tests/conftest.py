@@ -6,9 +6,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app import db
 from app.cells import FakeCellManager
-from app.config import settings
+from app.config import DEFAULT_SECRET_KEY, settings
 from app.main import app
 from app.scheduler import Scheduler
+
+
+@pytest.fixture(autouse=True)
+def default_secret_key(monkeypatch):
+    """Tests must not depend on whether this machine has a backend/.env with a real key."""
+    monkeypatch.setattr(settings, "secret_key", DEFAULT_SECRET_KEY)
 
 
 @pytest.fixture

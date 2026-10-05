@@ -2,6 +2,7 @@
 	import { api, ApiError, type AppSettings, type DockerStatus, type Secret, type SystemStatus } from '$lib/api'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import CodexConnection from '$lib/components/CodexConnection.svelte'
 	import * as Card from '$lib/components/ui/card/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -118,10 +119,10 @@
 
 <div class="mx-auto w-full max-w-3xl px-6 py-8">
 	<h2 class="text-2xl font-semibold tracking-tight">Settings</h2>
-	<p class="text-sm text-muted-foreground">How this ThemisForge installation runs cells and reaches the outside world.</p>
+	<p class="text-sm text-muted-foreground">Your connections and, for administrators, how this ThemisForge installation runs cells and reaches the outside world.</p>
 
 	{#if !auth.user?.is_admin}
-		<p class="mt-8 rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Only administrators can change settings.</p>
+		<CodexConnection class="mt-8" />
 	{:else if loadError}
 		<p class="mt-8 text-sm text-destructive" role="alert">{loadError}</p>
 	{:else if form}
@@ -236,6 +237,8 @@
 				<Button type="submit" disabled={!dirty || saving}>Save settings</Button>
 			</div>
 		</form>
+
+		<CodexConnection class="mt-6" />
 
 		<Card.Root class="mt-6">
 			<Card.Header>

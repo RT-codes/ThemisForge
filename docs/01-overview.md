@@ -14,7 +14,7 @@ It runs on a machine you own (a small VM is plenty) and is operated from the bro
 
 ## The big idea
 
-- A **project** is one agentic system. You open it from the sidebar and it becomes a dashboard.
+- A **project** is one agentic system. You open it from the sidebar to see its overview, with the task manager as a sub page.
 - A **task** is a unit of work. It can be manual, run once at a set time, or repeat on a schedule.
 - An always-on **scheduler** picks up tasks that are due and starts a **cell** for each one.
 - A **cell** is a throwaway Docker container. It is created for the task, does the work, and is removed.

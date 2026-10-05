@@ -7,6 +7,7 @@
 	import { Separator } from '$lib/components/ui/separator/index.js'
 	import AccessPage from '$lib/pages/AccessPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
+	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
 	import ProjectPage from '$lib/pages/ProjectPage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
 	import { inbox } from '$lib/inbox.svelte'
@@ -34,7 +35,7 @@
 	const route = $derived(router.route)
 	const title = $derived(
 		route.name === 'project'
-			? (projects.get(route.id)?.name ?? 'Project')
+			? (projects.get(route.id)?.name ?? 'Project') + (route.page === 'tasks' ? ' / Tasks' : '')
 			: route.name === 'settings'
 				? 'Settings'
 				: route.name === 'access'
@@ -75,7 +76,11 @@
 					<HomePage />
 				{:else if route.name === 'project'}
 					{#key route.id}
-						<ProjectPage id={route.id} />
+						{#if route.page === 'tasks'}
+							<ProjectPage id={route.id} />
+						{:else}
+							<ProjectOverview id={route.id} />
+						{/if}
 					{/key}
 				{:else if route.name === 'settings'}
 					<SettingsPage />

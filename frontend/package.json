@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/lib/kanban.test.ts src/lib/docs.test.ts",
+    "test": "node --test src/lib/kanban.test.ts src/lib/docs.test.ts src/lib/routes.test.ts src/lib/schedule.test.ts",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },
   "devDependencies": {

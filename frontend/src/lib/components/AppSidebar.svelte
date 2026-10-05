@@ -7,6 +7,8 @@
 	import HouseIcon from '@lucide/svelte/icons/house'
 	import BookOpenIcon from '@lucide/svelte/icons/book-open'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
+	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
+	import ListChecksIcon from '@lucide/svelte/icons/list-checks'
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
@@ -69,14 +71,33 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each projects.list as p (p.id)}
+						{@const open = route.name === 'project' && route.id === p.id}
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={route.name === 'project' && route.id === p.id}>
+							<Sidebar.MenuButton>
 								{#snippet child({ props })}
 									<a href="/projects/{p.id}" {...props}><FolderKanbanIcon /><span>{p.name}</span></a>
 								{/snippet}
 							</Sidebar.MenuButton>
 							{#if (p.task_counts.running ?? 0) > 0}
 								<Sidebar.MenuBadge>{p.task_counts.running}</Sidebar.MenuBadge>
+							{/if}
+							{#if open}
+								<Sidebar.MenuSub>
+									<Sidebar.MenuSubItem>
+										<Sidebar.MenuSubButton isActive={route.page === 'overview'}>
+											{#snippet child({ props })}
+												<a href="/projects/{p.id}" {...props}><LayoutDashboardIcon /><span>Overview</span></a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem>
+										<Sidebar.MenuSubButton isActive={route.page === 'tasks'}>
+											{#snippet child({ props })}
+												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+								</Sidebar.MenuSub>
 							{/if}
 						</Sidebar.MenuItem>
 					{:else}

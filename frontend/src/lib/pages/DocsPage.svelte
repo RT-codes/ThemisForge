@@ -24,15 +24,29 @@
 	let article = $state<HTMLElement | null>(null)
 
 	// after a page change or a link with #heading: scroll to it, or to the top
+	let shownSlug: string | null = null
 	$effect(() => {
 		const hash = router.hash
-		void slug
+		// smooth only when moving around within a page, a new page just appears
+		const behavior: ScrollBehavior = slug === shownSlug && !reducedMotion() ? 'smooth' : 'instant'
+		shownSlug = slug
 		tick().then(() => {
 			const target = hash ? document.getElementById(hash) : null
-			if (target) target.scrollIntoView()
-			else window.scrollTo({ top: 0 })
+			if (target) target.scrollIntoView({ behavior })
+			else window.scrollTo({ top: 0, behavior })
 		})
 	})
+
+	const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+	// "On this page" links: scroll smoothly instead of jumping
+	function jump(e: MouseEvent, id: string) {
+		if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+		e.preventDefault()
+		router.navigate(`/docs/${slug}#${id}`)
+		document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion() ? 'instant' : 'smooth' })
+		activeId = id
+	}
 
 	// highlight the section being read in "On this page"
 	$effect(() => {

@@ -52,14 +52,32 @@ def test_plan_for_codex_and_placeholder():
     cfg = AppSettings(codex_image="my/codex:1")
     plan = plan_for("codex", cfg)
     assert plan and plan.image == "my/codex:1" and plan.uses_codex and plan.writeback == (CODEX_AUTH,)
-    assert "codex exec --json" in plan.script and "dangerously-bypass" in plan.script
+    assert "codex exec" in plan.script and "--json" in plan.script and "dangerously-bypass" in plan.script
+    assert "show_raw_agent_reasoning=true" in plan.script
     assert plan_for("", cfg) is None
+
+
+def test_codex_uses_luna_with_high_effort_by_default():
+    plan = plan_for("codex", AppSettings())
+    assert "-m gpt-6-luna" in plan.script and "model_reasoning_effort=high" in plan.script
+    custom = plan_for("codex", AppSettings(codex_model="gpt-6-sol", codex_reasoning_effort="low"))
+    assert "-m gpt-6-sol" in custom.script and "model_reasoning_effort=low" in custom.script
+
+
+def test_model_name_cannot_inject_shell():
+    import pytest
+    from pydantic import ValidationError
+
+    for bad in ("x; rm -rf /", "$(id)", "a b", "-m", "`id`", "a'b"):
+        with pytest.raises(ValidationError):
+            AppSettings(codex_model=bad)
 
 
 def test_prompt_carries_the_task():
     text = build_prompt("Fix login", "The button is dead.", {"area": "web", "empty": ""})
     assert "# Fix login" in text and "The button is dead." in text and "- area: web" in text
     assert "empty" not in text
+    assert "/run/themis-secrets" in text  # the agent is told to leave credentials alone
 
 
 # ----- rendering codex output -----
@@ -92,10 +110,13 @@ def test_renderer_makes_codex_events_readable():
     )
     assert out.splitlines() == [
         "[codex] session t-1",
+        "",
         "On it.",
+        "",
         "$ printf 'hi' > a.txt",
         "a.txt",
         "[exit 2]",
+        "",
         "[codex] done - 100 tokens in, 7 out",
     ]
     assert r.usage == {"input_tokens": 100, "output_tokens": 7}
@@ -118,6 +139,13 @@ def test_renderer_unescapes_quoted_commands_and_drops_codex_noise():
         + ev(type="item.started", item={"type": "command_execution", "command": cmd})
     )
     assert out == "$ printf 'hi\\n' > a.txt && echo \"x\"\n"
+
+
+def test_renderer_shows_the_agents_thinking():
+    out = CodexRenderer().feed(
+        ev(type="item.completed", item={"type": "reasoning", "text": "**Checking the sums**"})
+    )
+    assert out == "[thinking] **Checking the sums**\n"
 
 
 def test_renderer_keeps_unknown_events_visible():

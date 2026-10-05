@@ -1,3 +1,4 @@
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
@@ -19,6 +20,8 @@ class AppSettings(BaseModel):
     cell_timeout_seconds: int = Field(default=3600, ge=10, le=86_400)
     max_concurrent_cells: int = Field(default=2, ge=1, le=64)
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
+    codex_model: str = "gpt-6-luna"
+    codex_reasoning_effort: Literal["low", "medium", "high"] = "high"
     keep_workspaces_days: int = Field(
         default=7, ge=0, le=3650
     )  # attempt working folders; 0 = delete right away
@@ -38,6 +41,14 @@ class AppSettings(BaseModel):
         v = v.strip()
         if v and not v.startswith(("unix://", "tcp://", "ssh://")):
             raise ValueError("Docker host must start with unix://, tcp:// or ssh://")
+        return v
+
+    @field_validator("codex_model")
+    @classmethod
+    def valid_model(cls, v: str) -> str:
+        v = v.strip()
+        if not v or v.startswith("-") or any(c.isspace() or c in "'\"$`\\;&|<>" for c in v):
+            raise ValueError("Invalid model name")
         return v
 
     @field_validator("cell_image", "codex_image")

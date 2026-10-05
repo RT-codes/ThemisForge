@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { api, type Attempt, type AttemptDetail, type AttemptStatus } from '$lib/api'
 	import { attemptLabel, dateTime, duration } from '$lib/format'
+	import LogView from '$lib/components/LogView.svelte'
+	import { Button } from '$lib/components/ui/button/index.js'
+	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { cn } from '$lib/utils'
+	import Maximize2Icon from '@lucide/svelte/icons/maximize-2'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
@@ -15,6 +19,7 @@
 	let selectedId = $state<number | null>(null)
 	let detail = $state<AttemptDetail | null>(null)
 	let tick = $state(Date.now())
+	let logOpen = $state(false)
 
 	const icons: Record<AttemptStatus, typeof CircleCheckIcon> = {
 		running: LoaderCircleIcon,
@@ -107,8 +112,34 @@
 				<h4 class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
 					Log{detail.exit_code !== null ? ` (exit code ${detail.exit_code})` : ''}
 				</h4>
-				<pre class="max-h-80 min-h-16 overflow-auto rounded-lg border bg-black/40 p-3 font-mono text-xs break-words whitespace-pre-wrap">{detail.log || 'No output yet.'}</pre>
+				<LogView text={detail.log} class="h-80">
+					{#snippet corner()}
+						<Button
+							type="button"
+							variant="secondary"
+							size="icon-sm"
+							aria-label="Enlarge the log"
+							title="Enlarge"
+							onclick={() => (logOpen = true)}
+							class="size-7 opacity-60 backdrop-blur transition-all duration-200 hover:scale-110 hover:opacity-100"
+						>
+							<Maximize2Icon class="size-3.5" />
+						</Button>
+					{/snippet}
+				</LogView>
 			</div>
 		{/if}
 	</div>
 {/if}
+
+<Dialog.Root bind:open={logOpen}>
+	<Dialog.Content class="flex h-[85vh] flex-col gap-3 duration-300 ease-out sm:max-w-5xl">
+		<Dialog.Header>
+			<Dialog.Title>Log{detail ? ` - ${attemptLabel[detail.status].toLowerCase()}` : ''}</Dialog.Title>
+			<Dialog.Description>
+				{detail ? dateTime(detail.started_at) : ''}{detail && detail.exit_code !== null ? ` · exit code ${detail.exit_code}` : ''}
+			</Dialog.Description>
+		</Dialog.Header>
+		<LogView text={detail?.log ?? ''} class="min-h-0 flex-1" />
+	</Dialog.Content>
+</Dialog.Root>

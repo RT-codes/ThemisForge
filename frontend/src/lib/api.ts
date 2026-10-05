@@ -97,6 +97,8 @@ export interface AppSettings {
   cell_timeout_seconds: number
   max_concurrent_cells: number
   codex_image: string
+  codex_model: string
+  codex_reasoning_effort: 'low' | 'medium' | 'high'
   keep_workspaces_days: number
 }
 

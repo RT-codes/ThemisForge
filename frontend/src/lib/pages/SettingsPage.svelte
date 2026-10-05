@@ -214,6 +214,19 @@
 						<Input id="codex-image" bind:value={form.codex_image} class="font-mono" required />
 						<p class="text-xs text-muted-foreground">Used by tasks that run with a Codex agent. Build the default with <code>./themis build-images</code>.</p>
 					</div>
+					<div class="grid gap-2">
+						<Label for="codex-model">Codex model</Label>
+						<Input id="codex-model" bind:value={form.codex_model} class="font-mono" required />
+					</div>
+					<div class="grid gap-2">
+						<Label for="codex-effort">Reasoning effort</Label>
+						<Select.Root type="single" bind:value={form.codex_reasoning_effort}>
+							<Select.Trigger id="codex-effort" class="w-full capitalize">{form.codex_reasoning_effort}</Select.Trigger>
+							<Select.Content>
+								{#each ['low', 'medium', 'high'] as e (e)}<Select.Item value={e} label={e} class="capitalize">{e}</Select.Item>{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
 					<div class="grid gap-2 sm:col-span-2">
 						<Label for="keep-days">Keep working folders for (days)</Label>
 						<Input id="keep-days" type="number" min="0" max="3650" bind:value={form.keep_workspaces_days} required />

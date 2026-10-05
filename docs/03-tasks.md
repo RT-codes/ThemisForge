@@ -6,9 +6,11 @@ summary: The project dashboard, task statuses, custom properties and the board.
 
 # Projects and tasks
 
-## The project dashboard
+## The project pages
 
-Every project opens as a dashboard with a header and three views of the **same** tasks:
+Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview shows how many
+tasks are ready and running, and how many are scheduled for today and the next 7 days. **Tasks** (at
+`/projects/<id>/tasks`) is the task manager, with a header and three views of the **same** tasks:
 
 - **Board**: columns by status, with drag and drop.
 - **List**: a table, handy when there are many tasks.

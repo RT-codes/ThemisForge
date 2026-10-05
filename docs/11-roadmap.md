@@ -8,7 +8,7 @@ summary: What is built, what comes next and what is deliberately left for later.
 
 ## Built
 
-- Projects with a dashboard: **board**, **list** and **schedule timeline**.
+- Projects with an overview page and a task manager: **board**, **list** and **schedule timeline**.
 - Tasks with custom properties, manual, one-off and recurring schedules and attempt history.
 - An always-on **scheduler** with a concurrency limit, cancel, and recovery after restarts.
 - **Cells** in Docker with a clear contract (`/workspace`, `/cell/input.json`, `/cell/result.md`).
@@ -27,6 +27,8 @@ summary: What is built, what comes next and what is deliberately left for later.
 5. **Live updates** instead of polling.
 6. **Password reset.**
 7. **Workflows.** A visual canvas that creates and updates tasks.
+8. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,
+   week or month filter.
 
 ## Later
 

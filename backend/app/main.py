@@ -65,5 +65,6 @@ if _dist.is_dir():
             raise HTTPException(404)
         candidate = (_dist / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(_dist.resolve()):
-            return FileResponse(candidate)
-        return FileResponse(_dist / "index.html")
+            return FileResponse(candidate, headers={"Cache-Control": "no-cache"} if path == "favicon.svg" else None)
+        # index.html names the hashed asset files, so it must never be served from a browser cache
+        return FileResponse(_dist / "index.html", headers={"Cache-Control": "no-cache"})

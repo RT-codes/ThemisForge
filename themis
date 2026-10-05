@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ThemisForge CLI: ./themis start | stop | status | logs (development)  install | doctor | service (server)
+# ThemisForge CLI: ./themis start | build | stop | status | logs (development)  install | doctor | service (server)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,6 +8,22 @@ mkdir -p "$RUN"
 
 is_running() {
   [[ -f "$RUN/$1.pid" ]] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null
+}
+
+# Always leave frontend/dist fresh: port 8000 serves it, and a stale build is the classic "my change is not showing".
+build_frontend() {
+  local fe="$ROOT/frontend"
+  if [[ ! -d "$fe/node_modules" || "$fe/package-lock.json" -nt "$fe/node_modules/.package-lock.json" ]]; then
+    echo "Installing frontend dependencies..."
+    (cd "$fe" && npm install --silent)
+  fi
+  echo "Building frontend..."
+  if ! (cd "$fe" && npm run build --silent >"$RUN/build.log" 2>&1); then
+    echo "Frontend build FAILED. Output:" >&2
+    cat "$RUN/build.log" >&2
+    exit 1
+  fi
+  echo "Frontend built ($(date +%H:%M:%S))"
 }
 
 start_one() { # name, dir, command...
@@ -37,13 +53,16 @@ stop_one() {
 }
 
 case "${1:-}" in
+  build)
+    build_frontend
+    ;;
   start)
     (cd "$ROOT/backend" && uv sync --quiet)
-    [[ -d "$ROOT/frontend/node_modules" ]] || (cd "$ROOT/frontend" && npm install --silent)
+    build_frontend
     start_one backend backend uv run uvicorn app.main:app --reload --port 8000
     start_one frontend frontend npm run dev -- --port 5173 --strictPort
     echo
-    echo "Open http://localhost:5173  (API on http://localhost:8000)"
+    echo "Open http://localhost:5173 (live reload) or http://localhost:8000 (the fresh build)"
     echo "Stop with: ./themis stop   Logs: ./themis logs"
     ;;
   stop)
@@ -74,7 +93,7 @@ case "${1:-}" in
     esac
     ;;
   *)
-    echo "Usage: ./themis {start|stop|status|logs|install|doctor|service}"
+    echo "Usage: ./themis {start|build|stop|status|logs|install|doctor|service}"
     exit 1
     ;;
 esac

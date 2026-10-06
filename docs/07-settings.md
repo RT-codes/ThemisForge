@@ -9,12 +9,12 @@ summary: Docker connection, resource budget, cell defaults, time zone and stored
 The **Settings** page has two parts. **Your account** holds your own connections (see [Connecting Codex](/docs/codex)) and
 everyone can use it. **Administration** controls how this installation runs, and only the administrator sees it.
 
-Every section folds away, and a folded section says in one line what is inside. ThemisForge remembers which ones you
+Every section folds away, and a folded section says in one line what is inside. Themis remembers which ones you
 left open. Change something and a bar slides in at the bottom with **Discard** and **Save changes**.
 
 ## Docker
 
-Cells are Docker containers, so ThemisForge needs to reach a Docker engine. The Docker section runs a live check and
+Cells are Docker containers, so Themis needs to reach a Docker engine. The Docker section runs a live check and
 reports one of three things:
 
 - **Connected**: shows the Docker version, the host, the operating system, CPUs and memory.
@@ -34,16 +34,16 @@ Leave **Docker host** empty to use the Docker on this machine. To use another ma
 | Unix socket | `unix:///var/run/docker.sock` |
 
 Press **Test** to check a value before saving it. This is how a project can run its cells on a different, stronger
-machine than the one hosting ThemisForge. Note that cell workspaces are mounted from the ThemisForge machine, so
+machine than the one hosting Themis. Note that cell workspaces are mounted from the Themis machine, so
 a remote host needs the same paths available.
 
 > [!WARNING]
-> Access to Docker is effectively root access on that machine. Point ThemisForge only at hosts you trust.
+> Access to Docker is effectively root access on that machine. Point Themis only at hosts you trust.
 
 ## Resources
 
 How much of the machine all running cells together may use. The section shows what the machine has, as the Docker daemon
-sees it (which can be another machine), and the free space on the drive ThemisForge keeps its data on. Below that you set
+sees it (which can be another machine), and the free space on the drive Themis keeps its data on. Below that you set
 the **budget**: CPUs and memory for all cells together.
 
 - The bars show how much of the machine the budget takes. A budget larger than the machine is marked, because cells
@@ -68,7 +68,7 @@ if it is inside one approved here, and an approved folder is read only unless yo
 
 - Everything inside an approved folder is covered, including sub folders. Approving the whole disk (`/`) is not allowed.
 - A link that leads out of an approved folder does not count: the real location is what is checked.
-- ThemisForge's own data folder, database and configuration can never be mounted, nor a folder that contains them.
+- Themis's own data folder, database and configuration can never be mounted, nor a folder that contains them.
 - Taking an approval away does not delete anything. Volumes that relied on it are marked in the project, and runs that
   would use them fail with a note until you approve the folder again.
 

@@ -1,6 +1,6 @@
 ---
 title: Workflows
-group: Using ThemisForge
+group: Using Themis
 summary: Draw a workflow, test it, and look back at every run, node by node.
 ---
 

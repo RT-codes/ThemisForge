@@ -155,6 +155,11 @@
 		}
 	}
 
+	// the list address on its own opens the first agent, so the page always shows an agent to work on
+	$effect(() => {
+		if (loaded && !isNew && agentId === null && agents.length > 0) router.replace(`/projects/${projectId}/agents/${agents[0].id}`)
+	})
+
 	const harness = $derived(harnesses.find((h) => h.id === draft.harness))
 	const isAdmin = $derived(!!auth.user?.is_admin)
 
@@ -185,13 +190,21 @@
 			<h2 class="text-2xl font-semibold tracking-tight">Agents</h2>
 			<p class="mt-1 text-sm text-muted-foreground">Who does the work in this project: what each one is for, how it runs, and what it can reach.</p>
 		</div>
-		<Button onclick={() => router.navigate(`/projects/${projectId}/agents/new`)}><PlusIcon /> New agent</Button>
+		{#if !isNew}<Button onclick={() => router.navigate(`/projects/${projectId}/agents/new`)}><PlusIcon /> New agent</Button>{/if}
 	</div>
 
 	{#if loadError}
 		<p class="mt-6 text-sm text-destructive" role="alert">{loadError}</p>
 	{:else if !loaded}
 		<p class="mt-6 text-sm text-muted-foreground">Loading...</p>
+	{:else if agents.length === 0 && !isNew}
+		<div class="mt-6 rounded-xl border border-dashed px-6 py-14 text-center">
+			<BotIcon class="mx-auto size-8 text-muted-foreground" />
+			<p class="mt-3 text-sm font-medium">No agents in this project yet</p>
+			<p class="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+				An agent has a name, a role, instructions and a harness such as Codex. Tasks and workflows pick one to do the work. Press <span class="font-medium text-foreground">New agent</span> to make the first one.
+			</p>
+		</div>
 	{:else}
 		<div class="mt-6 grid items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
 			<nav aria-label="Agents" class="grid gap-1.5">
@@ -218,15 +231,8 @@
 			{#if !editing}
 				<div class="rounded-xl border border-dashed px-6 py-14 text-center">
 					<BotIcon class="mx-auto size-8 text-muted-foreground" />
-					{#if agents.length === 0}
-						<p class="mt-3 text-sm font-medium">No agents in this project yet</p>
-						<p class="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
-							An agent has a name, a role, instructions and a harness such as Codex. Workflows and tasks pick one to do the work.
-						</p>
-					{:else}
-						<p class="mt-3 text-sm font-medium">Pick an agent to edit it</p>
-					{/if}
-					<Button class="mt-4" onclick={() => router.navigate(`/projects/${projectId}/agents/new`)}><PlusIcon /> New agent</Button>
+					<p class="mt-3 text-sm font-medium">That agent does not exist</p>
+					<p class="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">It may have been deleted. Pick another one from the list.</p>
 				</div>
 			{:else}
 				<form onsubmit={save} class="grid gap-4">

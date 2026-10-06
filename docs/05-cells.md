@@ -1,12 +1,12 @@
 ---
 title: Cells and workspaces
-group: Using ThemisForge
+group: Using Themis
 summary: What a cell is, what it can see, where files and results end up.
 ---
 
 # Cells and workspaces
 
-A **cell** is the short-lived container a task runs in. ThemisForge creates one for every attempt, streams its output
+A **cell** is the short-lived container a task runs in. Themis creates one for every attempt, streams its output
 into the task history, collects its result, and removes it. Nothing persists inside a cell, which is the point:
 every attempt starts clean, and a misbehaving task cannot leave a mess behind.
 
@@ -30,14 +30,14 @@ The cell also receives the environment variables `THEMIS_TASK_ID` and `THEMIS_TA
 
 ## Where files live on the server
 
-Under the ThemisForge data directory (`data/` next to the code by default, change it with `THEMIS_DATA_DIR`):
+Under the Themis data directory (`data/` next to the code by default, change it with `THEMIS_DATA_DIR`):
 
 ```text
 data/projects/<project id>/workspaces/<attempt>/ private working folder, mounted at /workspace
 data/projects/<project id>/attempts/<attempt>/   input.json, prompt.md and result.md for one attempt
 ```
 
-Cells run as your ThemisForge user, so files they create are owned by you and easy to inspect or back up.
+Cells run as your Themis user, so files they create are owned by you and easy to inspect or back up.
 Deleting a project removes its database records but **keeps** these folders. Working folders of finished attempts
 are deleted automatically after **Settings, Cells, Keep working folders for** days; keep what matters in the
 result. Shared folders are the exception: they live outside the working folder and outlive every run.
@@ -50,7 +50,7 @@ mounted inside the working folder at `/workspace/NAME` and keeps its files betwe
 
 | Kind | What it is |
 | --- | --- |
-| **Managed** | A folder ThemisForge makes for you, at `data/projects/<project id>/volumes/<name>`. You can open it on the server like any other folder. |
+| **Managed** | A folder Themis makes for you, at `data/projects/<project id>/volumes/<name>`. You can open it on the server like any other folder. |
 | **A folder on this machine** | An existing folder, such as a notes folder or a checkout. It must be inside a folder an administrator approved under **Settings, Mount roots**. |
 
 Each folder has an **access** setting (read and write, or read only) and an agent can ask for less than that. A read-only
@@ -102,7 +102,7 @@ that says so, instead of waiting forever.
 ## Stopping a cell
 
 - **Cancel run** on the task stops the container immediately and records the attempt as cancelled.
-- Shutting ThemisForge down stops running cells. On the next start, leftover containers (those labelled
+- Shutting Themis down stops running cells. On the next start, leftover containers (those labelled
   `themis.cell`) are removed automatically.
 
 ## What runs today

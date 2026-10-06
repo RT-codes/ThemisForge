@@ -1,12 +1,12 @@
 ---
-title: What is ThemisForge
+title: What is Themis
 group: Introduction
 summary: A self-hosted harness that runs agent work around the clock, organised into projects and tasks.
 ---
 
-# What is ThemisForge
+# What is Themis
 
-ThemisForge is a **self-hosted control room for agent projects**. You describe work as *tasks*, give them
+Themis is a **self-hosted control room for agent projects**. You describe work as *tasks*, give them
 schedules, and an always-on scheduler runs them for you, day and night, each one inside a fresh, isolated
 container.
 
@@ -45,7 +45,7 @@ See [Projects and tasks](/docs/tasks) and [Scheduling](/docs/scheduling).
 
 ## What works today, and what is next
 
-ThemisForge currently runs a **placeholder program** inside each cell: it reads the task, prints it, and writes a
+Themis currently runs a **placeholder program** inside each cell: it reads the task, prints it, and writes a
 result file. That is deliberate. The whole pipeline (projects, boards, schedules, cells, logs, results, access
 control, installation) is in place, and agent harnesses plug into exactly that spot.
 

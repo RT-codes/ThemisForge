@@ -16,7 +16,7 @@
 		<div class="mb-8 flex flex-col items-center gap-3 text-center">
 			<Logo size="lg" />
 			<div>
-				<h1 class="text-2xl font-semibold tracking-tight">ThemisForge</h1>
+				<h1 class="text-2xl font-semibold tracking-tight">Themis</h1>
 				<p class="text-sm text-muted-foreground">Forge your flows with clarity.</p>
 			</div>
 		</div>

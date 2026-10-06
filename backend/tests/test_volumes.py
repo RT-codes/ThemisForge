@@ -78,7 +78,7 @@ def test_themisforges_own_data_and_configuration_can_never_be_mounted(tmp_path, 
         BACKEND_DIR,
         BACKEND_DIR.parent,
     ):  # the data, the config and anything containing them
-        with pytest.raises(MountError, match="ThemisForge's own"):
+        with pytest.raises(MountError, match="Themis's own"):
             host_target(str(protected), everything + roots(tmp_path))
 
 

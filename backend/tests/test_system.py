@@ -104,7 +104,7 @@ async def test_system_status_reports_scheduler(client, scheduler):
 
 
 async def test_api_reference_is_under_api_so_docs_is_free_for_the_frontend(client):
-    assert (await client.get("/api/openapi.json")).json()["info"]["title"] == "ThemisForge"
+    assert (await client.get("/api/openapi.json")).json()["info"]["title"] == "Themis"
     assert "swagger" in (await client.get("/api/docs")).text.lower()
     # /docs is not an API route: it must not be answered by the backend's own Swagger page
     page = await client.get("/docs")

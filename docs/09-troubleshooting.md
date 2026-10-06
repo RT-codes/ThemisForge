@@ -10,7 +10,7 @@ Start with `./themis doctor`. It checks the most common causes and tells you wha
 
 ## Docker says "permission denied"
 
-The user that runs ThemisForge is not allowed to talk to Docker. The installer adds it to the `docker` group and the
+The user that runs Themis is not allowed to talk to Docker. The installer adds it to the `docker` group and the
 service picks the group up automatically. If you changed this by hand:
 
 ```bash
@@ -53,7 +53,7 @@ By design. Missed occurrences are skipped, and the next one is computed after th
 
 ## A one-off task shows Failed after a restart
 
-It was running when the server stopped. ThemisForge does not repeat it automatically because that could repeat side
+It was running when the server stopped. Themis does not repeat it automatically because that could repeat side
 effects. Press **Run now** to try again.
 
 ## I lost an invite link

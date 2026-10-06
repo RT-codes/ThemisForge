@@ -120,9 +120,9 @@
 				<div class="grid gap-1.5">
 					<Label for="folder-kind">Where it lives</Label>
 					<Select.Root type="single" bind:value={kind}>
-						<Select.Trigger id="folder-kind" class="w-full">{kind === 'managed' ? 'Managed by ThemisForge' : 'A folder on this machine'}</Select.Trigger>
+						<Select.Trigger id="folder-kind" class="w-full">{kind === 'managed' ? 'Managed by Themis' : 'A folder on this machine'}</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="managed" label="Managed by ThemisForge">Managed by ThemisForge</Select.Item>
+							<Select.Item value="managed" label="Managed by Themis">Managed by Themis</Select.Item>
 							<Select.Item value="host" label="A folder on this machine">A folder on this machine</Select.Item>
 						</Select.Content>
 					</Select.Root>
@@ -168,7 +168,7 @@
 					<div class="min-w-0 flex-1 basis-48">
 						<p class="truncate font-mono text-sm font-medium">/workspace/{v.name}</p>
 						<p class={v.problem ? 'truncate text-xs text-destructive' : 'truncate text-xs text-muted-foreground'}>
-							{#if v.problem}{v.problem}{:else if v.kind === 'host'}{v.host_path}{:else if v.is_default}In every cell of this project{:else}Managed by ThemisForge{/if}
+							{#if v.problem}{v.problem}{:else if v.kind === 'host'}{v.host_path}{:else if v.is_default}In every cell of this project{:else}Managed by Themis{/if}
 						</p>
 					</div>
 					{#if v.mode === 'rw' && !v.problem}

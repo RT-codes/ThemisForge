@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
+	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
@@ -66,6 +67,7 @@
 		</a>
 
 		<WorkflowLibrary projectId={id} {now} />
+		<AgentsSection projectId={id} />
 		<VolumesSection projectId={id} />
 		<SkillsSection projectId={id} />
 		<ToolsSection projectId={id} />

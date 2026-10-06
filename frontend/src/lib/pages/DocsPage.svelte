@@ -150,7 +150,7 @@
 	<header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur sm:px-6">
 		<a href="/docs" class="flex items-center gap-2.5">
 			<Logo />
-			<span class="font-semibold tracking-tight">ThemisForge</span>
+			<span class="font-semibold tracking-tight">Themis</span>
 			<span class="text-sm text-muted-foreground">Docs</span>
 		</a>
 		<Button class="ms-auto" size="sm" onclick={() => router.navigate('/')}>Sign in</Button>

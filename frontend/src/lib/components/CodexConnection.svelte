@@ -59,7 +59,7 @@
 			{:else if !codex.cli_installed}
 				<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
 					<span class="font-medium text-yellow-300">The Codex CLI was not found on the server.</span>
-					Install it, or set <code>THEMIS_CODEX_BIN</code> to its location, then restart ThemisForge.
+					Install it, or set <code>THEMIS_CODEX_BIN</code> to its location, then restart Themis.
 				</p>
 			{/if}
 
@@ -92,7 +92,7 @@
 					<Button type="button" variant="outline" class="ms-auto" disabled={busy} onclick={() => run(api.codexDisconnect)}>Disconnect</Button>
 				</div>
 				<p class="text-xs text-muted-foreground">
-					Disconnecting removes the login from ThemisForge. To also revoke it at OpenAI, sign out of Codex in your ChatGPT security settings.
+					Disconnecting removes the login from Themis. To also revoke it at OpenAI, sign out of Codex in your ChatGPT security settings.
 				</p>
 			{:else}
 				{#if codex.needs_reconnect}

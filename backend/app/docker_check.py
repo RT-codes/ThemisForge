@@ -44,7 +44,7 @@ async def run_command(args: list[str], env: dict[str, str], timeout: float) -> t
 def _hint(error: str) -> str | None:
     low = error.lower()
     if "permission denied" in low:
-        return "The ThemisForge user cannot use Docker. Add it to the 'docker' group and restart the service."
+        return "The Themis user cannot use Docker. Add it to the 'docker' group and restart the service."
     if "cannot connect" in low or "is the docker daemon running" in low or "no such file" in low:
         return "The Docker daemon is not reachable. Start it (systemctl start docker) or fix the Docker host."
     return None

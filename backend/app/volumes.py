@@ -71,7 +71,7 @@ def host_target(path: str, roots: list[MountRoot]) -> tuple[Path, bool]:
     if not real.is_dir():
         raise MountError(f"{path} is not a folder")
     if any(_overlaps(real, p) for p in _protected()):
-        raise MountError("That folder is, or contains, ThemisForge's own data or configuration")
+        raise MountError("That folder is, or contains, Themis's own data or configuration")
     for root in roots:
         base = Path(root.path).resolve()
         if real == base or base in real.parents:

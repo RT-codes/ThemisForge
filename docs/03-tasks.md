@@ -1,6 +1,6 @@
 ---
 title: Projects and tasks
-group: Using ThemisForge
+group: Using Themis
 summary: The project dashboard, task statuses, custom properties and the board.
 ---
 

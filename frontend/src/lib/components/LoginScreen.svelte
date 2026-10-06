@@ -45,9 +45,9 @@
 	}
 
 	const titles = {
-		login: ['Welcome back', 'Sign in to continue to ThemisForge.'],
+		login: ['Welcome back', 'Sign in to continue to Themis.'],
 		setup: ['Create the administrator account', 'This is the first account. Everyone else joins by invitation.'],
-		request: ['Request access', 'ThemisForge is invite only. Tell the administrator who you are and why.'],
+		request: ['Request access', 'Themis is invite only. Tell the administrator who you are and why.'],
 	} as const
 </script>
 

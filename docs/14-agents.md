@@ -1,6 +1,6 @@
 ---
 title: Agents
-group: Using ThemisForge
+group: Using Themis
 summary: Configure who does the work in a project: role, instructions, harness, model, cell and folders.
 ---
 
@@ -9,8 +9,10 @@ summary: Configure who does the work in a project: role, instructions, harness, 
 An **agent** is a configured worker of one project. It says who the worker is, what it was told, how it runs and what it
 can reach, so a task or a workflow step only has to say *which* agent should do it.
 
-Open **Agents** under a project in the sidebar. The list is on the left; pick an agent to edit it, or press
-**New agent**. A project starts with none, and can have as many as it needs.
+The project's **overview** also lists its agents under **Agents**: click one to open it straight in the editor.
+
+Open **Agents** under a project in the sidebar. The list is on the left and the first agent is already open on the right; pick another
+to edit it, or press **New agent** at the top. A project starts with none, and can have as many as it needs.
 
 ## What an agent has
 

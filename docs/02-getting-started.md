@@ -16,7 +16,7 @@ cd ThemisForge
 ./themis install
 ```
 
-This installs what is missing (Docker, uv, Node), builds the app, creates your configuration and starts ThemisForge
+This installs what is missing (Docker, uv, Node), builds the app, creates your configuration and starts Themis
 as a service. Details and options are in [Install and operations](/docs/operations).
 
 Just trying it on your own computer? Run `./themis start` instead for a development setup with hot reload, then open

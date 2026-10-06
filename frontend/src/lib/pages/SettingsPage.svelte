@@ -206,7 +206,7 @@
 					<SettingsSection
 						id="docker"
 						title="Docker"
-						description="Cells are Docker containers, so ThemisForge needs to reach a Docker engine."
+						description="Cells are Docker containers, so Themis needs to reach a Docker engine."
 						summary={dockerSummary}
 						status={docker ? (docker.ok ? 'ok' : 'warn') : null}
 						forceOpen={!!docker && !docker.ok}
@@ -288,7 +288,7 @@
 							)}
 						</div>
 						<p class="-mt-2 text-xs text-muted-foreground">
-							Docker reports the CPUs and memory (it can be another machine). The disk is the one ThemisForge keeps its data on.
+							Docker reports the CPUs and memory (it can be another machine). The disk is the one Themis keeps its data on.
 						</p>
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="grid gap-2">
@@ -399,7 +399,7 @@
 							<Button type="button" variant="outline" disabled={!newRoot.trim()} onclick={addRoot}>Approve folder</Button>
 						</div>
 						<p class="text-xs text-muted-foreground">
-							Projects then add these as shared folders. ThemisForge's own data and configuration can never be mounted, and a link that leads out of an approved folder does not count.
+							Projects then add these as shared folders. Themis's own data and configuration can never be mounted, and a link that leads out of an approved folder does not count.
 						</p>
 					</SettingsSection>
 

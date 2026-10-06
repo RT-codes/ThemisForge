@@ -23,7 +23,7 @@ The installer is safe to run again at any time. It:
 3. builds the backend and the frontend,
 4. writes `backend/.env` with a freshly generated **secret key** (and never overwrites an existing one),
 5. registers a **systemd service** that starts on boot and restarts if it crashes,
-6. waits until ThemisForge answers, then runs `./themis doctor`.
+6. waits until Themis answers, then runs `./themis doctor`.
 
 ### Options
 
@@ -31,7 +31,7 @@ The installer is safe to run again at any time. It:
 | --- | --- |
 | `--host ADDRESS` | Address to listen on. Default `127.0.0.1` (this machine only). Use `0.0.0.0` for your network. |
 | `--port N` | Port to listen on. Default `8000`. |
-| `--https` | You serve ThemisForge over HTTPS: enables secure session cookies. |
+| `--https` | You serve Themis over HTTPS: enables secure session cookies. |
 | `--skip-docker` | Do not install Docker (you use an existing one, or a remote Docker host). |
 | `--no-service` | Build and configure only; do not create the systemd service. |
 | `--dry-run` | Print everything the installer would do without changing anything. |
@@ -77,7 +77,7 @@ Three things hold all state:
 - `data/`: project workspaces and per-attempt files,
 - `backend/.env`: **without the secret key, stored keys cannot be decrypted.**
 
-Before every upgrade that changes the database, ThemisForge saves a copy in `backend/backups/` (the latest five are
+Before every upgrade that changes the database, Themis saves a copy in `backend/backups/` (the latest five are
 kept), so a migration can never be the only copy of your data.
 
 For a consistent copy of the database while the server runs, use `sqlite3 backend/themisforge.db ".backup backup.db"`,
@@ -94,9 +94,9 @@ git pull
 This rebuilds and restarts the service. Database migrations run automatically when the server starts, and databases
 from before migrations existed are upgraded in place.
 
-## Exposing ThemisForge safely
+## Exposing Themis safely
 
-By default ThemisForge listens on `127.0.0.1`, so only the machine itself can reach it. To use it from elsewhere:
+By default Themis listens on `127.0.0.1`, so only the machine itself can reach it. To use it from elsewhere:
 
 - **Best:** keep it on `127.0.0.1` and put a reverse proxy with HTTPS in front. With Caddy that is three lines:
 
@@ -110,7 +110,7 @@ By default ThemisForge listens on `127.0.0.1`, so only the machine itself can re
 - **On a trusted private network only:** install with `--host 0.0.0.0` and restrict access with a firewall.
 
 > [!WARNING]
-> Membership of the `docker` group is equivalent to root on that machine. ThemisForge needs it to start cells, so treat
+> Membership of the `docker` group is equivalent to root on that machine. Themis needs it to start cells, so treat
 > the server and its administrator account accordingly, and keep access invite only.
 
 ## Removing the service

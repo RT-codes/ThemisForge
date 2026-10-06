@@ -1,12 +1,12 @@
 ---
 title: Scheduling
-group: Using ThemisForge
+group: Using Themis
 summary: Manual, one-off and repeating schedules, time zones and what happens when things are late.
 ---
 
 # Scheduling
 
-ThemisForge has one always-on scheduler. About every three seconds it looks for tasks that are **Ready** and **due**,
+Themis has one always-on scheduler. About every three seconds it looks for tasks that are **Ready** and **due**,
 and starts a cell for each, as long as it fits the [resource budget](/docs/settings#resources).
 
 ## Three kinds of schedule
@@ -53,7 +53,7 @@ Resuming does not replay what was missed: the next occurrence is computed from t
 ## Late and missed runs
 
 - **The resource budget is full**: a due task waits and starts as soon as there is room. Tasks without a schedule go first, then the one that became due earliest. Waiting is strictly in that order, so a big cell is never overtaken by small ones behind it.
-- **ThemisForge was down**: occurrences that passed while it was off are **skipped**, not replayed. After the restart
+- **Themis was down**: occurrences that passed while it was off are **skipped**, not replayed. After the restart
   the next occurrence is computed from the current time.
 - **A one-off task whose time has passed** runs as soon as it is Ready.
 
@@ -68,7 +68,7 @@ The **Schedule** tab of a project shows upcoming runs for the next 24 hours or 7
 tasks are drawn in orange and one-off tasks in blue. The left edge is *now*, and the *Up next* list shows the nearest
 runs. Very frequent schedules are drawn with thinner marks so they stay readable.
 
-## When ThemisForge restarts
+## When Themis restarts
 
 If the server restarts while a task is running, the cell is removed and the attempt is closed as failed. A **recurring**
 task then simply waits for its next occurrence. A **one-off** task is marked **Failed** rather than started again

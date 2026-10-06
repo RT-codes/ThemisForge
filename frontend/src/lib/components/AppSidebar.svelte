@@ -55,7 +55,7 @@
 	<Sidebar.Header>
 		<div class="flex items-center gap-2.5 px-2 py-1.5">
 			<Logo />
-			<span class="text-base font-semibold tracking-tight">ThemisForge</span>
+			<span class="text-base font-semibold tracking-tight">Themis</span>
 		</div>
 	</Sidebar.Header>
 

@@ -6,12 +6,12 @@ summary: How the pieces fit together, the data model and the security model.
 
 # Architecture
 
-ThemisForge is deliberately small: **one server process** that does everything, plus Docker for the cells.
+Themis is deliberately small: **one server process** that does everything, plus Docker for the cells.
 
 <div class="docs-stack">
 <div class="box"><b>Browser</b><span>Svelte web app: dashboard, board, settings, docs</span></div>
 <div class="link">HTTPS and the /api routes</div>
-<div class="box primary"><b>ThemisForge server (FastAPI, Python)</b><span>REST API &middot; scheduler loop &middot; cell manager &middot; migrations</span></div>
+<div class="box primary"><b>Themis server (FastAPI, Python)</b><span>REST API &middot; scheduler loop &middot; cell manager &middot; migrations</span></div>
 <div class="split">
 <div class="box"><b>SQLite</b><span>projects, tasks, attempts, accounts, keys</span></div>
 <div class="box"><b>Docker engine</b><span>local socket or a remote host</span></div>

@@ -1,6 +1,6 @@
 ---
 title: Connecting Codex
-group: Using ThemisForge
+group: Using Themis
 summary: Sign in with ChatGPT once so tasks use your plan's Codex usage, and how the login is kept safe.
 ---
 
@@ -12,7 +12,7 @@ connecting Codex this way means task runs draw from your plan's Codex allowance,
 ## Connect
 
 1. Open **Settings** in the sidebar. The Codex section is at the top for everyone, and administrators see the rest below.
-2. Press **Connect Codex**. ThemisForge shows a link and a one-time code.
+2. Press **Connect Codex**. Themis shows a link and a one-time code.
 3. Open the link on any device, sign in with ChatGPT and enter the code.
 
 You do this **once**. The login is stored, refreshed automatically and survives restarts, reloads and rebuilds. You only
@@ -25,7 +25,7 @@ Every user connects their own Codex. Nobody else, administrators included, can s
 
 - The **Codex CLI** installed on the server. If it is not on `PATH`, set `THEMIS_CODEX_BIN` to its location
   (on Windows, for example `codex.cmd`).
-- A real `THEMIS_SECRET_KEY`. ThemisForge refuses to store a login while the development default is in use.
+- A real `THEMIS_SECRET_KEY`. Themis refuses to store a login while the development default is in use.
 
 ## How the login is kept safe
 
@@ -43,12 +43,12 @@ Every user connects their own Codex. Nobody else, administrators included, can s
 
 ## Disconnect
 
-**Disconnect** removes the login from ThemisForge. To also revoke it at OpenAI, sign out of Codex in your ChatGPT
+**Disconnect** removes the login from Themis. To also revoke it at OpenAI, sign out of Codex in your ChatGPT
 security settings.
 
 ## Running a task with Codex
 
-Set a task's **Run with** to **Codex agent**. When it runs, ThemisForge:
+Set a task's **Run with** to **Codex agent**. When it runs, Themis:
 
 1. starts a cell from the **Codex image** (Settings, Cells),
 2. hands it the project owner's Codex login (see above) and the task as instructions,

@@ -1,12 +1,12 @@
 ---
 title: Access and accounts
-group: Using ThemisForge
+group: Using Themis
 summary: How people get an account: an administrator, access requests and invite links.
 ---
 
 # Access and accounts
 
-ThemisForge is **invite only**. There is no open sign up.
+Themis is **invite only**. There is no open sign up.
 
 ## The administrator
 
@@ -42,11 +42,11 @@ An invite link is personal and **works once**. It expires after **7 days**.
 
 A few things worth knowing:
 
-- The link is shown **once**. ThemisForge keeps only a hash of it, so it cannot show it again. If it is lost, create a
+- The link is shown **once**. Themis keeps only a hash of it, so it cannot show it again. If it is lost, create a
   new invite for the same address: the new one replaces the old one.
 - You can **revoke** an open invite at any time.
 - Opening an expired, used or revoked link shows an *Invite not valid* page.
-- ThemisForge does not send email yet, so links are shared by hand.
+- Themis does not send email yet, so links are shared by hand.
 
 ## What other users can do
 
@@ -56,5 +56,5 @@ them. Settings, keys and access management stay with the administrator.
 ## Sessions and passwords
 
 Signing in sets a session cookie that lasts seven days. Passwords are stored as Argon2 hashes and must be at least
-8 characters. If you serve ThemisForge over HTTPS, enable secure cookies, see
+8 characters. If you serve Themis over HTTPS, enable secure cookies, see
 [Install and operations](/docs/operations).

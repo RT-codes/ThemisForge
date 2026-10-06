@@ -208,7 +208,7 @@ class WorkflowRunner:
                 .values(
                     status=NodeStatus.FAILED,
                     finished_at=now,
-                    error="ThemisForge restarted while this node was running",
+                    error="Themis restarted while this node was running",
                 )
             )
             await s.execute(
@@ -217,7 +217,7 @@ class WorkflowRunner:
                 .values(
                     status=RunStatus.FAILED,
                     finished_at=now,
-                    outcome="ThemisForge restarted while this run was in progress",
+                    outcome="Themis restarted while this run was in progress",
                 )
             )
             await s.commit()

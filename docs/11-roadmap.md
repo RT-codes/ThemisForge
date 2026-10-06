@@ -39,6 +39,8 @@ summary: What is built, what comes next and what is deliberately left for later.
 4. **Password reset.**
 5. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,
    week or month filter.
+6. **Windows.** The installer has only been tried on Debian and Ubuntu so far. Windows needs its own tested steps.
+7. **More agent engines.** Codex is the one supported today; Claude and OpenRouter are next.
 
 ## Later
 

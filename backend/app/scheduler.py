@@ -169,7 +169,7 @@ class Scheduler:
             for attempt in dangling:
                 attempt.status = AttemptStatus.FAILED
                 attempt.finished_at = now
-                attempt.log += "\n[ThemisForge restarted while this attempt was running]\n"
+                attempt.log += "\n[Themis restarted while this attempt was running]\n"
                 task = await s.get(Task, attempt.task_id)
                 if task is not None and task.status == TaskStatus.RUNNING:
                     finish_task(task, AttemptStatus.FAILED, cfg.timezone, now)
@@ -498,7 +498,7 @@ class Scheduler:
         except asyncio.CancelledError:
             reason = self._live[attempt_id].cancel_reason if attempt_id in self._live else None
             if reason == "shutdown":
-                await buf.write("\n[ThemisForge shut down while this attempt was running]\n")
+                await buf.write("\n[Themis shut down while this attempt was running]\n")
             else:
                 outcome = AttemptStatus.CANCELLED
                 await buf.write("\n[Cancelled]\n")

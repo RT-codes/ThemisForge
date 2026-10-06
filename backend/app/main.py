@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 # The interactive API reference lives under /api so that /docs is the user documentation (a frontend page).
 app = FastAPI(
-    title="ThemisForge",
+    title="Themis",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url=None,

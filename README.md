@@ -1,61 +1,62 @@
 # ThemisForge
 
-ThemisForge is a self-hosted harness for agent projects. A **project** has a dashboard with a task board
-(Kanban, list and a schedule timeline). **Tasks** can be manual, one-off or recurring (cron), and an always-on
-scheduler runs them around the clock. Each task executes in a short-lived **cell** (a Docker container) that is
-created for the task and removed afterwards.
+![Themis cover art: a busy control room where AI agents work on projects, tasks, workflows and shared folders.](docs/assets/themis-cover.jpg)
 
-- `backend/` - FastAPI (async) API, scheduler, cell manager, accounts and auth. SQLite with Alembic migrations.
-  Managed with [uv](https://docs.astral.sh/uv/).
-- `frontend/` - Svelte 5 + TypeScript + Tailwind, shadcn-svelte and Svelte Flow. Built with Vite.
+**Put AI agents to work for you, on a computer you control.**
 
-Full documentation is in [`docs/`](docs/) and in the app itself at `/docs` (no login needed): getting started, tasks and
-scheduling, cells, access, settings, operations, troubleshooting and the architecture.
+ThemisForge is the project. The app you use is called **Themis**: a place to give AI **agents** (assistants with a role and instructions) jobs to do, now or on a schedule, and to see what they did. It keeps working when you close the browser tab.
 
-## Install on a server (Debian/Ubuntu VM)
+For example: *"Every morning, research the news in my field and write me a short summary."*
 
-```bash
-git clone <this repo> && cd ThemisForge
-./themis install        # Docker, uv, Node, build, backend/.env, systemd service
-```
+## What you can do
 
-Then open http://127.0.0.1:8000 and create the administrator account (the first account). ThemisForge is invite only after
-that: people use "Request access" on the sign in screen, and the administrator approves them on the **Access** page, which
-creates a one-time invite link (valid 7 days) to send them. There is no email sending yet, so the link is shared by hand. See
-`./themis install --help` for `--host`, `--port` and `--https`. Docker, the cell defaults, the time zone and
-provider keys are managed on the **Settings** page; `./themis doctor` checks the machine from the terminal.
+- **Give agents jobs.** Say what should be done and when: right now, at a set time, or every day.
+- **Keep work organised.** Each project has its own agents, tasks and files. Tasks show up on a board, a list or a timeline.
+- **Build a small team.** Give each agent a role and instructions. Add **skills** (how-to guides it can follow), **tools** (extra abilities, such as working with files) and **keys** (access to services it needs).
+- **Chain steps together.** Draw a **workflow**, like a flowchart, where one agent's result feeds the next step.
+- **Share files safely.** Agents hand files to each other through shared folders, and you choose which folders they may read or change.
+- **Stay in control.** Read every log and result, cancel anything, and limit how much of the computer's power agents can use.
 
-How a task runs: the scheduler picks up Ready tasks that are due, starts a cell with the project workspace mounted
-at `/workspace` and the task at `/cell/input.json`, streams its output into the task's History, stores
-`/cell/result.md` as the result, and removes the cell. Recurring tasks go back to Ready for their next occurrence.
-The cell currently runs a placeholder program; agent harnesses plug in here.
+## Is it safe?
 
-## Run (production-style, one server)
+Every job runs in its own sealed, throwaway "box" (a Docker container). It only sees the folders you approved, and it is deleted when the job ends. Each box has limits on power, memory and time.
+
+The box is the safety fence, so agents work inside it without stopping to ask permission. Only share folders you are comfortable with them changing. Themis does not cap AI spending yet (planned): agents use your own ChatGPT plan's allowance.
+
+## Install
+
+**Linux (Ubuntu or Debian).** You need a computer or virtual machine you control, with internet and a normal user account that has admin (`sudo`) rights. The installer adds what is missing, including Docker.
 
 ```bash
-cd frontend && npm install && npm run build
-cd ../backend && uv sync && uv run uvicorn app.main:app
+git clone https://github.com/RT-codes/ThemisForge.git
+cd ThemisForge
+./themis install
 ```
 
-Open http://localhost:8000 - the API lives under `/api` and also serves the built frontend.
+Then open **http://127.0.0.1:8000** and create your account. Themis starts by itself whenever the machine does. To preview the installer first, add `--dry-run`; `./themis doctor` checks that everything works.
 
-## Develop (hot reload)
+**To run agents** (using your ChatGPT account through Codex) you also need to:
 
-```bash
-# terminal 1
-cd backend && uv sync && uv run uvicorn app.main:app --reload
+1. Install the [Codex command-line tool](https://github.com/openai/codex) on the same machine. The installer does not do this.
+2. Run `./themis build-images` once. It prepares the box agents work in (a few minutes, about 1 GB).
+3. In Themis, open **Settings** and press **Connect Codex**.
 
-# terminal 2
-cd frontend && npm install && npm run dev
-```
+Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-Open http://localhost:5173 (Vite proxies `/api` to port 8000).
+**Windows: coming soon.** We have not tested Themis on Windows yet, so there are no instructions to give. Other systems, such as macOS, have not been tested either.
 
-## Checks
+## Once it is running
 
-```bash
-cd backend && uv run pytest && uv run ruff check .
-cd frontend && npm run check
-```
+1. Create your account (the first account is the administrator; everyone else joins by invitation).
+2. Create a project.
+3. Connect your ChatGPT account so agents can think.
+4. Create an agent, give it a task, and run it now or on a schedule.
+5. Watch it work and read the result.
 
-Copy `backend/.env.example` to `backend/.env` and set `THEMIS_SECRET_KEY` for anything beyond local dev.
+**The step-by-step guide is inside the app.** Click **Docs** in the sidebar, or open **http://localhost:8000/docs** (no sign-in needed). It also covers workflows, shared folders, settings and troubleshooting.
+
+## Coming soon
+
+Windows support, and more agent engines: Codex is the one supported today, with Claude and OpenRouter to follow. See the [roadmap](docs/11-roadmap.md). ThemisForge is under active development.
+
+Want to help build it? See [CONTRIBUTING.md](CONTRIBUTING.md).

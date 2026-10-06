@@ -20,3 +20,10 @@ test('the bare workflows address means: open the latest one', () => {
   assert.deepEqual(parse('/projects/3/workflows'), { name: 'workflow', id: 3, workflowId: null, run: null, resume: true })
   assert.deepEqual(parse('/projects/3/workflows/'), { name: 'workflow', id: 3, workflowId: null, run: null, resume: true })
 })
+test('the agents list, one agent, and a new one', () => {
+  assert.deepEqual(parse('/projects/3/agents'), { name: 'agents', id: 3, agentId: null, isNew: false })
+  assert.deepEqual(parse('/projects/3/agents/'), { name: 'agents', id: 3, agentId: null, isNew: false })
+  assert.deepEqual(parse('/projects/3/agents/9'), { name: 'agents', id: 3, agentId: 9, isNew: false })
+  assert.deepEqual(parse('/projects/3/agents/new'), { name: 'agents', id: 3, agentId: null, isNew: true })
+  assert.deepEqual(parse('/projects/3/agents/nope'), { name: 'not-found' })
+})

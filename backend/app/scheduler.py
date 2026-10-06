@@ -13,12 +13,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .app_settings import AppSettings, load_settings
-from .cells import CellError, CellManager, CellResult, CellSpec
+from .budget import Cost, admit, never_fits
+from .cells import CellError, CellManager, CellResult, CellSpec, Mount
 from .codex import CodexError, lease_codex, lease_is_busy
 from .config import settings
-from .harness import CODEX_AUTH, build_prompt, plan_for, renderer_for
-from .models import Attempt, AttemptStatus, Project, Task, TaskStatus, utcnow
+from .harness import CODEX_AUTH, HarnessPlan, agent_preamble, build_prompt, plan_for, renderer_for
+from .models import Agent, Attempt, AttemptStatus, Project, Task, TaskStatus, utcnow
+from .profiles import Profile, resolve_profile
 from .scheduling import finish_task
+from .volumes import MountError, plan_mounts
 
 log = logging.getLogger("themis.scheduler")
 
@@ -26,6 +29,7 @@ MAX_LOG_CHARS = 200_000
 LOG_FLUSH_SECONDS = 1.0
 PRUNE_EVERY_SECONDS = 3600
 MAX_PLAYING = 8  # tasks playing a workflow at the same time
+MAX_WAITING = 50  # how many waiting tasks one tick looks at when handing out the budget
 
 
 @dataclass
@@ -34,6 +38,28 @@ class _Live:
     spec: CellSpec | None = None
     cancel_reason: str | None = None  # "user" | "shutdown"
     cell: bool = True  # False for a task that plays a workflow: it orchestrates, so it holds no cell slot
+    locks: frozenset[int] = frozenset()  # volumes this run holds while it writes (writers take turns)
+
+
+@dataclass
+class _Plan:
+    """Everything decided about one task before its cell starts."""
+
+    task: Task
+    project: Project
+    agent: Agent | None
+    profile: Profile
+    harness: HarnessPlan | None
+    mounts: list[Mount]
+    error: str = ""  # why it cannot run at all
+
+    @property
+    def cost(self) -> Cost:
+        return Cost(self.profile.cpus, self.profile.memory_mb)
+
+    @property
+    def locks(self) -> frozenset[int]:
+        return frozenset(m.volume_id for m in self.mounts if m.lock)
 
 
 class _LogBuffer:
@@ -73,7 +99,6 @@ class Scheduler:
         self._live: dict[int, _Live] = {}  # attempt id -> running cell
         self._loop_task: asyncio.Task | None = None
         self._wake = asyncio.Event()
-        self.max_cells = 0
         self._last_prune = float("-inf")
         self.workflows = None  # the WorkflowRunner, set by the app; plays the workflows of tasks that run one
 
@@ -152,11 +177,9 @@ class Scheduler:
     # picking work
 
     async def tick(self) -> int:
-        """Start cells for due tasks while there are free slots. Returns how many were started."""
+        """Start cells for due tasks while they fit the resource budget. Returns how many were started."""
         async with self.maker() as s:
             cfg = await load_settings(s)
-            self.max_cells = cfg.max_concurrent_cells
-            free = cfg.max_concurrent_cells - self.active_cells
             playing = len(self._live) - self.active_cells
             now = utcnow()
             ready = (
@@ -164,15 +187,15 @@ class Scheduler:
                 (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
             )
             order = (Task.next_run_at.asc().nulls_first(), Task.id)
-            due: list[Task] = []
-            if free > 0:  # cells are limited by the slots...
-                due += (
-                    await s.scalars(
-                        select(Task).where(*ready, Task.harness != "workflow").order_by(*order).limit(free)
-                    )
-                ).all()
-            if playing < MAX_PLAYING:  # ...workflows are only capped, since they wait on other tasks' cells
-                due += (
+            budget = cfg.budget.as_cost()
+            waiting = (
+                await s.scalars(
+                    select(Task).where(*ready, Task.harness != "workflow").order_by(*order).limit(MAX_WAITING)
+                )
+            ).all()
+            playing_workflows = []
+            if playing < MAX_PLAYING:  # workflows only have a cap, since they wait on other tasks' cells
+                playing_workflows = (
                     await s.scalars(
                         select(Task)
                         .where(*ready, Task.harness == "workflow")
@@ -180,30 +203,126 @@ class Scheduler:
                         .limit(MAX_PLAYING - playing)
                     )
                 ).all()
-            if not due:
-                return 0
-            started: list[tuple[int, CellSpec]] = []
-            for task in due:
-                project = await s.get(Project, task.project_id)
-                if project is None:
+            cells = await self._plans(s, list(waiting), cfg)
+            workflows = await self._plans(s, list(playing_workflows), cfg)
+
+            # what cannot run at all fails now, with the reason, instead of waiting forever
+            broken = [p for p in cells if p.error or never_fits(budget, p.cost)]
+            for plan in broken:
+                await self._fail(s, plan, budget, cfg, now)
+            cells = [p for p in cells if p not in broken]
+
+            # a folder that writers must take turns on is held by one run at a time; a task that wants a busy one
+            # lets the next task go first, so it never sits on budget while it waits
+            claimed: set[int] = set().union(*(live.locks for live in self._live.values()))
+            eligible = []
+            for plan in cells:
+                if plan.locks & claimed:
                     continue
+                claimed |= plan.locks
+                eligible.append(plan)
+
+            running = [
+                Cost(live.spec.cpus, live.spec.memory_mb)
+                for live in self._live.values()
+                if live.cell and live.spec
+            ]
+            due = [*eligible[: admit(budget, running, [p.cost for p in eligible])], *workflows]
+            if not due:
+                if broken:
+                    await s.commit()
+                return 0
+            started: list[tuple[int, CellSpec, frozenset[int]]] = []
+            for plan in due:
+                task = plan.task
                 attempt = Attempt(task_id=task.id, started_at=now)
                 s.add(attempt)
                 await s.flush()
                 task.status = TaskStatus.RUNNING
                 task.next_run_at = None
                 task.last_run_at = now
-                started.append((attempt.id, self._spec(attempt.id, task, project, cfg)))
+                started.append((attempt.id, self._spec(attempt.id, plan, cfg), plan.locks))
             await s.commit()
-        for attempt_id, spec in started:
+        for attempt_id, spec, locks in started:
             live = _Live(
                 task=asyncio.create_task(self._execute(attempt_id, spec, cfg.timezone)),
                 spec=spec,
                 cell=spec.harness != "workflow",
+                locks=locks,
             )
             self._live[attempt_id] = live
             live.task.add_done_callback(lambda _t, aid=attempt_id: self._live.pop(aid, None))
         return len(started)
+
+    async def _plans(self, s: AsyncSession, tasks: list[Task], cfg: AppSettings) -> list[_Plan]:
+        """For each task: its agent, the cell it gets and the folders it mounts."""
+        if not tasks:
+            return []
+        projects = {
+            p.id: p
+            for p in await s.scalars(select(Project).where(Project.id.in_({t.project_id for t in tasks})))
+        }
+        agent_ids = {t.agent_id for t in tasks if t.agent_id}
+        agents = (
+            {a.id: a for a in await s.scalars(select(Agent).where(Agent.id.in_(agent_ids)))}
+            if agent_ids
+            else {}
+        )
+        plans = []
+        for task in tasks:
+            if (project := projects.get(task.project_id)) is not None:
+                plans.append(await self._plan(s, task, project, agents.get(task.agent_id or 0), cfg))
+        return plans
+
+    @staticmethod
+    async def _plan(
+        s: AsyncSession, task: Task, project: Project, agent: Agent | None, cfg: AppSettings
+    ) -> _Plan:
+        harness = agent.harness if agent else task.harness
+        hp = plan_for(
+            harness,
+            cfg,
+            model=agent.model if agent else "",
+            effort=agent.reasoning_effort if agent else "",
+        )
+        extra = task.run_options or {}
+        profile = resolve_profile(
+            cfg,
+            hp.image if hp else cfg.cell_image,
+            project.cell_profile,
+            agent.cell_profile if agent else None,
+            extra.get("profile"),
+        )
+        plan = _Plan(task, project, agent, profile, hp, [])
+        if harness != "workflow":  # a task that plays a workflow starts no cell, so it mounts nothing
+            try:
+                refs = [*(agent.mounts if agent else []), *extra.get("mounts", [])]
+                plan.mounts = await plan_mounts(s, project.id, refs, cfg)
+            except MountError as e:
+                plan.error = str(e)
+        return plan
+
+    async def _fail(self, s: AsyncSession, plan: _Plan, budget: Cost, cfg: AppSettings, now) -> None:
+        """Record an attempt that never started, with the reason in its log."""
+        if plan.error:
+            reason = plan.error
+        else:
+            reason = (
+                f"This task needs {plan.cost.cpus:g} CPU and {plan.cost.memory_mb} MB, more than the whole "
+                f"resource budget ({budget.cpus:g} CPU, {budget.memory_mb} MB). Raise the budget in Settings, "
+                "or give the task a smaller cell."
+            )
+        s.add(
+            Attempt(
+                task_id=plan.task.id,
+                status=AttemptStatus.FAILED,
+                started_at=now,
+                finished_at=now,
+                log=f"[Cell error] {reason}\n",
+            )
+        )
+        plan.task.last_run_at = now
+        finish_task(plan.task, AttemptStatus.FAILED, cfg.timezone, now)
 
     async def prune_workspaces(self) -> int:
         """Remove the private working folders of attempts that finished more than the retention period ago,
@@ -234,8 +353,17 @@ class Scheduler:
         return len(stale)
 
     @staticmethod
-    def _spec(attempt_id: int, task: Task, project: Project, cfg: AppSettings) -> CellSpec:
-        plan = plan_for(task.harness, cfg)
+    def _spec(attempt_id: int, plan: _Plan, cfg: AppSettings) -> CellSpec:
+        task, project, agent, hp, profile = plan.task, plan.project, plan.agent, plan.harness, plan.profile
+        prompt = ""
+        if hp:
+            prompt = build_prompt(
+                task.title,
+                task.description,
+                task.properties,
+                preamble=agent_preamble(agent.name, agent.role, agent.instructions) if agent else "",
+                folders=[(m.name, m.read_only) for m in plan.mounts],
+            )
         return CellSpec(
             attempt_id=attempt_id,
             task_id=task.id,
@@ -244,16 +372,17 @@ class Scheduler:
             description=task.description,
             properties=task.properties,
             owner_id=project.owner_id,
-            harness=task.harness,
+            harness=agent.harness if agent else task.harness,
             workflow_id=task.workflow_id,
-            image=plan.image if plan else cfg.cell_image,
-            script=plan.script if plan else None,
-            writeback=plan.writeback if plan else (),
-            prompt=build_prompt(task.title, task.description, task.properties) if plan else "",
-            cpus=cfg.cell_cpus,
-            memory_mb=cfg.cell_memory_mb,
-            timeout_seconds=cfg.cell_timeout_seconds,
+            image=profile.image,
+            script=hp.script if hp else None,
+            writeback=hp.writeback if hp else (),
+            prompt=prompt,
+            cpus=profile.cpus,
+            memory_mb=profile.memory_mb,
+            timeout_seconds=profile.timeout_seconds,
             docker_host=cfg.docker_host,
+            mounts=plan.mounts,
         )
 
     # running a cell

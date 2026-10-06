@@ -11,7 +11,7 @@ from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
 from .db import SessionLocal
 from .migrate import upgrade_database
-from .routers import access, auth, codex, projects, system, workflows
+from .routers import access, agents, auth, codex, projects, system, volumes, workflows
 from .scheduler import Scheduler
 from .workflows import WorkflowRunner
 
@@ -56,6 +56,8 @@ api.include_router(projects.router)
 api.include_router(system.router)
 api.include_router(codex.router)
 api.include_router(workflows.router)
+api.include_router(volumes.router)
+api.include_router(agents.router)
 
 
 @api.get("/health")

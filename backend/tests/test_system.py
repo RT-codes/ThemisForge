@@ -9,7 +9,7 @@ from tests.conftest import register
 
 async def test_settings_are_admin_only(client):
     await register(client, "a@b.co")
-    assert (await client.get("/api/settings")).json()["max_concurrent_cells"] == 2
+    assert (await client.get("/api/settings")).json()["budget"] == {"cpus": 2.0, "memory_mb": 2048}
     await register(client, "c@d.co", "Bob")
     assert (await client.get("/api/settings")).status_code == 403
     assert (await client.put("/api/settings", json={})).status_code == 403
@@ -24,7 +24,8 @@ async def test_settings_validation_and_persistence(client):
         {"timezone": "Mars/Base"},
         {"docker_host": "http://nope"},
         {"cell_image": "-rm"},
-        {"max_concurrent_cells": 0},
+        {"budget": {"cpus": 0, "memory_mb": 2048}},
+        {"budget": {"cpus": 2, "memory_mb": 8}},
     ):
         assert (await client.put("/api/settings", json=bad)).status_code == 422, bad
     saved = (await client.put("/api/settings", json={"docker_host": "ssh://u@h", "cell_cpus": 2})).json()

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { seedGraph, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
+import { seedGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -81,4 +81,27 @@ test('a new workflow begins with a Start node only', () => {
   assert.deepEqual(g.nodes.map((n) => n.kind), ['start'])
   assert.deepEqual(g.edges, [])
   assert.notEqual(seedGraph().nodes, g.nodes) // never shared between workflows
+})
+
+test('an agent node shows the harness only while no agent is chosen', () => {
+  const none = visibleFields('agent', { ...defaultConfig('agent'), agentId: '' }).map((f) => f.key)
+  const chosen = visibleFields('agent', { ...defaultConfig('agent'), agentId: '4' }).map((f) => f.key)
+  assert.ok(none.includes('harness') && !chosen.includes('harness'))
+  assert.ok(chosen.includes('agentId') && chosen.includes('instructions'))
+})
+
+test('an old agent node without an agent keeps working: it starts on "no agent"', () => {
+  const config = { ...defaultConfig('agent'), harness: 'codex', instructions: 'x' }
+  assert.equal(config.agentId, '')
+})
+
+test('folders on a node are kept as plain text and read back the same', () => {
+  const mounts = [{ volume_id: 3, mode: 'rw' as const }, { volume_id: 5, mode: 'ro' as const }]
+  assert.equal(formatMounts(mounts), '3:rw,5:ro')
+  assert.deepEqual(parseMounts('3:rw,5:ro'), mounts)
+  assert.deepEqual(parseMounts(''), [])
+})
+
+test('folder text that is damaged is read as far as it makes sense', () => {
+  assert.deepEqual(parseMounts('3, x:rw, 0:rw, 3:ro, 7:odd'), [{ volume_id: 3, mode: 'rw' }, { volume_id: 7, mode: 'rw' }])
 })

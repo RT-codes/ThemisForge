@@ -79,7 +79,7 @@ async def test_recurring_task_goes_back_to_ready_with_a_future_next_run(client, 
 
 async def test_concurrency_limit(client, scheduler, cells, monkeypatch):
     await register(client)
-    await client.put("/api/settings", json={"max_concurrent_cells": 1})
+    await client.put("/api/settings", json={"budget": {"cpus": 1, "memory_mb": 1024}})
     pid = (await make_project(client))["id"]
     a = await make_task(client, pid, title="a", status="ready")
     b = await make_task(client, pid, title="b", status="ready")

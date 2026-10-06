@@ -10,7 +10,7 @@
 		max,
 		step,
 		required = true,
-	}: { id: string; value?: number; unit: string; min?: number; max?: number; step?: number; required?: boolean } = $props()
+	}: { id: string; value?: number; unit: string; min?: number; max?: number; step?: number | 'any'; required?: boolean } = $props()
 </script>
 
 <div class="relative">

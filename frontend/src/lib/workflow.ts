@@ -30,10 +30,12 @@ export type WorkflowNodeData = { kind: NodeKind; label: string; config: NodeConf
 export type FieldDef = {
   key: string
   label: string
-  type: 'text' | 'textarea' | 'select' | 'time'
+  type: 'text' | 'textarea' | 'select' | 'time' | 'mounts'
   options?: { value: string; label: string }[]
   placeholder?: string
   hint?: string
+  /** tucked away under "Cell and folders": settings most steps never need */
+  advanced?: boolean
   /** only show this field while another field has one of these values */
   when?: { key: string; oneOf: string[] }
 }
@@ -56,9 +58,16 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'status', label: 'Move to', type: 'select', options: STATUSES, when: { key: 'action', oneOf: ['create', 'update'] } },
   ],
   agent: [
-    { key: 'harness', label: 'Agent', type: 'select', options: opts(['codex', 'Codex agent']) },
+    // the options of agentId are the project's agents: the panel fills them in, this one is always there
+    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: plain Codex']) },
+    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent']), when: { key: 'agentId', oneOf: [''] } },
     { key: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'What should the agent do?' },
     { key: 'onFailure', label: 'If it fails', type: 'select', options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on'])},
+    { key: 'cellCpus', label: 'CPUs', type: 'text', advanced: true, placeholder: 'From the agent or project' },
+    { key: 'cellMemory', label: 'Memory (MB)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
+    { key: 'cellTimeout', label: 'Time limit (seconds)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
+    { key: 'cellImage', label: 'Image', type: 'text', advanced: true, placeholder: 'From the agent or project' },
+    { key: 'mounts', label: 'Extra folders for this step', type: 'mounts', advanced: true },
   ],
   condition: [
     { key: 'source', label: 'Check', type: 'select', options: opts(['result', 'The previous result'], ['status', 'The previous status']) },
@@ -99,6 +108,21 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
       return `Ends as ${c.outcome}`
   }
 }
+
+export type MountChoice = { volume_id: number; mode: 'ro' | 'rw' }
+
+/** a node keeps its folders as plain text, "3:rw,5:ro" (volume id and mode), like every other node setting */
+export function parseMounts(text: string): MountChoice[] {
+  const out: MountChoice[] = []
+  for (const part of text.split(',')) {
+    const [id, mode] = part.trim().split(':')
+    const volume_id = Number(id)
+    if (id && Number.isInteger(volume_id) && volume_id > 0 && !out.some((m) => m.volume_id === volume_id)) out.push({ volume_id, mode: mode === 'ro' ? 'ro' : 'rw' })
+  }
+  return out
+}
+
+export const formatMounts = (mounts: MountChoice[]): string => mounts.map((m) => `${m.volume_id}:${m.mode}`).join(',')
 
 /** the drag payload type used between the palette and the canvas */
 export const DRAG_TYPE = 'application/themis-node-kind'

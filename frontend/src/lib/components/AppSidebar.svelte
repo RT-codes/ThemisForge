@@ -6,6 +6,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down'
 	import HouseIcon from '@lucide/svelte/icons/house'
+	import BotIcon from '@lucide/svelte/icons/bot'
 	import BookOpenIcon from '@lucide/svelte/icons/book-open'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
@@ -39,7 +40,7 @@
 		const target = e.target as Element | null
 		const link =
 			target?.closest('a[data-sidebar="menu-button"], a[data-sidebar="menu-sub-button"]') ??
-			(target?.closest('a[title="New workflow"]') &&
+			(target?.closest('a[data-pulse-sibling]') &&
 				target.closest('[data-sidebar="menu-sub-item"]')?.querySelector('a[data-sidebar="menu-sub-button"]'))
 		if (!link) return
 		link.classList.remove('nav-pulse')
@@ -90,7 +91,7 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each projects.list as p (p.id)}
-						{@const open = (route.name === 'project' || route.name === 'workflow') && route.id === p.id}
+						{@const open = (route.name === 'project' || route.name === 'workflow' || route.name === 'agents') && route.id === p.id}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton>
 								{#snippet child({ props })}
@@ -115,6 +116,14 @@
 												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem class="tree-leaf">
+										<Sidebar.MenuSubButton isActive={route.name === 'agents'} class="me-2.5">
+											{#snippet child({ props })}
+												<a href="/projects/{p.id}/agents" {...props}><BotIcon /><span>Agents</span></a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+										<SidebarPlus label="New agent" href="/projects/{p.id}/agents/new" class="-end-[1.2rem] top-1/2 -translate-y-1/2" />
 									</Sidebar.MenuSubItem>
 									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'workflow'} class="me-2.5">

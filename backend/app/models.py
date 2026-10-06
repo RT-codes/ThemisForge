@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -85,6 +86,9 @@ class Project(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     # Custom Kanban properties: [{"key", "name", "type", "options"}], see app/properties.py.
     properties: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # Overrides of the global cell defaults for this project's cells: {"image", "cpus", "memory_mb", "timeout_seconds"},
+    # only the fields that differ (see app/profiles.py). None = use the global defaults.
+    cell_profile: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="project", cascade="all, delete-orphan")
@@ -114,6 +118,10 @@ class Task(Base):
     workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflows.id", ondelete="SET NULL"), default=None
     )
+    # The agent that does this task (its instructions, model, cell and folders), see Agent below.
+    agent_id: Mapped[int | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), default=None)
+    # Extras for this one run, set by a workflow's Agent node: {"profile": {...}, "mounts": [{"volume_id", "mode"}]}.
+    run_options: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
@@ -290,3 +298,46 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)
+
+
+class Volume(Base):
+    """A folder that outlives a run and can be mounted into cells at /workspace/NAME (see app/volumes.py)."""
+
+    __tablename__ = "volumes"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_volumes_project_id_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(40))  # a slug: it becomes the folder name inside the cell
+    kind: Mapped[str] = mapped_column(String(10), default="managed")  # "managed" (ThemisForge's own) | "host"
+    host_path: Mapped[str] = mapped_column(Text, default="")  # kind "host": the folder on this machine
+    mode: Mapped[str] = mapped_column(String(2), default="rw")  # the most a cell may do: "ro" | "rw"
+    exclusive_write: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0"
+    )  # writers take turns
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
+class Agent(Base):
+    """A configured worker of a project: who it is, what it was told, how it runs (see app/harness.py)."""
+
+    __tablename__ = "agents"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_agents_project_id_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    role: Mapped[str] = mapped_column(String(200), default="")  # one line: what it is responsible for
+    description: Mapped[str] = mapped_column(Text, default="")  # for people: what this agent is for
+    instructions: Mapped[str] = mapped_column(
+        Text, default=""
+    )  # for the agent: always put in front of its task
+    harness: Mapped[str] = mapped_column(String(20), default="codex")
+    model: Mapped[str] = mapped_column(String(100), default="")  # empty = the model in Settings
+    reasoning_effort: Mapped[str] = mapped_column(String(10), default="")  # empty = the effort in Settings
+    cell_profile: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, default=None
+    )  # overrides, like a project's
+    mounts: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)  # [{"volume_id", "mode"}]
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)

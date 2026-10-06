@@ -49,7 +49,7 @@ ThemisForge currently runs a **placeholder program** inside each cell: it reads 
 result file. That is deliberate. The whole pipeline (projects, boards, schedules, cells, logs, results, access
 control, installation) is in place, and agent harnesses plug into exactly that spot.
 
-Agents, workflows and key injection are the next steps. See the [roadmap](/docs/roadmap).
+Skills, tools and keys for agents are the next steps. See the [roadmap](/docs/roadmap).
 
 > [!TIP]
 > New here? Go to [Getting started](/docs/getting-started). It takes about five minutes.

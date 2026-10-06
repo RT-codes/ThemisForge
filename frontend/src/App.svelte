@@ -7,6 +7,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import { Separator } from '$lib/components/ui/separator/index.js'
 	import AccessPage from '$lib/pages/AccessPage.svelte'
+	import AgentEditorPage from '$lib/pages/AgentEditorPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
 	import WorkflowResume from '$lib/pages/WorkflowResume.svelte'
@@ -41,7 +42,7 @@
 	const route = $derived(router.route)
 	// a new page fades in; switching between tabs of the same project counts as a new page too
 	const pageKey = $derived(
-		route.name === 'project' ? `project:${route.id}:${route.page}` : route.name === 'workflow' ? `workflow:${route.id}` : route.name
+		route.name === 'project' ? `project:${route.id}:${route.page}` : route.name === 'workflow' ? `workflow:${route.id}` : route.name === 'agents' ? `agents:${route.id}` : route.name
 	)
 	type Crumb = { label: string; href?: string }
 	// the top bar says where you are; every part but the last leads back up
@@ -51,6 +52,7 @@
 			const page = route.name === 'workflow' ? 'Workflow editor' : route.page === 'tasks' ? 'Tasks' : 'Overview'
 			return [project, { label: page }]
 		}
+		if (route.name === 'agents') return [{ label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }, { label: 'Agents' }]
 		const single: Record<string, string> = { settings: 'Settings', access: 'Access', docs: 'Docs', home: 'Home' }
 		return [{ label: single[route.name] ?? 'Not found' }]
 	})
@@ -111,6 +113,8 @@
 							{/await}
 						{/if}
 					{/key}
+				{:else if route.name === 'agents'}
+					<AgentEditorPage projectId={route.id} agentId={route.agentId} isNew={route.isNew} />
 				{:else if route.name === 'settings'}
 					<SettingsPage />
 				{:else if route.name === 'access'}

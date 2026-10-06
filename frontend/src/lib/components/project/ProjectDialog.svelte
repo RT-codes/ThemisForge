@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { api, ApiError, type Project } from '$lib/api'
+	import { api, ApiError, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
+	import CellChoice from '$lib/components/CellChoice.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
+	import { untrack } from 'svelte'
 
 	let {
 		open = $bindable(false),
@@ -14,6 +16,9 @@
 
 	let name = $state('')
 	let description = $state('')
+	let profile = $state<ProfileOverrides | null>(null)
+	let formVersion = $state(0) // bumped each time the dialog opens, so the cell control starts from this project
+	let defaults = $state<CellDefaults | null>(null)
 	let error = $state('')
 	let saving = $state(false)
 
@@ -21,7 +26,10 @@
 		if (open) {
 			name = project?.name ?? ''
 			description = project?.description ?? ''
+			profile = project?.cell_profile ? { ...project.cell_profile } : null
+			untrack(() => formVersion++)
 			error = ''
+			api.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
 		}
 	})
 
@@ -31,8 +39,8 @@
 		saving = true
 		try {
 			const saved = project
-				? await api.updateProject(project.id, { name, description })
-				: await api.createProject(name, description)
+				? await api.updateProject(project.id, { name, description, cell_profile: profile })
+				: await api.createProject(name, description, profile)
 			onsaved(saved)
 			open = false
 		} catch (err) {
@@ -44,7 +52,7 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-md">
+	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>{project ? 'Edit project' : 'New project'}</Dialog.Title>
 			<Dialog.Description>
@@ -59,6 +67,19 @@
 			<div class="grid gap-2">
 				<Label for="project-desc">Description</Label>
 				<Textarea id="project-desc" bind:value={description} rows={3} maxlength={2000} placeholder="What is this project for?" />
+			</div>
+			<div class="grid gap-2">
+				<Label>Cell</Label>
+				<p class="-mt-1 text-xs text-muted-foreground">The container this project's tasks run in. Agents can still ask for something different.</p>
+				{#key formVersion}
+					<CellChoice
+						bind:value={profile}
+						inherited={defaults}
+						source="the default from Settings"
+						prefix="project"
+						imagePlaceholder={defaults ? `${defaults.image} (agents bring their own)` : ''}
+					/>
+				{/key}
 			</div>
 			{#if error}
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>

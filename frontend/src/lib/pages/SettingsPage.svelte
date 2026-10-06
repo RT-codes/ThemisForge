@@ -1,15 +1,20 @@
 <script lang="ts">
-	import { api, ApiError, type AppSettings, type DockerStatus, type Secret, type SystemStatus } from '$lib/api'
+	import { api, ApiError, type AppSettings, type DockerStatus, type Resources, type Secret, type SystemStatus } from '$lib/api'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import CodexConnection from '$lib/components/CodexConnection.svelte'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
+	import { Switch } from '$lib/components/ui/switch/index.js'
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js'
+	import { cellsThatFit } from '$lib/budget'
 	import { dateTime } from '$lib/format'
 	import { cn } from '$lib/utils'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
+	import InfoIcon from '@lucide/svelte/icons/info'
+	import FolderIcon from '@lucide/svelte/icons/folder'
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round'
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
@@ -18,6 +23,7 @@
 	let saved = $state<AppSettings | null>(null)
 	let form = $state<AppSettings | null>(null)
 	let docker = $state<DockerStatus | null>(null)
+	let resources = $state<Resources | null>(null)
 	let system = $state<SystemStatus | null>(null)
 	let checking = $state(false)
 	let secrets = $state<Secret[]>([])
@@ -40,6 +46,8 @@
 		}
 	})()
 	const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+	// the budget is a nested object, so a plain spread would share it between the form and the saved copy
+	const copy = (s: AppSettings): AppSettings => ({ ...s, budget: { ...s.budget }, mount_roots: s.mount_roots.map((r) => ({ ...r })) })
 	const dirty = $derived(JSON.stringify(form) !== JSON.stringify(saved))
 
 	async function checkDocker(host?: string) {
@@ -63,13 +71,21 @@
 		}
 	}
 
+	async function loadResources() {
+		try {
+			resources = await api.resources()
+		} catch {
+			resources = null
+		}
+	}
+
 	async function load() {
 		try {
 			saved = await api.settings()
-			form = { ...saved }
+			form = copy(saved)
 			secrets = await api.secrets()
 			system = await api.systemStatus()
-			await checkDocker()
+			await Promise.all([checkDocker(), loadResources()])
 		} catch (e) {
 			loadError = e instanceof ApiError && e.status === 403 ? 'Only administrators can change settings.' : (e as Error).message
 		}
@@ -85,10 +101,11 @@
 		saving = true
 		try {
 			saved = await api.saveSettings(form)
-			form = { ...saved }
+			form = copy(saved)
 			justSaved = true
 			setTimeout(() => (justSaved = false), 2500)
 			checkDocker()
+			loadResources()
 		} catch (err) {
 			saveError = err instanceof Error ? err.message : 'Could not save'
 		} finally {
@@ -120,17 +137,45 @@
 	import { fly } from 'svelte/transition'
 
 	const dockerSummary = $derived(docker ? (docker.ok ? `Connected, Docker ${docker.version}` : 'Not reachable') : 'Checking...')
-	const cellSummary = $derived(
-		form ? `${form.cell_image} · ${form.cell_cpus} CPU · ${form.cell_memory_mb} MB · ${form.max_concurrent_cells} at once` : ''
+	const cellSummary = $derived(form ? `${form.cell_image} · ${form.cell_cpus} CPU · ${form.cell_memory_mb} MB` : '')
+	const host = $derived(resources?.ok ? resources : null)
+	const fits = $derived(form ? cellsThatFit(form.budget, { cpus: form.cell_cpus, memory_mb: form.cell_memory_mb }) : 0)
+	const cpuOver = $derived(!!form && !!host && form.budget.cpus > (host.host_cpus ?? Infinity))
+	const memoryOver = $derived(!!form && !!host && form.budget.memory_mb > (host.host_memory_mb ?? Infinity))
+	const overCommitted = $derived(cpuOver || memoryOver)
+	const diskUsed = $derived(resources && resources.disk_total_mb ? (1 - resources.disk_free_mb / resources.disk_total_mb) * 100 : 0)
+	const resourceSummary = $derived(
+		form ? `${form.budget.cpus} CPU · ${gb(form.budget.memory_mb)} · fits ${fits} ${fits === 1 ? 'cell' : 'cells'}` : ''
 	)
+	let newRoot = $state('')
+	const rootSummary = $derived(form ? (form.mount_roots.length ? `${form.mount_roots.length} approved` : 'None approved') : '')
+	function addRoot() {
+		const path = newRoot.trim().replace(/\/+$/, '')
+		if (!path || !form || form.mount_roots.some((r) => r.path === path)) return void (newRoot = '')
+		form.mount_roots = [...form.mount_roots, { path, allow_write: false }]
+		newRoot = ''
+	}
 	const agentSummary = $derived(form ? `${form.codex_model} · ${form.codex_reasoning_effort} effort` : '')
 	const keySummary = $derived(`${secrets.length} ${secrets.length === 1 ? 'key' : 'keys'}`)
 
 	function discard() {
-		if (saved) form = { ...saved }
+		if (saved) form = copy(saved)
 		saveError = ''
 	}
 </script>
+
+{#snippet meter(label: string, value: string, caption: string, percent: number, warn: boolean)}
+	<div class="rounded-lg border p-3">
+		<div class="flex items-baseline justify-between gap-2 text-sm">
+			<span class="text-muted-foreground">{label}</span>
+			<span class="font-medium tabular-nums">{value}</span>
+		</div>
+		<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+			<div class={cn('h-full rounded-full transition-[width] duration-200', warn ? 'bg-destructive' : 'bg-primary')} style="width: {Math.min(100, Math.max(0, percent))}%"></div>
+		</div>
+		<p class="mt-1.5 text-xs text-muted-foreground">{caption}</p>
+	</div>
+{/snippet}
 
 <div class="w-full max-w-3xl px-6 py-8">
 	<h2 class="text-2xl font-semibold tracking-tight">Settings</h2>
@@ -208,6 +253,79 @@
 					</div>
 					</SettingsSection>
 
+					<SettingsSection
+						id="resources"
+						title="Resources"
+						description="How much of this machine all running cells together may use."
+						summary={resourceSummary}
+						status={fits === 0 || overCommitted ? 'warn' : 'ok'}
+						forceOpen={fits === 0}
+					>
+						{#if resources && !resources.ok}
+							<p class="text-sm text-muted-foreground">The machine could not be read: {resources.error}. You can still set a budget.</p>
+						{/if}
+						<div class="grid gap-3 sm:grid-cols-3">
+							{@render meter(
+								'CPUs',
+								host ? `${host.host_cpus}` : '-',
+								`${form.budget.cpus} in the budget`,
+								host?.host_cpus ? (form.budget.cpus / host.host_cpus) * 100 : 0,
+								cpuOver
+							)}
+							{@render meter(
+								'Memory',
+								host ? gb(host.host_memory_mb) : '-',
+								`${gb(form.budget.memory_mb)} in the budget`,
+								host?.host_memory_mb ? (form.budget.memory_mb / host.host_memory_mb) * 100 : 0,
+								memoryOver
+							)}
+							{@render meter(
+								'Disk free',
+								resources ? gb(resources.disk_free_mb) : '-',
+								resources ? `${Math.round(diskUsed)}% of ${gb(resources.disk_total_mb)} used` : '',
+								diskUsed,
+								diskUsed > 90
+							)}
+						</div>
+						<p class="-mt-2 text-xs text-muted-foreground">
+							Docker reports the CPUs and memory (it can be another machine). The disk is the one ThemisForge keeps its data on.
+						</p>
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid gap-2">
+								<Label for="budget-cpus">CPUs for all cells</Label>
+								<NumberField id="budget-cpus" bind:value={form.budget.cpus} unit="CPUs" min={0.1} max={4096} step="any" />
+							</div>
+							<div class="grid gap-2">
+								<Label for="budget-mem">Memory for all cells</Label>
+								<NumberField id="budget-mem" bind:value={form.budget.memory_mb} unit="MB" min={64} step={1} />
+							</div>
+						</div>
+						<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+							<p class={cn(fits === 0 ? 'text-destructive' : 'text-muted-foreground')} role={fits === 0 ? 'alert' : undefined}>
+								{#if fits === 0}
+									Not even one cell of the default size fits, so tasks would fail. Raise the budget or shrink the cells.
+								{:else}
+									Fits <span class="font-medium text-foreground">{fits}</span>
+									{fits === 1 ? 'cell' : 'cells'} of the default size ({form.cell_cpus} CPU, {form.cell_memory_mb} MB) at the same time.
+								{/if}
+							</p>
+							{#if overCommitted}
+								<p class="text-yellow-300">This is more than the machine has.</p>
+							{/if}
+							{#if resources?.recommended}
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									class="ms-auto"
+									onclick={() => (form!.budget = { ...resources!.recommended! })}
+								>
+									Use recommended ({resources.recommended.cpus} CPU, {gb(resources.recommended.memory_mb)})
+								</Button>
+							{/if}
+						</div>
+					</SettingsSection>
+
 					<SettingsSection id="cells" title="Cells" description="Defaults for every container a task runs in." summary={cellSummary}>
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="grid gap-2 sm:col-span-2">
@@ -226,16 +344,63 @@
 								<Label for="cell-timeout">Time limit per run</Label>
 								<NumberField id="cell-timeout" bind:value={form.cell_timeout_seconds} unit="seconds" min={10} step={10} />
 							</div>
-							<div class="grid gap-2">
-								<Label for="cell-max">Cells at the same time</Label>
-								<NumberField id="cell-max" bind:value={form.max_concurrent_cells} unit="cells" min={1} max={64} />
-							</div>
 							<div class="grid gap-2 sm:col-span-2">
 								<Label for="keep-days">Keep working folders for</Label>
 								<NumberField id="keep-days" bind:value={form.keep_workspaces_days} unit="days" min={0} max={3650} />
 								<p class="text-xs text-muted-foreground">Every run gets its own private working folder. Old ones are deleted after this long; 0 deletes them right away.</p>
 							</div>
 						</div>
+					</SettingsSection>
+
+					<SettingsSection
+						id="mounts"
+						title="Mount roots"
+						description="Folders on this machine that agents may be given. Nothing outside them can be mounted."
+						summary={rootSummary}
+					>
+						<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm">
+							<span class="font-medium text-yellow-300">Mind what you approve.</span>
+							Agents run unattended. A folder they may <em>write</em> to can have files changed or deleted, with no undo. Approve only folders you are
+							fine with that for, and leave "Allow writing" off wherever reading is enough. Everything inside an approved folder is covered.
+						</p>
+						{#if form.mount_roots.length}
+							<ul class="divide-y rounded-lg border">
+								{#each form.mount_roots as root, i (root.path)}
+									<li class="flex items-center gap-3 px-3 py-2.5">
+										<FolderIcon class="size-4 shrink-0 text-muted-foreground" />
+										<span class="min-w-0 flex-1 truncate font-mono text-sm">{root.path}</span>
+										<label class="flex items-center gap-2 text-xs text-muted-foreground">
+											<Switch checked={root.allow_write} onCheckedChange={(on) => (form!.mount_roots[i].allow_write = on)} aria-label="Allow writing in {root.path}" />
+											Allow writing
+											<Tooltip.Root>
+												<Tooltip.Trigger type="button" class="text-muted-foreground/70 hover:text-foreground" aria-label="What does allow writing mean?">
+													<InfoIcon class="size-3.5" />
+												</Tooltip.Trigger>
+												<Tooltip.Content class="max-w-64">
+													Off: cells can only read files here. On: they can also create, change and delete them. A real, unattended agent has no undo.
+												</Tooltip.Content>
+											</Tooltip.Root>
+										</label>
+										<Button type="button" variant="ghost" size="icon-sm" aria-label="Stop approving {root.path}" class="-me-1 text-muted-foreground/60 hover:text-destructive" onclick={() => (form!.mount_roots = form!.mount_roots.filter((_, j) => j !== i))}>
+											<Trash2Icon />
+										</Button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						<div class="flex gap-2">
+							<Input
+								bind:value={newRoot}
+								placeholder="/home/you/notes"
+								class="font-mono"
+								aria-label="Folder to approve"
+								onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addRoot())}
+							/>
+							<Button type="button" variant="outline" disabled={!newRoot.trim()} onclick={addRoot}>Approve folder</Button>
+						</div>
+						<p class="text-xs text-muted-foreground">
+							Projects then add these as shared folders. ThemisForge's own data and configuration can never be mounted, and a link that leads out of an approved folder does not count.
+						</p>
 					</SettingsSection>
 
 					<SettingsSection id="agents" title="Codex agents" description="The image and model tasks use when they run with a Codex agent." summary={agentSummary}>

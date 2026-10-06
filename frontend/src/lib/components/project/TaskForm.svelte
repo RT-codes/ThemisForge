@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, ApiError, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Agent, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -39,7 +39,7 @@
 		cron: task?.cron ?? '',
 		runAt: toLocalInput(task?.run_at ?? null),
 		review: task?.review_on_success ?? false,
-		harness: (task?.harness ?? '') as Harness,
+		runWith: task?.agent_id ? `agent:${task.agent_id}` : (task?.harness ?? ''),
 		workflowId: task?.workflow_id ? String(task.workflow_id) : '',
 		properties: { ...(task?.properties ?? {}) } as Record<string, PropertyValue>,
 	}))
@@ -68,15 +68,21 @@
 	}
 	let runAt = $state(initial.runAt)
 	let review = $state(initial.review)
-	let harness = $state<Harness>(initial.harness)
+	// "Run with" is one choice: a kind of run, or one of the project's agents
+	let runWith = $state<string>(initial.runWith)
+	const harness = $derived<Harness>(runWith.startsWith('agent:') ? 'codex' : (runWith as Harness))
+	const agentId = $derived(runWith.startsWith('agent:') ? Number(runWith.slice(6)) : null)
+	let agents = $state<Agent[]>([])
+	const chosenAgent = $derived(agents.find((a) => a.id === agentId))
 	let workflowId = $state(initial.workflowId)
 	let workflows = $state<WorkflowSummary[]>([])
 	const harnessLabels: Record<Harness, string> = { '': 'Placeholder program', codex: 'Codex agent', workflow: 'Workflow' }
+	const runLabel = $derived(agentId !== null ? (chosenAgent?.name ?? 'An agent that was deleted') : harnessLabels[harness])
 	const chosenWorkflow = $derived(workflows.find((w) => String(w.id) === workflowId))
 
 	onMount(async () => {
 		try {
-			workflows = await api.workflows(projectId)
+			;[workflows, agents] = await Promise.all([api.workflows(projectId), api.agents(projectId)])
 		} catch {
 			// the list only fills the workflow picker; saving still reports a real problem
 		}
@@ -123,6 +129,7 @@
 						review_on_success: review,
 						harness,
 						workflow_id: harness === 'workflow' ? Number(workflowId) : null,
+						agent_id: agentId,
 						...schedule,
 					})
 				)
@@ -134,6 +141,7 @@
 					review_on_success: review,
 					harness,
 					workflow_id: harness === 'workflow' ? Number(workflowId) : null,
+					agent_id: agentId,
 				}
 				if (status !== task.status) patch.status = status
 				if (scheduleChanged) Object.assign(patch, schedule)
@@ -275,11 +283,14 @@
 
 		<div class="grid gap-2 pt-1">
 			<Label for="task-harness">Run with</Label>
-			<Select.Root type="single" bind:value={harness}>
-				<Select.Trigger id="task-harness" class="w-full">{harnessLabels[harness]}</Select.Trigger>
+			<Select.Root type="single" bind:value={runWith}>
+				<Select.Trigger id="task-harness" class="w-full">{runLabel}</Select.Trigger>
 				<Select.Content>
 					<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
 					<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+					{#each agents as a (a.id)}
+						<Select.Item value="agent:{a.id}" label={a.name}>{a.name}{a.role ? ` - ${a.role}` : ''}</Select.Item>
+					{/each}
 					<Select.Item value="workflow" label="Workflow">Workflow</Select.Item>
 				</Select.Content>
 			</Select.Root>
@@ -303,6 +314,8 @@
 			<p class="text-xs text-muted-foreground">
 				{#if harness === 'workflow'}
 					Plays the workflow instead of running a container: its nodes run in order and can start other tasks. The attempt history links to the run.
+				{:else if agentId !== null}
+					{chosenAgent?.name ?? 'The agent'} does the task with its own instructions, model, cell and folders (set on the Agents page).
 				{:else if harness === 'codex'}
 					An agent works on the task in its own container, using the project owner's Codex connection (Settings). Its working folder is private to each run.
 				{:else}

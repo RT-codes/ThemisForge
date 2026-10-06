@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import (
+    Agent,
     Attempt,
     AttemptStatus,
     Project,
@@ -102,6 +103,13 @@ async def _workflow_for(
 # projects
 
 
+async def _agent_for(session: AsyncSession, project_id: int, agent_id: int) -> Agent:
+    agent = await session.get(Agent, agent_id)
+    if agent is None or agent.project_id != project_id:
+        raise _bad("That agent does not exist in this project")
+    return agent
+
+
 @router.get("/projects", response_model=list[ProjectSummary])
 async def list_projects(session: SessionDep, user: CurrentUser) -> list[ProjectSummary]:
     projects = (
@@ -133,7 +141,13 @@ async def list_projects(session: SessionDep, user: CurrentUser) -> list[ProjectS
 
 @router.post("/projects", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 async def create_project(body: ProjectIn, session: SessionDep, user: CurrentUser) -> Project:
-    project = Project(owner_id=user.id, name=body.name, description=body.description, properties=[])
+    project = Project(
+        owner_id=user.id,
+        name=body.name,
+        description=body.description,
+        properties=[],
+        cell_profile=body.cell_profile.clean() if body.cell_profile else None,
+    )
     session.add(project)
     await session.commit()
     return project
@@ -153,6 +167,8 @@ async def update_project(
         project.name = body.name.strip() or project.name
     if body.description is not None:
         project.description = body.description
+    if "cell_profile" in body.model_fields_set:
+        project.cell_profile = body.cell_profile.clean() if body.cell_profile else None
     if body.properties is not None:
         try:
             project.properties = validate_definitions(body.properties)
@@ -211,6 +227,9 @@ async def create_task(
         harness=body.harness,
         workflow_id=await _workflow_for(session, project.id, body.harness, body.workflow_id),
     )
+    if body.agent_id is not None:
+        agent = await _agent_for(session, project.id, body.agent_id)
+        task.agent_id, task.harness, task.workflow_id = agent.id, agent.harness, None
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     session.add(task)
     await session.commit()
@@ -254,6 +273,13 @@ async def update_task(
         wanted = body.workflow_id if "workflow_id" in fields else task.workflow_id
         task.harness = harness
         task.workflow_id = await _workflow_for(session, project.id, harness, wanted)
+    if "agent_id" in fields:
+        task.agent_id = (
+            None if body.agent_id is None else (await _agent_for(session, project.id, body.agent_id)).id
+        )
+    if task.agent_id is not None:  # an agent decides how its tasks run
+        agent = await _agent_for(session, project.id, task.agent_id)
+        task.harness, task.workflow_id = agent.harness, None
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:

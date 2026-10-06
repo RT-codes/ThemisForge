@@ -1,7 +1,7 @@
 ---
 title: Settings
 group: Running it
-summary: Docker connection, cell defaults, time zone and stored keys.
+summary: Docker connection, resource budget, cell defaults, time zone and stored keys.
 ---
 
 # Settings
@@ -40,10 +40,41 @@ a remote host needs the same paths available.
 > [!WARNING]
 > Access to Docker is effectively root access on that machine. Point ThemisForge only at hosts you trust.
 
+## Resources
+
+How much of the machine all running cells together may use. The section shows what the machine has, as the Docker daemon
+sees it (which can be another machine), and the free space on the drive ThemisForge keeps its data on. Below that you set
+the **budget**: CPUs and memory for all cells together.
+
+- The bars show how much of the machine the budget takes. A budget larger than the machine is marked, because cells
+  would then compete for what is not there.
+- **Fits N cells** tells you how many cells of the default size (see below) run at the same time with this budget.
+- **Use recommended** fills in a budget that leaves the machine room for itself: a CPU (or a fifth of them, whichever is
+  more) and a quarter of the memory.
+- If not even one default cell fits, the section opens by itself and tasks fail with a note until you raise the budget.
+
+Before the budget existed, Settings limited the number of cells. An existing installation keeps its behaviour: the old
+number is turned into the same number of cells of the configured size.
+
 ## Cells
 
-Defaults for every cell: image, CPUs, memory, time limit and how many run at once. See
+Defaults for every cell: image, CPUs, memory, time limit and how long working folders are kept. See
 [Cells and workspaces](/docs/cells). Saving applies the change to the next cell that starts.
+
+## Mount roots
+
+The folders on this machine that agents may be given. Projects can only add a folder as a [shared folder](/docs/cells#shared-folders)
+if it is inside one approved here, and an approved folder is read only unless you switch on **Allow writing** for it.
+
+- Everything inside an approved folder is covered, including sub folders. Approving the whole disk (`/`) is not allowed.
+- A link that leads out of an approved folder does not count: the real location is what is checked.
+- ThemisForge's own data folder, database and configuration can never be mounted, nor a folder that contains them.
+- Taking an approval away does not delete anything. Volumes that relied on it are marked in the project, and runs that
+  would use them fail with a note until you approve the folder again.
+
+> [!WARNING]
+> Agents run unattended. A folder they may write to can have files changed or deleted, with no undo. Approve only what you
+> are fine with that for.
 
 ## Schedules
 

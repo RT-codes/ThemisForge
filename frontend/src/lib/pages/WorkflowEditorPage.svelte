@@ -250,7 +250,7 @@
 		{#if tab === 'editor'}
 			{#key canvasKey}
 				<SvelteFlowProvider>
-					<FlowCanvas bind:this={canvas} {initialGraph} onsave={persist} ontest={test} bind:saveState draft={!workflow} />
+					<FlowCanvas bind:this={canvas} {projectId} {initialGraph} onsave={persist} ontest={test} bind:saveState draft={!workflow} />
 				</SvelteFlowProvider>
 			{/key}
 		{:else if workflow}

@@ -5,6 +5,7 @@ interface, so Docker can later be swapped for Podman, a remote machine or anothe
 
 The cell contract (what runs inside a cell, whatever the harness):
   /workspace          this attempt's private working folder (read/write, removed after a retention period)
+  /workspace/NAME     a shared folder (volume) mounted inside it, read/write or read-only (see app/volumes.py)
   /cell/input.json    the task, written before the cell starts
   /cell/result.md     optional: the cell writes its result here; it is stored with the attempt
   exit code 0         success, anything else is a failure
@@ -46,6 +47,17 @@ class CellError(Exception):
     """The cell could not run (Docker unavailable, image missing, timeout...)."""
 
 
+@dataclass(frozen=True)
+class Mount:
+    """A volume as the cell sees it: the folder on the host, mounted at /workspace/NAME."""
+
+    name: str
+    source: Path
+    read_only: bool
+    volume_id: int
+    lock: bool = False  # writers take turns: only one run holds it at a time
+
+
 @dataclass
 class CellSpec:
     attempt_id: int
@@ -71,6 +83,7 @@ class CellSpec:
     owner_id: int = 0  # the user whose connections the cell may use
     harness: str = ""
     workflow_id: int | None = None  # for harness "workflow": the workflow to play (no cell is started)
+    mounts: list[Mount] = field(default_factory=list)  # shared folders, mounted at /workspace/NAME
 
     @property
     def workspace_dir(self) -> Path:
@@ -99,6 +112,10 @@ class CellManager(Protocol):
 def prepare_dirs(spec: CellSpec) -> None:
     spec.workspace_dir.mkdir(parents=True, exist_ok=True)
     spec.cell_dir.mkdir(parents=True, exist_ok=True)
+    for mount in spec.mounts:
+        mount.source.mkdir(parents=True, exist_ok=True)
+        # made here, as us: if Docker had to create the mountpoint it would belong to root
+        (spec.workspace_dir / mount.name).mkdir(exist_ok=True)
     if spec.prompt:
         (spec.cell_dir / "prompt.md").write_text(spec.prompt)
     (spec.cell_dir / "input.json").write_text(
@@ -251,6 +268,7 @@ class DockerCellManager:
             "--memory", f"{spec.memory_mb}m",
             *extra,
             "-v", f"{spec.workspace_dir}:/workspace",
+            *[a for m in spec.mounts for a in ("-v", f"{m.source}:/workspace/{m.name}{':ro' if m.read_only else ''}")],
             "-v", f"{spec.cell_dir}:/cell",
             "-e", f"THEMIS_TASK_ID={spec.task_id}",
             "-e", f"THEMIS_TASK_TITLE={spec.title}",

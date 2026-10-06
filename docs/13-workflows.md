@@ -30,11 +30,20 @@ Whatever you were editing is saved before the next workflow opens.
 | **Start** | A run begins here. A workflow can have several Start nodes; a run begins at all of them. |
 | **Trigger** | Also begins a run. Schedules and events are not automatic yet, so for now it behaves like Start. |
 | **Task** | Creates a task, updates one, or runs one by its title. A task that becomes **Ready** runs like any other task and the node waits for it. |
-| **Agent** | Hands instructions to a Codex agent (see [Connecting Codex](/docs/codex)) and waits for it. The result of the node before it is passed along. |
+| **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along. |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
 
 Select a node to configure it in the panel on the right.
+
+### The Agent node
+
+Pick an **agent** and write the **instructions** for this step. The agent's own instructions, model, cell and folders apply,
+and what you write here is the task it is given. With **No agent** the node runs a plain Codex agent, as before.
+
+Under **Cell and folders** a step can change the cell size or mount extra [shared folders](/docs/cells#shared-folders) for
+this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press **Customise**. If an agent is deleted, the nodes that
+used it fail with a note that says so until you pick another.
 
 ## How a run works
 
@@ -50,7 +59,7 @@ Select a node to configure it in the panel on the right.
   runs, the workflow runs instead of a container, and the attempt history shows its progress with a link to the full run.
 
 So workflows orchestrate tasks, and tasks orchestrate workflows. A task that plays a workflow does not take up one of the
-cell slots (Settings, Cells), because it mostly waits for the tasks inside it. A workflow that would end up playing
+resource budget (Settings, Resources), because it mostly waits for the tasks inside it. A workflow that would end up playing
 itself through its own tasks is stopped, and so are chains nested more than five levels deep.
 
 ## Run history

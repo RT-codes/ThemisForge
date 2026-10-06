@@ -7,7 +7,7 @@ summary: Manual, one-off and repeating schedules, time zones and what happens wh
 # Scheduling
 
 ThemisForge has one always-on scheduler. About every three seconds it looks for tasks that are **Ready** and **due**,
-and starts a cell for each, up to the concurrency limit.
+and starts a cell for each, as long as it fits the [resource budget](/docs/settings#resources).
 
 ## Three kinds of schedule
 
@@ -52,14 +52,15 @@ Resuming does not replay what was missed: the next occurrence is computed from t
 
 ## Late and missed runs
 
-- **Cell slots are full**: a due task waits and starts as soon as a slot is free. Tasks without a schedule go first, then the one that became due earliest.
+- **The resource budget is full**: a due task waits and starts as soon as there is room. Tasks without a schedule go first, then the one that became due earliest. Waiting is strictly in that order, so a big cell is never overtaken by small ones behind it.
 - **ThemisForge was down**: occurrences that passed while it was off are **skipped**, not replayed. After the restart
   the next occurrence is computed from the current time.
 - **A one-off task whose time has passed** runs as soon as it is Ready.
 
 ## Concurrency
 
-By default two cells run at the same time. Change it under **Settings, Cells**. A raised limit applies immediately.
+How many cells run at the same time depends on the **resource budget** (CPUs and memory) under **Settings, Resources**, and
+on the size of each cell. By default the budget fits two cells of the default size. A raised budget applies immediately.
 
 ## Reading the timeline
 

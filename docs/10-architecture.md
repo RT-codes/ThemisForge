@@ -25,7 +25,7 @@ ThemisForge is deliberately small: **one server process** that does everything, 
 | Part | Role |
 | --- | --- |
 | **API** | REST endpoints under `/api` for projects, tasks, attempts, settings, access and system status. |
-| **Scheduler** | A loop inside the server. Every few seconds it picks Ready tasks that are due and starts cells, within the concurrency limit. |
+| **Scheduler** | A loop inside the server. Every few seconds it picks Ready tasks that are due and starts cells, within the resource budget. |
 | **Cell manager** | The only code that talks to Docker. A small interface (run, kill, clean up) so Docker can be replaced later. |
 | **Database** | SQLite in WAL mode, with Alembic migrations that run when the server starts. |
 | **Web app** | Svelte 5 with Tailwind and shadcn-svelte. The server serves the built app, so there is just one process to run. |

@@ -20,11 +20,20 @@ export interface PropertyDef {
   colors?: Record<string, string> // option -> "#rrggbb", for select properties
 }
 
+/** the parts of a cell a project, agent or run may change: only the fields that are set override anything */
+export interface ProfileOverrides {
+  image?: string | null
+  cpus?: number | null
+  memory_mb?: number | null
+  timeout_seconds?: number | null
+}
+
 export interface Project {
   id: number
   name: string
   description: string
   properties: PropertyDef[]
+  cell_profile: ProfileOverrides | null
   created_at: string
 }
 
@@ -51,6 +60,7 @@ export interface Task {
   review_on_success: boolean
   harness: Harness
   workflow_id: number | null
+  agent_id: number | null
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
@@ -67,6 +77,7 @@ export interface TaskInput {
   review_on_success?: boolean
   harness?: Harness
   workflow_id?: number | null
+  agent_id?: number | null
 }
 
 export type TaskPatch = Partial<TaskInput> & { position?: number }
@@ -94,6 +105,64 @@ export interface ScheduledRun {
   recurring: boolean
 }
 
+export interface MountRoot {
+  path: string
+  allow_write: boolean
+}
+
+export interface Volume {
+  id: number
+  project_id: number
+  name: string
+  kind: 'managed' | 'host'
+  host_path: string
+  mode: 'ro' | 'rw'
+  exclusive_write: boolean
+  created_at: string
+  is_default: boolean
+  problem: string | null
+  can_write: boolean
+}
+
+export interface VolumeInput {
+  name: string
+  kind?: 'managed' | 'host'
+  host_path?: string
+  mode?: 'ro' | 'rw'
+  exclusive_write?: boolean | null
+}
+
+export interface MountRef {
+  volume_id: number
+  mode: 'ro' | 'rw'
+}
+
+export interface Agent {
+  id: number
+  project_id: number
+  name: string
+  role: string
+  description: string
+  instructions: string
+  harness: string
+  model: string
+  reasoning_effort: '' | 'low' | 'medium' | 'high'
+  cell_profile: ProfileOverrides | null
+  mounts: MountRef[]
+  created_at: string
+  updated_at: string
+}
+
+export type AgentInput = Omit<Agent, 'id' | 'project_id' | 'created_at' | 'updated_at'>
+
+export interface HarnessInfo {
+  id: string
+  label: string
+  description: string
+  supports_skills: boolean
+  supports_mcp: boolean
+}
+
 export interface AppSettings {
   timezone: string
   docker_host: string
@@ -101,7 +170,8 @@ export interface AppSettings {
   cell_cpus: number
   cell_memory_mb: number
   cell_timeout_seconds: number
-  max_concurrent_cells: number
+  budget: { cpus: number; memory_mb: number }
+  mount_roots: MountRoot[]
   codex_image: string
   codex_model: string
   codex_reasoning_effort: 'low' | 'medium' | 'high'
@@ -120,8 +190,27 @@ export interface DockerStatus {
   hint: string | null
 }
 
+export interface Resources {
+  ok: boolean
+  error: string | null
+  hint: string | null
+  host_cpus: number | null
+  host_memory_mb: number | null
+  disk_total_mb: number
+  disk_free_mb: number
+  recommended: { cpus: number; memory_mb: number } | null
+}
+
+export interface CellDefaults {
+  image: string
+  cpus: number
+  memory_mb: number
+  timeout_seconds: number
+}
+
 export interface SystemStatus {
   scheduler: { running: boolean; active_cells: number; max_cells: number }
+  cell_defaults: CellDefaults
   timezone: string
   pending_access_requests: number
   insecure_secret_key: boolean
@@ -296,8 +385,9 @@ export const api = {
 
   projects: () => request<ProjectSummary[]>('/projects'),
   project: (id: number) => request<Project>(`/projects/${id}`),
-  createProject: (name: string, description = '') => request<Project>('/projects', send('POST', { name, description })),
-  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'description' | 'properties'>>) =>
+  createProject: (name: string, description = '', cell_profile: ProfileOverrides | null = null) =>
+    request<Project>('/projects', send('POST', { name, description, cell_profile })),
+  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'description' | 'properties' | 'cell_profile'>>) =>
     request<Project>(`/projects/${id}`, send('PATCH', patch)),
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 
@@ -313,6 +403,16 @@ export const api = {
     request<ScheduledRun[]>(`/projects/${projectId}/schedule?hours=${hours}`),
 
   systemStatus: () => request<SystemStatus>('/system/status'),
+  volumes: (projectId: number) => request<Volume[]>(`/projects/${projectId}/volumes`),
+  createVolume: (projectId: number, body: VolumeInput) => request<Volume>(`/projects/${projectId}/volumes`, send('POST', body)),
+  updateVolume: (id: number, patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) => request<Volume>(`/volumes/${id}`, send('PATCH', patch)),
+  deleteVolume: (id: number) => request<void>(`/volumes/${id}`, send('DELETE')),
+  harnesses: () => request<HarnessInfo[]>('/harnesses'),
+  agents: (projectId: number) => request<Agent[]>(`/projects/${projectId}/agents`),
+  createAgent: (projectId: number, body: AgentInput) => request<Agent>(`/projects/${projectId}/agents`, send('POST', body)),
+  updateAgent: (id: number, patch: Partial<AgentInput>) => request<Agent>(`/agents/${id}`, send('PATCH', patch)),
+  deleteAgent: (id: number) => request<void>(`/agents/${id}`, send('DELETE')),
+  resources: () => request<Resources>('/system/resources'),
   docker: (host?: string) =>
     request<DockerStatus>(`/system/docker${host === undefined ? '' : `?host=${encodeURIComponent(host)}`}`),
   settings: () => request<AppSettings>('/settings'),

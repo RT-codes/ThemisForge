@@ -17,11 +17,13 @@
 	// which is how a brand new workflow can stay unsaved until something is actually changed.
 	let {
 		initialGraph,
+		projectId,
 		onsave,
 		ontest,
 		saveState = $bindable('saved'),
 		draft = false,
 	}: {
+		projectId: number
 		initialGraph: Graph
 		onsave: (graph: Graph) => Promise<void>
 		ontest: () => Promise<void>
@@ -218,9 +220,10 @@
 		</SvelteFlow>
 	</div>
 	{#if active}
-		<aside transition:slide={{ axis: 'x', duration: 220 }} class="shrink-0 overflow-hidden border-s bg-background">
+		<aside transition:slide={{ axis: 'x', duration: 220 }} class="h-[calc(100svh-7.5rem)] shrink-0 self-start overflow-hidden border-s bg-background">
 			{#key active.id}
 				<NodeConfigPanel
+					{projectId}
 					id={active.id}
 					data={active.data as WorkflowNodeData}
 					onchange={(patch) => updateNode(active.id, patch)}

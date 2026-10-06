@@ -534,7 +534,7 @@ async def test_playing_a_workflow_never_starves_the_cells_it_needs(client, runne
     """With a single cell slot, the task that plays a workflow must not hold it while waiting for the inner task."""
     _, pid = await setup(client)
     settings = (await client.get("/api/settings")).json()
-    await client.put("/api/settings", json={**settings, "max_concurrent_cells": 1})
+    await client.put("/api/settings", json={**settings, "budget": {"cpus": 1, "memory_mb": 1024}})
     wid = await make_workflow(client, pid)
     await save(
         client, wid, [node("s", "start"), node("t", "task", title="Inner", status="ready")], [edge("s", "t")]

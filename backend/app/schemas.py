@@ -4,6 +4,7 @@ from typing import Any, Literal, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from .models import AttemptStatus, ScheduleKind, TaskStatus
+from .profiles import ProfileOverrides
 from .properties import PropertyDef
 from .scheduling import validate_cron
 
@@ -106,6 +107,7 @@ class AcceptInviteIn(BaseModel):
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=2000)
+    cell_profile: ProfileOverrides | None = None  # overrides of the global cell defaults
 
     @field_validator("name")
     @classmethod
@@ -119,6 +121,7 @@ class ProjectPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=2000)
     properties: list[PropertyDef] | None = None
+    cell_profile: ProfileOverrides | None = None  # sent as null: back to the global defaults
 
 
 class ProjectOut(BaseModel):
@@ -128,6 +131,7 @@ class ProjectOut(BaseModel):
     name: str
     description: str
     properties: list[PropertyDef]
+    cell_profile: dict[str, Any] | None
     created_at: datetime
 
 
@@ -167,6 +171,7 @@ class TaskIn(_ScheduleFields):
     review_on_success: bool = False
     harness: Literal["", "codex", "workflow"] = ""
     workflow_id: int | None = None  # the workflow to play when harness is "workflow"
+    agent_id: int | None = None  # the agent that does it; its harness replaces the one above
 
     @field_validator("title")
     @classmethod
@@ -200,6 +205,7 @@ class TaskPatch(BaseModel):
     review_on_success: bool | None = None
     harness: Literal["", "codex", "workflow"] | None = None
     workflow_id: int | None = None
+    agent_id: int | None = None
 
     @field_validator("status")
     @classmethod
@@ -227,6 +233,7 @@ class TaskOut(BaseModel):
     review_on_success: bool
     harness: str
     workflow_id: int | None
+    agent_id: int | None
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None

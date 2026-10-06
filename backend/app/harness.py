@@ -11,12 +11,31 @@ every harness.
 import json
 import re
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .app_settings import AppSettings
 from .cells import SECRETS_DIR
 
 HARNESSES = ("", "codex")  # "" = the placeholder program
+
+
+@dataclass(frozen=True)
+class HarnessInfo:
+    """What the agent editor needs to know about a harness, so it only offers what the harness can do."""
+
+    id: str
+    label: str
+    description: str
+    supports_skills: bool = False
+    supports_mcp: bool = False
+
+
+CATALOG = (
+    HarnessInfo(
+        "codex", "Codex", "OpenAI's Codex CLI, signed in with your ChatGPT account (Settings, Codex)."
+    ),
+)
 
 CODEX_HOME = f"{SECRETS_DIR}/codex"
 CODEX_AUTH = f"{CODEX_HOME}/auth.json"
@@ -44,25 +63,58 @@ class HarnessPlan:
     uses_codex: bool = False
 
 
-def plan_for(harness: str, cfg: AppSettings) -> HarnessPlan | None:
-    """None means the placeholder program, which needs nothing special."""
+def plan_for(harness: str, cfg: AppSettings, *, model: str = "", effort: str = "") -> HarnessPlan | None:
+    """None means the placeholder program, which needs nothing special. An agent may choose its own model and
+    reasoning effort; empty means the ones in Settings."""
     if harness == "codex":
         return HarnessPlan(
             image=cfg.codex_image,
-            script=codex_script(cfg.codex_model, cfg.codex_reasoning_effort),
+            script=codex_script(model or cfg.codex_model, effort or cfg.codex_reasoning_effort),
             writeback=(CODEX_AUTH,),
             uses_codex=True,
         )
     return None
 
 
-def build_prompt(title: str, description: str, properties: dict) -> str:
-    parts = [f"# {title}"]
+def agent_preamble(name: str, role: str, instructions: str) -> str:
+    """Who the agent is, put in front of every task it is given."""
+    lines = [f"You are {name}" + (f", {role.strip()}." if role.strip() else ".")]
+    if instructions.strip():
+        lines.append(instructions.strip())
+    return "\n\n".join(lines)
+
+
+def folders_note(folders: Sequence[tuple[str, bool]]) -> str:
+    """Tells the agent which shared folders exist (name, read only) and what they are for."""
+    if not folders:
+        return ""
+    lines = [
+        f"- /workspace/{name} ({'read only' if read_only else 'read and write'})"
+        for name, read_only in folders
+    ]
+    return (
+        "Shared folders. These are kept after this run, and other runs can see them, so put files others need "
+        "there:\n" + "\n".join(lines)
+    )
+
+
+def build_prompt(
+    title: str,
+    description: str,
+    properties: dict,
+    *,
+    preamble: str = "",
+    folders: Sequence[tuple[str, bool]] = (),
+) -> str:
+    parts = [preamble] if preamble else []
+    parts.append(f"# {title}")
     if description.strip():
         parts.append(description.strip())
     props = {k: v for k, v in properties.items() if v not in (None, "", [])}
     if props:
         parts.append("Task properties:\n" + "\n".join(f"- {k}: {v}" for k, v in props.items()))
+    if note := folders_note(folders):
+        parts.append(note)
     parts.append(
         "You are running unattended inside a throwaway container. Your working directory /workspace is private to "
         "this run. Do the task, then finish with a short summary of what you did and what you produced. Never read or "

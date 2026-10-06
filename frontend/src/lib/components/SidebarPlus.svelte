@@ -24,7 +24,7 @@
 {/snippet}
 
 {#if href}
-	<a {href} title={label} class={cn(look, className)}>{@render inner()}</a>
+	<a {href} title={label} data-pulse-sibling class={cn(look, className)}>{@render inner()}</a>
 {:else}
 	<button type="button" title={label} {onclick} class={cn(look, className)}>{@render inner()}</button>
 {/if}

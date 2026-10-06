@@ -21,13 +21,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from .app_settings import load_settings
 from .models import (
+    Agent,
     Attempt,
     AttemptStatus,
     NodeStatus,
@@ -39,6 +40,8 @@ from .models import (
     WorkflowRun,
     utcnow,
 )
+from .profiles import ProfileOverrides
+from .volumes import MountRef
 
 log = logging.getLogger("themis.workflows")
 
@@ -444,10 +447,20 @@ class WorkflowRunner:
         if prev and prev.result.strip():
             instructions += f"\n\nResult of the previous step ({prev.label}):\n{prev.result.strip()}"
         title = node.label or "Agent"
+        run_options = self._run_options(c)
         async with self.maker() as s:
+            agent = None
+            if agent_id := c.get("agentId", "").strip():
+                agent = await s.get(Agent, int(agent_id)) if agent_id.isdigit() else None
+                if agent is None or agent.project_id != ctx.project_id:
+                    raise NodeError(
+                        "The agent of this node no longer exists. Open the node and choose another."
+                    )
             task = Task(
                 project_id=ctx.project_id, title=title, description=instructions, status=TaskStatus.READY,
-                harness=c.get("harness", "codex"), position=await self._next_position(s, ctx.project_id, TaskStatus.READY),
+                harness=agent.harness if agent else c.get("harness", "codex"),
+                agent_id=agent.id if agent else None, run_options=run_options,
+                position=await self._next_position(s, ctx.project_id, TaskStatus.READY),
             )  # fmt: skip
             s.add(task)
             await s.flush()
@@ -458,6 +471,27 @@ class WorkflowRunner:
             await s.commit()
             task_id = task.id
         return await self._wait_for_task(nr_id, task_id, before=0)
+
+    @staticmethod
+    def _run_options(c: dict) -> dict | None:
+        """The cell size and shared folders set on an Agent node, for this run only. Node settings are plain text:
+        the cell fields are separate keys, the folders one string like "3:rw,5:ro" (volume id and mode)."""
+        try:
+            fields = {
+                "cellImage": "image",
+                "cellCpus": "cpus",
+                "cellMemory": "memory_mb",
+                "cellTimeout": "timeout_seconds",
+            }
+            asked = {name: c[key].strip() for key, name in fields.items() if c.get(key, "").strip()}
+            profile = ProfileOverrides.model_validate(asked).clean() if asked else None
+            mounts = []
+            for part in filter(None, (p.strip() for p in c.get("mounts", "").split(","))):
+                volume_id, _, mode = part.partition(":")
+                mounts.append(MountRef(volume_id=int(volume_id), mode=mode or "rw").model_dump())
+        except (ValidationError, ValueError):
+            raise NodeError("The cell or folder settings of this agent node are not valid") from None
+        return {k: v for k, v in {"profile": profile, "mounts": mounts}.items() if v} or None
 
     async def _task(self, ctx: _Ctx, nr_id: int, node: GraphNode) -> Outcome:
         c = node.config

@@ -136,3 +136,14 @@ export function fromGraph(graph: Graph) {
 
 /** the next free node id after the ones in a loaded graph (ids look like n7) */
 export const nextNodeNumber = (ids: string[]) => ids.reduce((max, id) => Math.max(max, Number(id.match(/^n(\d+)$/)?.[1] ?? 0)), 0)
+
+/** the graph a new workflow starts with: just where a run begins */
+export const seedGraph = (): Graph => ({ nodes: [{ id: 'n1', kind: 'start', label: 'Start', config: {}, position: { x: 0, y: 0 } }], edges: [] })
+
+/** "Workflow 1", "Workflow 2"... the first number nobody uses yet (the server picks the same name) */
+export function nextWorkflowName(names: string[]): string {
+  const taken = new Set(names.map((n) => n.trim().toLowerCase()))
+  let n = 1
+  while (taken.has(`workflow ${n}`)) n++
+  return `Workflow ${n}`
+}

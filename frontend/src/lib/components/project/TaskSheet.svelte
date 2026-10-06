@@ -112,7 +112,7 @@
 					{/key}
 				</Tabs.Content>
 				<Tabs.Content value="history">
-					<AttemptHistory taskId={task.id} taskStatus={task.status} />
+					<AttemptHistory taskId={task.id} taskStatus={task.status} projectId={task.project_id} />
 				</Tabs.Content>
 			</Tabs.Root>
 		{:else}

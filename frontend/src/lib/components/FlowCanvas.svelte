@@ -1,19 +1,32 @@
 <script lang="ts">
 	import { Background, Controls, MarkerType, MiniMap, SvelteFlow, useSvelteFlow, type Connection, type Edge, type Node } from '@xyflow/svelte'
 	import '@xyflow/svelte/dist/style.css'
-	import { api } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import PlayIcon from '@lucide/svelte/icons/play'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
-	import { DRAG_TYPE, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, toGraph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
+	import { DRAG_TYPE, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
 	import { onDestroy, onMount } from 'svelte'
 	import { nodeIcons } from '$lib/workflowIcons'
 	import { slide } from 'svelte/transition'
 	import NodeConfigPanel from './NodeConfigPanel.svelte'
 	import WorkflowNode from './WorkflowNode.svelte'
 
-	let { projectId, onrun }: { projectId: number; onrun: (runId: number) => void } = $props()
+	// The canvas edits a graph. It does not know where the graph lives: the page decides what saving and testing mean,
+	// which is how a brand new workflow can stay unsaved until something is actually changed.
+	let {
+		initialGraph,
+		onsave,
+		ontest,
+		saveState = $bindable('saved'),
+		draft = false,
+	}: {
+		initialGraph: Graph
+		onsave: (graph: Graph) => Promise<void>
+		ontest: () => Promise<void>
+		saveState?: 'saved' | 'saving' | 'error'
+		draft?: boolean // a new workflow that has not been saved yet
+	} = $props()
 
 	const nodeTypes = { workflow: WorkflowNode }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
@@ -23,27 +36,20 @@
 	let counter = 0
 	let wrapper: HTMLDivElement
 
-	// ----- saving: the workflow is kept on the server and saved shortly after every change -----
+	// ----- saving: shortly after every change, and never when nothing changed -----
 	let loaded = $state(false)
-	let loadError = $state('')
-	let saveState = $state<'saved' | 'saving' | 'error'>('saved')
 	let lastSaved = ''
 	let saveTimer: ReturnType<typeof setTimeout> | undefined
 	const signature = $derived(JSON.stringify(toGraph(nodes, edges)))
 
-	onMount(async () => {
-		try {
-			const { graph } = await api.workflow(projectId)
-			const flow = fromGraph(graph)
-			nodes = flow.nodes
-			edges = flow.edges
-			counter = nextNodeNumber(graph.nodes.map((n) => n.id))
-			lastSaved = JSON.stringify(toGraph(nodes, edges))
-			setTimeout(() => fitView({ maxZoom: 1, padding: 0.15 }), 50)
-		} catch (e) {
-			loadError = e instanceof Error ? e.message : 'Could not load the workflow'
-		}
+	onMount(() => {
+		const flow = fromGraph(initialGraph)
+		nodes = flow.nodes
+		edges = flow.edges
+		counter = nextNodeNumber(initialGraph.nodes.map((n) => n.id))
+		lastSaved = JSON.stringify(toGraph(nodes, edges)) // the starting point: only a difference from it counts as a change
 		loaded = true
+		setTimeout(() => fitView({ maxZoom: 1, padding: 0.15 }), 50)
 	})
 
 	$effect(() => {
@@ -53,12 +59,13 @@
 		saveTimer = setTimeout(flush, 700)
 	})
 
-	async function flush() {
+	/** save now, if there is anything to save */
+	export async function flush() {
 		clearTimeout(saveTimer)
 		const sig = signature
-		if (!loaded || loadError || sig === lastSaved) return
+		if (!loaded || sig === lastSaved) return
 		try {
-			await api.saveWorkflow(projectId, JSON.parse(sig))
+			await onsave(JSON.parse(sig))
 			lastSaved = sig
 			saveState = signature === sig ? 'saved' : 'saving'
 		} catch {
@@ -66,6 +73,9 @@
 		}
 	}
 	onDestroy(() => void flush())
+
+	/** the graph as it is on the canvas right now */
+	export const graph = (): Graph => toGraph(nodes, edges)
 
 	// ----- testing -----
 	let testing = $state(false)
@@ -77,7 +87,7 @@
 		testing = true
 		try {
 			await flush()
-			onrun((await api.startWorkflowRun(projectId)).id)
+			await ontest()
 		} catch (e) {
 			testError = e instanceof Error ? e.message : 'Could not start the run'
 		} finally {
@@ -146,18 +156,16 @@
 
 <div class="flex min-h-0 flex-1">
 	<aside class="flex w-44 shrink-0 flex-col gap-1 border-e p-2">
-		<Button class="h-8 w-full" disabled={!loaded || testing || !hasStart || !!loadError} onclick={test}>
+		<Button class="h-8 w-full" disabled={!loaded || testing || !hasStart} onclick={test}>
 			{#if testing}<LoaderCircleIcon class="animate-spin" />{:else}<PlayIcon />{/if} Test run
 		</Button>
 		{#if testError}
 			<p class="px-1 text-[11px] leading-snug text-destructive" role="alert">{testError}</p>
-		{:else if loadError}
-			<p class="px-1 text-[11px] leading-snug text-destructive" role="alert">{loadError}</p>
 		{:else if !hasStart}
 			<p class="px-1 text-[11px] leading-snug text-muted-foreground">Add a Start node to test.</p>
 		{:else}
 			<p class={`px-1 text-[11px] leading-snug transition-colors ${saveState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
-				{saveState === 'saving' ? 'Saving...' : saveState === 'error' ? 'Could not save' : 'All changes saved'}
+				{saveState === 'saving' ? 'Saving...' : saveState === 'error' ? 'Could not save' : draft ? 'Saved when you change something' : 'All changes saved'}
 			</p>
 		{/if}
 		<div class="my-1.5 border-t"></div>

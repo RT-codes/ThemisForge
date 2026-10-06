@@ -20,7 +20,18 @@ async def _run_async() -> None:
     url = context.config.get_main_option("sqlalchemy.url") or settings.database_url
     engine = make_engine(url)
     async with engine.connect() as connection:
+        if engine.dialect.name == "sqlite":
+            # SQLite changes a table by recreating it. With foreign keys enforced, dropping the old table would
+            # cascade-delete the rows of every table that points at it (attempts, node runs...).
+            await connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            await (
+                connection.commit()
+            )  # end the transaction the pragma started, so the migration runs in its own
         await connection.run_sync(_run)
+        if engine.dialect.name == "sqlite":
+            broken = (await connection.exec_driver_sql("PRAGMA foreign_key_check")).fetchall()
+            if broken:
+                raise RuntimeError(f"The migration left rows pointing at nothing: {broken[:5]}")
     await engine.dispose()
 
 

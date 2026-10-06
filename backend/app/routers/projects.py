@@ -7,7 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
-from ..models import Attempt, AttemptStatus, Project, ScheduleKind, Task, TaskStatus, utcnow
+from ..models import (
+    Attempt,
+    AttemptStatus,
+    Project,
+    ScheduleKind,
+    Task,
+    TaskStatus,
+    Workflow,
+    WorkflowRun,
+    utcnow,
+)
 from ..properties import clean_values, validate_definitions
 from ..scheduling import cron_occurrences, refresh_next_run
 from ..schemas import (
@@ -73,6 +83,20 @@ async def _next_position(session: AsyncSession, project_id: int, status_: str) -
 
 def _bad(detail: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
+
+
+async def _workflow_for(
+    session: AsyncSession, project_id: int, harness: str, workflow_id: int | None
+) -> int | None:
+    """The workflow a task may play: only when it runs with one, and only one from its own project."""
+    if harness != "workflow":
+        return None
+    if workflow_id is None:
+        raise _bad("Choose the workflow this task should play")
+    wf = await session.get(Workflow, workflow_id)
+    if wf is None or wf.project_id != project_id:
+        raise _bad("That workflow does not exist in this project")
+    return workflow_id
 
 
 # projects
@@ -185,6 +209,7 @@ async def create_task(
         run_at=body.run_at,
         review_on_success=body.review_on_success,
         harness=body.harness,
+        workflow_id=await _workflow_for(session, project.id, body.harness, body.workflow_id),
     )
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     session.add(task)
@@ -224,8 +249,11 @@ async def update_task(
             raise _bad(str(e)) from None
     if "review_on_success" in fields and body.review_on_success is not None:
         task.review_on_success = body.review_on_success
-    if "harness" in fields and body.harness is not None:
-        task.harness = body.harness
+    if fields & {"harness", "workflow_id"}:
+        harness = body.harness if "harness" in fields and body.harness is not None else task.harness
+        wanted = body.workflow_id if "workflow_id" in fields else task.workflow_id
+        task.harness = harness
+        task.workflow_id = await _workflow_for(session, project.id, harness, wanted)
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:
@@ -307,12 +335,16 @@ async def list_attempts(
 
 
 @router.get("/attempts/{attempt_id}", response_model=AttemptDetail)
-async def get_attempt(attempt_id: int, session: SessionDep, user: CurrentUser) -> Attempt:
+async def get_attempt(attempt_id: int, session: SessionDep, user: CurrentUser) -> AttemptDetail:
     attempt = await session.get(Attempt, attempt_id)
     if attempt is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attempt not found")
     await _task(session, attempt.task_id, user)
-    return attempt
+    out = AttemptDetail.model_validate(attempt)
+    if attempt.workflow_run_id:
+        run = await session.get(WorkflowRun, attempt.workflow_run_id)
+        out.workflow_id = run.workflow_id if run else None
+    return out
 
 
 # schedule

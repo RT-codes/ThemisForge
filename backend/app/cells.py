@@ -70,6 +70,7 @@ class CellSpec:
     writeback: tuple[str, ...] = ()
     owner_id: int = 0  # the user whose connections the cell may use
     harness: str = ""
+    workflow_id: int | None = None  # for harness "workflow": the workflow to play (no cell is started)
 
     @property
     def workspace_dir(self) -> Path:

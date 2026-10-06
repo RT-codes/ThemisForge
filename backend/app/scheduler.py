@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .app_settings import AppSettings, load_settings
-from .cells import CellError, CellManager, CellSpec
+from .cells import CellError, CellManager, CellResult, CellSpec
 from .codex import CodexError, lease_codex, lease_is_busy
 from .config import settings
 from .harness import CODEX_AUTH, build_prompt, plan_for, renderer_for
@@ -25,6 +25,7 @@ log = logging.getLogger("themis.scheduler")
 MAX_LOG_CHARS = 200_000
 LOG_FLUSH_SECONDS = 1.0
 PRUNE_EVERY_SECONDS = 3600
+MAX_PLAYING = 8  # tasks playing a workflow at the same time
 
 
 @dataclass
@@ -32,6 +33,7 @@ class _Live:
     task: asyncio.Task
     spec: CellSpec | None = None
     cancel_reason: str | None = None  # "user" | "shutdown"
+    cell: bool = True  # False for a task that plays a workflow: it orchestrates, so it holds no cell slot
 
 
 class _LogBuffer:
@@ -73,6 +75,7 @@ class Scheduler:
         self._wake = asyncio.Event()
         self.max_cells = 0
         self._last_prune = float("-inf")
+        self.workflows = None  # the WorkflowRunner, set by the app; plays the workflows of tasks that run one
 
     # lifecycle
 
@@ -97,7 +100,7 @@ class Scheduler:
 
     @property
     def active_cells(self) -> int:
-        return len(self._live)
+        return sum(1 for live in self._live.values() if live.cell)
 
     def wake(self) -> None:
         """Run a tick right away (used when a user presses 'Run now')."""
@@ -153,21 +156,32 @@ class Scheduler:
         async with self.maker() as s:
             cfg = await load_settings(s)
             self.max_cells = cfg.max_concurrent_cells
-            free = cfg.max_concurrent_cells - len(self._live)
-            if free <= 0:
-                return 0
+            free = cfg.max_concurrent_cells - self.active_cells
+            playing = len(self._live) - self.active_cells
             now = utcnow()
-            due = (
-                await s.scalars(
-                    select(Task)
-                    .where(
-                        Task.status == TaskStatus.READY,
-                        (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
+            ready = (
+                Task.status == TaskStatus.READY,
+                (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
+            )
+            order = (Task.next_run_at.asc().nulls_first(), Task.id)
+            due: list[Task] = []
+            if free > 0:  # cells are limited by the slots...
+                due += (
+                    await s.scalars(
+                        select(Task).where(*ready, Task.harness != "workflow").order_by(*order).limit(free)
                     )
-                    .order_by(Task.next_run_at.asc().nulls_first(), Task.id)
-                    .limit(free)
-                )
-            ).all()
+                ).all()
+            if playing < MAX_PLAYING:  # ...workflows are only capped, since they wait on other tasks' cells
+                due += (
+                    await s.scalars(
+                        select(Task)
+                        .where(*ready, Task.harness == "workflow")
+                        .order_by(*order)
+                        .limit(MAX_PLAYING - playing)
+                    )
+                ).all()
+            if not due:
+                return 0
             started: list[tuple[int, CellSpec]] = []
             for task in due:
                 project = await s.get(Project, task.project_id)
@@ -182,7 +196,11 @@ class Scheduler:
                 started.append((attempt.id, self._spec(attempt.id, task, project, cfg)))
             await s.commit()
         for attempt_id, spec in started:
-            live = _Live(task=asyncio.create_task(self._execute(attempt_id, spec, cfg.timezone)), spec=spec)
+            live = _Live(
+                task=asyncio.create_task(self._execute(attempt_id, spec, cfg.timezone)),
+                spec=spec,
+                cell=spec.harness != "workflow",
+            )
             self._live[attempt_id] = live
             live.task.add_done_callback(lambda _t, aid=attempt_id: self._live.pop(aid, None))
         return len(started)
@@ -227,6 +245,7 @@ class Scheduler:
             properties=task.properties,
             owner_id=project.owner_id,
             harness=task.harness,
+            workflow_id=task.workflow_id,
             image=plan.image if plan else cfg.cell_image,
             script=plan.script if plan else None,
             writeback=plan.writeback if plan else (),
@@ -258,7 +277,7 @@ class Scheduler:
                     elif text := renderer.feed(chunk):
                         await buf.write(text)
 
-                res = await self.cells.run(spec, sink)
+                res = await self._play_or_run(spec, attempt_id, sink)
                 if renderer is not None and (tail := renderer.flush()):
                     await buf.write(tail)
                 if (
@@ -285,6 +304,17 @@ class Scheduler:
             log.exception("attempt %s crashed", attempt_id)
             await buf.write(f"\n[Unexpected error] {e}\n")
         await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz)
+
+    async def _play_or_run(self, spec: CellSpec, attempt_id: int, sink) -> CellResult:
+        """A task that plays a workflow hands it to the workflow engine; everything else runs in a cell."""
+        if spec.harness != "workflow":
+            return await self.cells.run(spec, sink)
+        if self.workflows is None:
+            raise CellError("Workflows are not available")
+        ok, result = await self.workflows.run_for_task(
+            spec.project_id, spec.task_id, spec.workflow_id, attempt_id, sink
+        )
+        return CellResult(exit_code=0 if ok else 1, result=result)
 
     async def _finish(
         self,

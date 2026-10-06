@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
+	import WorkflowLibrary from '$lib/components/WorkflowLibrary.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { countScheduled } from '$lib/schedule'
 	import { onMount } from 'svelte'
@@ -59,6 +60,8 @@
 				{/each}
 			</div>
 		</a>
+
+		<WorkflowLibrary projectId={id} {now} />
 	</div>
 {:else if loadError}
 	<p class="m-auto text-sm text-destructive">{loadError}</p>

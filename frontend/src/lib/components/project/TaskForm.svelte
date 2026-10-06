@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, ApiError, type Harness, type PropertyDef, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -8,7 +8,8 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
 	import { CRON_PRESETS, STATUSES, fromLocalInput, statusLabel, toLocalInput } from '$lib/format'
 	import { cn } from '$lib/utils'
-	import { untrack } from 'svelte'
+	import { onMount, untrack } from 'svelte'
+	import { slide } from 'svelte/transition'
 
 	let {
 		projectId,
@@ -38,6 +39,7 @@
 		runAt: toLocalInput(task?.run_at ?? null),
 		review: task?.review_on_success ?? false,
 		harness: (task?.harness ?? '') as Harness,
+		workflowId: task?.workflow_id ? String(task.workflow_id) : '',
 		properties: { ...(task?.properties ?? {}) } as Record<string, PropertyValue>,
 	}))
 
@@ -49,6 +51,18 @@
 	let runAt = $state(initial.runAt)
 	let review = $state(initial.review)
 	let harness = $state<Harness>(initial.harness)
+	let workflowId = $state(initial.workflowId)
+	let workflows = $state<WorkflowSummary[]>([])
+	const harnessLabels: Record<Harness, string> = { '': 'Placeholder program', codex: 'Codex agent', workflow: 'Workflow' }
+	const chosenWorkflow = $derived(workflows.find((w) => String(w.id) === workflowId))
+
+	onMount(async () => {
+		try {
+			workflows = await api.workflows(projectId)
+		} catch {
+			// the list only fills the workflow picker; saving still reports a real problem
+		}
+	})
 	let properties = $state<Record<string, PropertyValue>>(initial.properties)
 
 	let saving = $state(false)
@@ -71,6 +85,10 @@
 	async function save(e: SubmitEvent) {
 		e.preventDefault()
 		error = ''
+		if (harness === 'workflow' && !workflowId) {
+			error = 'Choose the workflow this task should play'
+			return
+		}
 		saving = true
 		try {
 			const schedule = {
@@ -87,11 +105,19 @@
 						properties,
 						review_on_success: review,
 						harness,
+						workflow_id: harness === 'workflow' ? Number(workflowId) : null,
 						...schedule,
 					})
 				)
 			} else {
-				const patch: TaskPatch = { title, description, properties, review_on_success: review, harness }
+				const patch: TaskPatch = {
+					title,
+					description,
+					properties,
+					review_on_success: review,
+					harness,
+					workflow_id: harness === 'workflow' ? Number(workflowId) : null,
+				}
 				if (status !== task.status) patch.status = status
 				if (scheduleChanged) Object.assign(patch, schedule)
 				onsaved(await api.updateTask(task.id, patch))
@@ -180,14 +206,34 @@
 		<div class="grid gap-2 pt-1">
 			<Label for="task-harness">Run with</Label>
 			<Select.Root type="single" bind:value={harness}>
-				<Select.Trigger id="task-harness" class="w-full">{harness === 'codex' ? 'Codex agent' : 'Placeholder program'}</Select.Trigger>
+				<Select.Trigger id="task-harness" class="w-full">{harnessLabels[harness]}</Select.Trigger>
 				<Select.Content>
 					<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
 					<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+					<Select.Item value="workflow" label="Workflow">Workflow</Select.Item>
 				</Select.Content>
 			</Select.Root>
+			{#if harness === 'workflow'}
+				<div class="grid gap-1.5" transition:slide={{ duration: 160 }}>
+					<Select.Root type="single" bind:value={workflowId}>
+						<Select.Trigger id="task-workflow" class="w-full" aria-label="Workflow to play">
+							{chosenWorkflow?.name ?? (workflowId ? 'Workflow' : 'Choose a workflow')}
+						</Select.Trigger>
+						<Select.Content>
+							{#each workflows as w (w.id)}<Select.Item value={String(w.id)} label={w.name}>{w.name}</Select.Item>{/each}
+						</Select.Content>
+					</Select.Root>
+					{#if workflows.length === 0}
+						<p class="text-xs text-muted-foreground">
+							This project has no workflows yet. <a class="text-primary hover:underline" href="/projects/{projectId}#workflows">Create one</a> on the overview.
+						</p>
+					{/if}
+				</div>
+			{/if}
 			<p class="text-xs text-muted-foreground">
-				{#if harness === 'codex'}
+				{#if harness === 'workflow'}
+					Plays the workflow instead of running a container: its nodes run in order and can start other tasks. The attempt history links to the run.
+				{:else if harness === 'codex'}
 					An agent works on the task in its own container, using the project owner's Codex connection (Settings). Its working folder is private to each run.
 				{:else}
 					Prints the task and finishes. Useful to try out scheduling.

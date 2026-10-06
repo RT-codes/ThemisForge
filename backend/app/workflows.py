@@ -24,6 +24,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from .app_settings import load_settings
 from .models import (
@@ -33,12 +34,15 @@ from .models import (
     RunStatus,
     Task,
     TaskStatus,
+    Workflow,
     WorkflowNodeRun,
     WorkflowRun,
     utcnow,
 )
 
 log = logging.getLogger("themis.workflows")
+
+MAX_NESTING = 5  # workflows playing tasks that play workflows...
 
 Kind = Literal["start", "trigger", "task", "agent", "condition", "end"]
 START_KINDS = ("start", "trigger")
@@ -86,6 +90,10 @@ class Graph(BaseModel):
 
 class NodeError(Exception):
     """A node could not do its job; the message is shown to the user as the reason."""
+
+
+class LoopError(Exception):
+    """A workflow would start itself again through the tasks it plays, or nests too deep."""
 
 
 @dataclass
@@ -190,9 +198,40 @@ class WorkflowRunner:
     def active_runs(self) -> int:
         return len(self._live)
 
-    async def start(self, project_id: int, graph: Graph, trigger: str = "test") -> int:
+    async def _check_chain(self, s: AsyncSession, workflow_id: int, parent_run_id: int | None) -> None:
+        """Refuse a run that is already running further up the chain of runs that led here."""
+        depth = 0
+        parent = parent_run_id
+        while parent is not None:
+            row = await s.get(WorkflowRun, parent)
+            if row is None:
+                break
+            if row.workflow_id == workflow_id:
+                raise LoopError(
+                    "This workflow is already running further up the chain that led here, so it would loop."
+                )
+            depth += 1
+            if depth >= MAX_NESTING:
+                raise LoopError(f"Workflows are nested more than {MAX_NESTING} levels deep.")
+            parent = row.parent_run_id
+
+    async def start(
+        self,
+        project_id: int,
+        workflow_id: int,
+        graph: Graph,
+        trigger: str = "test",
+        parent_run_id: int | None = None,
+    ) -> int:
         async with self.maker() as s:
-            run = WorkflowRun(project_id=project_id, trigger=trigger, graph=graph.model_dump())
+            await self._check_chain(s, workflow_id, parent_run_id)
+            run = WorkflowRun(
+                project_id=project_id,
+                workflow_id=workflow_id,
+                parent_run_id=parent_run_id,
+                trigger=trigger,
+                graph=graph.model_dump(),
+            )
             s.add(run)
             await s.commit()
             run_id = run.id
@@ -206,16 +245,91 @@ class WorkflowRunner:
         if task is None:
             return False
         async with self.maker() as s:  # stop the cell the current node is waiting for
-            attempt_id = await s.scalar(
-                select(WorkflowNodeRun.attempt_id).where(
-                    WorkflowNodeRun.run_id == run_id, WorkflowNodeRun.status == NodeStatus.RUNNING
+            node = (
+                await s.execute(
+                    select(WorkflowNodeRun.task_id, WorkflowNodeRun.attempt_id).where(
+                        WorkflowNodeRun.run_id == run_id, WorkflowNodeRun.status == NodeStatus.RUNNING
+                    )
                 )
-            )
+            ).first()
+            attempt_id = node.attempt_id if node else None
+            if node and attempt_id is None and node.task_id:  # the engine has not noticed the attempt yet
+                attempt_id = await s.scalar(
+                    select(Attempt.id)
+                    .where(Attempt.task_id == node.task_id, Attempt.status == AttemptStatus.RUNNING)
+                    .order_by(Attempt.id.desc())
+                    .limit(1)
+                )
         if attempt_id:
             await self._scheduler().cancel(attempt_id)  # type: ignore[attr-defined]
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         return True
+
+    async def run_for_task(
+        self, project_id: int, task_id: int, workflow_id: int | None, attempt_id: int, write
+    ) -> tuple[bool, str]:
+        """Play a task's workflow for one attempt of that task. Progress goes into the attempt's log as it happens.
+        Returns whether the run succeeded, and what it concluded."""
+        async with self.maker() as s:
+            wf = await s.get(Workflow, workflow_id) if workflow_id else None
+            if wf is None or wf.project_id != project_id:
+                await write(
+                    "[Cell error] The workflow this task plays no longer exists. Pick another one in the task.\n"
+                )
+                return False, ""
+            # a workflow node waiting for this task is the parent of the run we are about to start
+            parent = await s.scalar(
+                select(WorkflowNodeRun.run_id)
+                .where(WorkflowNodeRun.task_id == task_id, WorkflowNodeRun.status == NodeStatus.RUNNING)
+                .order_by(WorkflowNodeRun.id.desc())
+                .limit(1)
+            )
+        graph = Graph.model_validate(wf.graph)
+        if not graph.start_nodes:
+            await write(
+                f'[Cell error] The workflow "{wf.name}" has no Start node, so there is nowhere to begin.\n'
+            )
+            return False, ""
+        try:
+            run_id = await self.start(project_id, wf.id, graph, trigger="task", parent_run_id=parent)
+        except LoopError as e:
+            await write(f"[Cell error] {e}\n")
+            return False, ""
+        async with self.maker() as s:
+            await s.execute(update(Attempt).where(Attempt.id == attempt_id).values(workflow_run_id=run_id))
+            await s.commit()
+        await write(f'Playing the workflow "{wf.name}" (run #{run_id})\n')
+        seen: dict[int, str] = {}
+        try:
+            while True:
+                await asyncio.sleep(self.POLL_SECONDS)
+                async with self.maker() as s:
+                    run = await s.scalar(
+                        select(WorkflowRun)
+                        .where(WorkflowRun.id == run_id)
+                        .options(selectinload(WorkflowRun.nodes))
+                        .execution_options(populate_existing=True)
+                    )
+                assert run is not None
+                for n in run.nodes:
+                    if n.status == NodeStatus.SKIPPED or seen.get(n.id) == n.status:
+                        continue
+                    if n.id not in seen:
+                        await write(f"[{n.seq}] {n.label} ({n.kind})\n")
+                    if n.status != NodeStatus.RUNNING:
+                        await write(f"    {n.status}{': ' + n.error if n.error else ''}\n")
+                    seen[n.id] = n.status
+                if run.status != RunStatus.RUNNING:
+                    break
+        except asyncio.CancelledError:
+            await self.cancel(run_id)  # the task was cancelled: stop what it started
+            raise
+        skipped = [n for n in run.nodes if n.status == NodeStatus.SKIPPED]
+        if skipped:
+            await write("Did not run: " + ", ".join(n.label for n in skipped) + "\n")
+        await write(f"Workflow {run.status}{': ' + run.outcome if run.outcome else ''}\n")
+        return run.status == RunStatus.SUCCEEDED, run.outcome
 
     # the run
 
@@ -336,9 +450,13 @@ class WorkflowRunner:
                 harness=c.get("harness", "codex"), position=await self._next_position(s, ctx.project_id, TaskStatus.READY),
             )  # fmt: skip
             s.add(task)
+            await s.flush()
+            # linked before the task can be picked up, so a workflow it plays can tell which run is waiting for it
+            await s.execute(
+                update(WorkflowNodeRun).where(WorkflowNodeRun.id == nr_id).values(task_id=task.id)
+            )
             await s.commit()
             task_id = task.id
-        await self._update_node(nr_id, task_id=task_id)
         return await self._wait_for_task(nr_id, task_id, before=0)
 
     async def _task(self, ctx: _Ctx, nr_id: int, node: GraphNode) -> Outcome:
@@ -385,9 +503,12 @@ class WorkflowRunner:
                     if c.get("description", "").strip():
                         task.description = c["description"]
                     note = f'Updated task "{title}": now {target}.'
+            await s.flush()
+            await s.execute(
+                update(WorkflowNodeRun).where(WorkflowNodeRun.id == nr_id).values(task_id=task.id)
+            )
             await s.commit()
             task_id, becomes_ready = task.id, task.status == TaskStatus.READY
-        await self._update_node(nr_id, task_id=task_id)
         if becomes_ready:
             return await self._wait_for_task(nr_id, task_id, before)
         return Outcome(NodeStatus.SUCCEEDED, log=note + "\n", result=note)

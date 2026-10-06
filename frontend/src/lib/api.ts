@@ -32,7 +32,7 @@ export interface ProjectSummary extends Project {
   next_run_at: string | null
 }
 
-export type Harness = '' | 'codex'
+export type Harness = '' | 'codex' | 'workflow'
 
 export interface Task {
   id: number
@@ -49,6 +49,7 @@ export interface Task {
   last_run_at: string | null
   review_on_success: boolean
   harness: Harness
+  workflow_id: number | null
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
@@ -64,11 +65,13 @@ export interface TaskInput {
   run_at?: string | null
   review_on_success?: boolean
   harness?: Harness
+  workflow_id?: number | null
 }
 
 export type TaskPatch = Partial<TaskInput> & { position?: number }
 
 export interface Attempt {
+  workflow_run_id?: number | null
   id: number
   task_id: number
   status: AttemptStatus
@@ -78,6 +81,7 @@ export interface Attempt {
 }
 
 export interface AttemptDetail extends Attempt {
+  workflow_id: number | null
   log: string
   result: string
 }
@@ -190,6 +194,28 @@ export interface NodeRun {
   attempt_id: number | null
 }
 
+export interface WorkflowSummary {
+  id: number
+  project_id: number
+  name: string
+  description: string
+  node_count: number
+  created_at: string
+  updated_at: string
+  runs: number
+  last_run: { id: number; status: RunStatus; started_at: string } | null
+}
+
+export interface WorkflowDetail {
+  id: number
+  project_id: number
+  name: string
+  description: string
+  graph: Graph
+  created_at: string
+  updated_at: string
+}
+
 export interface WorkflowRunSummary {
   id: number
   status: RunStatus
@@ -205,6 +231,7 @@ export interface WorkflowRunSummary {
 export interface WorkflowRunDetail {
   id: number
   project_id: number
+  workflow_id: number
   status: RunStatus
   trigger: string
   outcome: string
@@ -294,10 +321,13 @@ export const api = {
     request<Secret>('/secrets', send('POST', { name, kind, value })),
   deleteSecret: (id: number) => request<void>(`/secrets/${id}`, send('DELETE')),
 
-  workflow: (projectId: number) => request<{ graph: Graph; updated_at: string | null }>(`/projects/${projectId}/workflow`),
-  saveWorkflow: (projectId: number, graph: Graph) => request<{ graph: Graph; updated_at: string }>(`/projects/${projectId}/workflow`, send('PUT', graph)),
-  startWorkflowRun: (projectId: number) => request<WorkflowRunDetail>(`/projects/${projectId}/workflow/runs`, send('POST')),
-  workflowRuns: (projectId: number) => request<WorkflowRunSummary[]>(`/projects/${projectId}/workflow/runs`),
+  workflows: (projectId: number) => request<WorkflowSummary[]>(`/projects/${projectId}/workflows`),
+  createWorkflow: (projectId: number, body: { name?: string; graph?: Graph } = {}) => request<WorkflowDetail>(`/projects/${projectId}/workflows`, send('POST', body)),
+  workflow: (id: number) => request<WorkflowDetail>(`/workflows/${id}`),
+  updateWorkflow: (id: number, patch: { name?: string; description?: string; graph?: Graph }) => request<WorkflowDetail>(`/workflows/${id}`, send('PATCH', patch)),
+  deleteWorkflow: (id: number) => request<void>(`/workflows/${id}`, send('DELETE')),
+  startWorkflowRun: (workflowId: number) => request<WorkflowRunDetail>(`/workflows/${workflowId}/runs`, send('POST')),
+  workflowRuns: (workflowId: number) => request<WorkflowRunSummary[]>(`/workflows/${workflowId}/runs`),
   workflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}`),
   cancelWorkflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}/cancel`, send('POST')),
 

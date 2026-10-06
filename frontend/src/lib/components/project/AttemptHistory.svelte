@@ -6,10 +6,11 @@
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
+	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 	import BanIcon from '@lucide/svelte/icons/ban'
 	import { onMount } from 'svelte'
 
-	let { taskId, taskStatus }: { taskId: number; taskStatus: string } = $props()
+	let { taskId, taskStatus, projectId }: { taskId: number; taskStatus: string; projectId: number } = $props()
 
 	let attempts = $state<Attempt[]>([])
 	let loaded = $state(false)
@@ -98,6 +99,16 @@
 		</ul>
 
 		{#if detail}
+			{#if detail.workflow_run_id && detail.workflow_id}
+				<a
+					href="/projects/{projectId}/workflows/{detail.workflow_id}/runs/{detail.workflow_run_id}"
+					class="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm transition-colors hover:border-primary/40"
+				>
+					<WorkflowIcon class="size-4 shrink-0 text-primary" />
+					<span class="min-w-0 flex-1 truncate">Played workflow run #{detail.workflow_run_id}</span>
+					<span class="shrink-0 text-xs text-primary">See every node</span>
+				</a>
+			{/if}
 			{#if detail.result}
 				<div>
 					<h4 class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Result</h4>

@@ -47,6 +47,7 @@ app.state.scheduler = Scheduler(
 
 app.state.codex_logins = CodexLogins(SessionLocal)
 app.state.workflows = WorkflowRunner(SessionLocal, lambda: app.state.scheduler)
+app.state.scheduler.workflows = app.state.workflows
 
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)

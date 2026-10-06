@@ -165,7 +165,8 @@ class TaskIn(_ScheduleFields):
     status: TaskStatus = TaskStatus.INBOX
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
-    harness: Literal["", "codex"] = ""
+    harness: Literal["", "codex", "workflow"] = ""
+    workflow_id: int | None = None  # the workflow to play when harness is "workflow"
 
     @field_validator("title")
     @classmethod
@@ -197,7 +198,8 @@ class TaskPatch(BaseModel):
     cron: str | None = None
     run_at: AwareDatetime | None = None
     review_on_success: bool | None = None
-    harness: Literal["", "codex"] | None = None
+    harness: Literal["", "codex", "workflow"] | None = None
+    workflow_id: int | None = None
 
     @field_validator("status")
     @classmethod
@@ -224,6 +226,7 @@ class TaskOut(BaseModel):
     last_run_at: datetime | None
     review_on_success: bool
     harness: str
+    workflow_id: int | None
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None
@@ -238,9 +241,11 @@ class AttemptOut(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     exit_code: int | None
+    workflow_run_id: int | None = None  # the run that did the work, when the task played a workflow
 
 
 class AttemptDetail(AttemptOut):
+    workflow_id: int | None = None  # the workflow behind workflow_run_id, so the UI can link to the run
     log: str
     result: str
 

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.codex import save_auth
 from app.main import app
-from app.models import NodeStatus, RunStatus, WorkflowNodeRun, WorkflowRun, utcnow
+from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
 from app.workflows import WorkflowRunner
 from tests.conftest import login, make_project, make_task, register
 from tests.test_harness import fake_auth
@@ -17,6 +17,7 @@ async def runner(maker, scheduler):
     r = WorkflowRunner(maker, lambda: app.state.scheduler)
     r.POLL_SECONDS = 0.02
     app.state.workflows = r
+    scheduler.workflows = r
 
     async def pump():
         while True:
@@ -38,19 +39,32 @@ def edge(a: str, b: str, handle: str | None = None) -> dict:
     return {"id": f"{a}-{b}-{handle}", "source": a, "target": b, "sourceHandle": handle}
 
 
-async def run(client, pid: int, nodes: list[dict], edges: list[dict]) -> dict:
-    assert (
-        await client.put(f"/api/projects/{pid}/workflow", json={"nodes": nodes, "edges": edges})
-    ).status_code == 200
-    r = await client.post(f"/api/projects/{pid}/workflow/runs")
+async def make_workflow(client, pid: int, name: str = "Flow") -> int:
+    r = await client.post(f"/api/projects/{pid}/workflows", json={"name": name})
     assert r.status_code == 201, r.text
-    run_id = r.json()["id"]
+    return r.json()["id"]
+
+
+async def save(client, wid: int, nodes: list[dict], edges: list[dict]) -> None:
+    r = await client.patch(f"/api/workflows/{wid}", json={"graph": {"nodes": nodes, "edges": edges}})
+    assert r.status_code == 200, r.text
+
+
+async def wait_for_run(client, run_id: int) -> dict:
     async with asyncio.timeout(10):
         while (detail := (await client.get(f"/api/workflow-runs/{run_id}")).json())[
             "status"
         ] == RunStatus.RUNNING:
             await asyncio.sleep(0.02)
     return detail
+
+
+async def run(client, pid: int, nodes: list[dict], edges: list[dict], wid: int | None = None) -> dict:
+    wid = wid or await make_workflow(client, pid)
+    await save(client, wid, nodes, edges)
+    r = await client.post(f"/api/workflows/{wid}/runs")
+    assert r.status_code == 201, r.text
+    return await wait_for_run(client, r.json()["id"])
 
 
 def by_id(detail: dict) -> dict[str, dict]:
@@ -62,45 +76,142 @@ async def setup(client) -> tuple[dict, int]:
     return me, (await make_project(client))["id"]
 
 
-# ----- the saved graph -----
+# ----- the library -----
+
+
+async def test_new_workflows_get_the_first_free_numbered_name(client, runner):
+    _, pid = await setup(client)
+    made = []
+    for _ in range(3):
+        r = await client.post(f"/api/projects/{pid}/workflows", json={})
+        made.append((r.json()["id"], r.json()["name"]))
+    assert [n for _, n in made] == ["Workflow 1", "Workflow 2", "Workflow 3"]
+    await client.patch(f"/api/workflows/{made[0][0]}", json={"name": "Nightly"})
+    assert (await client.post(f"/api/projects/{pid}/workflows", json={})).json()[
+        "name"
+    ] == "Workflow 1"  # the gap is reused
+    await client.patch(
+        f"/api/workflows/{made[1][0]}", json={"name": "WORKFLOW 4"}
+    )  # a different case still counts
+    assert (await client.post(f"/api/projects/{pid}/workflows", json={})).json()["name"] == "Workflow 2"
+    assert (await client.post(f"/api/projects/{pid}/workflows", json={})).json()[
+        "name"
+    ] == "Workflow 5"  # 4 is taken
+    other = (await make_project(client, "Other"))["id"]
+    assert (await client.post(f"/api/projects/{other}/workflows", json={})).json()[
+        "name"
+    ] == "Workflow 1"  # per project
+    named = await client.post(f"/api/projects/{pid}/workflows", json={"name": "  Mine "})
+    assert named.json()["name"] == "Mine"
+
+
+async def test_a_workflow_can_be_created_with_its_graph(client, runner):
+    _, pid = await setup(client)
+    graph = {"nodes": [node("a", "start"), node("b", "end")], "edges": [edge("a", "b")]}
+    r = await client.post(f"/api/projects/{pid}/workflows", json={"graph": graph})
+    assert r.status_code == 201 and [n["id"] for n in r.json()["graph"]["nodes"]] == ["a", "b"]
+    bad = await client.post(
+        f"/api/projects/{pid}/workflows", json={"graph": {"nodes": [], "edges": [edge("a", "b")]}}
+    )
+    assert bad.status_code == 422
+
+
+async def test_a_new_workflow_starts_with_a_start_node(client, runner):
+    _, pid = await setup(client)
+    r = await client.post(
+        f"/api/projects/{pid}/workflows", json={"name": "Nightly", "description": "Does things"}
+    )
+    wf = r.json()
+    assert r.status_code == 201 and wf["name"] == "Nightly" and wf["project_id"] == pid
+    assert [(n["id"], n["kind"]) for n in wf["graph"]["nodes"]] == [("n1", "start")]
+    detail = await client.post(f"/api/workflows/{wf['id']}/runs")
+    assert detail.status_code == 201  # it can be tested straight away
+
+
+async def test_a_project_has_a_library_of_workflows(client, runner):
+    _, pid = await setup(client)
+    a = await make_workflow(client, pid, "Alpha")
+    b = await make_workflow(client, pid, "Beta")
+    await run(client, pid, [node("s", "start"), node("e", "end")], [edge("s", "e")], wid=a)
+    listing = (await client.get(f"/api/projects/{pid}/workflows")).json()
+    assert [(w["name"], w["node_count"], w["runs"]) for w in listing] == [("Alpha", 2, 1), ("Beta", 1, 0)]
+    assert listing[0]["last_run"]["status"] == "succeeded" and listing[1]["last_run"] is None
+    assert {w["id"] for w in listing} == {a, b}
 
 
 async def test_graph_round_trips_and_is_validated(client, runner):
     _, pid = await setup(client)
-    assert (await client.get(f"/api/projects/{pid}/workflow")).json()["graph"] == {"nodes": [], "edges": []}
+    wid = await make_workflow(client, pid)
     nodes = [node("a", "start"), node("b", "end")]
-    assert (
-        await client.put(f"/api/projects/{pid}/workflow", json={"nodes": nodes, "edges": [edge("a", "b")]})
-    ).status_code == 200
-    saved = (await client.get(f"/api/projects/{pid}/workflow")).json()
+    r = await client.patch(
+        f"/api/workflows/{wid}", json={"graph": {"nodes": nodes, "edges": [edge("a", "b")]}}
+    )
+    assert r.status_code == 200
+    saved = (await client.get(f"/api/workflows/{wid}")).json()
     assert [n["id"] for n in saved["graph"]["nodes"]] == ["a", "b"] and saved["updated_at"]
-    bad = await client.put(
-        f"/api/projects/{pid}/workflow", json={"nodes": nodes, "edges": [edge("a", "ghost")]}
-    )
-    assert bad.status_code == 422
-    dup = await client.put(
-        f"/api/projects/{pid}/workflow", json={"nodes": [node("a", "start"), node("a", "end")], "edges": []}
-    )
-    assert dup.status_code == 422
+    ghost = {"graph": {"nodes": nodes, "edges": [edge("a", "ghost")]}}
+    assert (await client.patch(f"/api/workflows/{wid}", json=ghost)).status_code == 422
+    dup = {"graph": {"nodes": [node("a", "start"), node("a", "end")], "edges": []}}
+    assert (await client.patch(f"/api/workflows/{wid}", json=dup)).status_code == 422
 
 
-async def test_only_the_owner_can_use_a_projects_workflow(client, runner):
+async def test_rename_and_describe(client, runner):
     _, pid = await setup(client)
-    detail = await run(client, pid, [node("s", "start")], [])
-    await register(client, "other@b.co", "Other")
-    assert (await client.get(f"/api/projects/{pid}/workflow")).status_code == 404
-    assert (await client.post(f"/api/projects/{pid}/workflow/runs")).status_code == 404
+    wid = await make_workflow(client, pid)
+    r = await client.patch(f"/api/workflows/{wid}", json={"name": "  Renamed ", "description": "Why"})
+    assert (r.json()["name"], r.json()["description"]) == ("Renamed", "Why")
+    assert (await client.patch(f"/api/workflows/{wid}", json={"name": "   "})).status_code == 422
+    assert (await client.patch(f"/api/workflows/{wid}", json={"name": ""})).status_code == 422
+
+
+async def test_delete_removes_the_workflow_and_its_runs(client, runner, maker):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    detail = await run(client, pid, [node("s", "start")], [], wid=wid)
+    assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
+    assert (await client.get(f"/api/workflows/{wid}")).status_code == 404
     assert (await client.get(f"/api/workflow-runs/{detail['id']}")).status_code == 404
+    assert (await client.get(f"/api/projects/{pid}/workflows")).json() == []
+
+
+async def test_a_running_workflow_cannot_be_deleted(client, runner, cells, scheduler):
+    _, pid = await setup(client)
+    cells.duration = 30
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="slow", status="ready")], [edge("s", "t")]
+    )
+    run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
+    assert (await client.delete(f"/api/workflows/{wid}")).status_code == 409
+    await client.post(f"/api/workflow-runs/{run_id}/cancel")
+    assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
+
+
+async def test_only_the_owner_can_use_a_projects_workflows(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    detail = await run(client, pid, [node("s", "start")], [], wid=wid)
+    await register(client, "other@b.co", "Other")
+    for r in (
+        await client.get(f"/api/projects/{pid}/workflows"),
+        await client.post(f"/api/projects/{pid}/workflows", json={}),
+        await client.get(f"/api/workflows/{wid}"),
+        await client.patch(f"/api/workflows/{wid}", json={"name": "x"}),
+        await client.delete(f"/api/workflows/{wid}"),
+        await client.post(f"/api/workflows/{wid}/runs"),
+        await client.get(f"/api/workflows/{wid}/runs"),
+        await client.get(f"/api/workflow-runs/{detail['id']}"),
+    ):
+        assert r.status_code == 404
     await login(client, "a@b.co")
     assert (await client.get(f"/api/workflow-runs/{detail['id']}")).status_code == 200
 
 
 async def test_a_run_needs_a_start_node(client, runner):
     _, pid = await setup(client)
-    await client.put(
-        f"/api/projects/{pid}/workflow", json={"nodes": [node("t", "task", title="x")], "edges": []}
-    )
-    r = await client.post(f"/api/projects/{pid}/workflow/runs")
+    wid = await make_workflow(client, pid)
+    await save(client, wid, [node("t", "task", title="x")], [])
+    r = await client.post(f"/api/workflows/{wid}/runs")
     assert r.status_code == 422 and "Start node" in r.json()["detail"]
 
 
@@ -287,29 +398,31 @@ async def test_unconnected_nodes_are_recorded_as_not_run(client, runner):
 
 async def test_history_lists_runs_newest_first_with_counts(client, runner):
     _, pid = await setup(client)
-    await run(client, pid, [node("s", "start"), node("e", "end")], [edge("s", "e")])
+    wid = await make_workflow(client, pid)
+    await run(client, pid, [node("s", "start"), node("e", "end")], [edge("s", "e")], wid=wid)
     await run(
-        client,
-        pid,
+        client, pid,
         [node("s", "start"), node("t", "task", title="will fail", status="ready")],
         [edge("s", "t")],
-    )
-    runs = (await client.get(f"/api/projects/{pid}/workflow/runs")).json()
+        wid=wid,
+    )  # fmt: skip
+    runs = (await client.get(f"/api/workflows/{wid}/runs")).json()
     assert [r["status"] for r in runs] == ["failed", "succeeded"]
     assert (runs[0]["nodes_total"], runs[0]["nodes_succeeded"], runs[0]["nodes_failed"]) == (2, 1, 1)
+    other = await make_workflow(client, pid, "Other")
+    assert (
+        await client.get(f"/api/workflows/{other}/runs")
+    ).json() == []  # a run belongs to its own workflow
 
 
 async def test_cancel_stops_the_run_and_its_cell(client, runner, cells, scheduler):
     _, pid = await setup(client)
     cells.duration = 30
-    await client.put(
-        f"/api/projects/{pid}/workflow",
-        json={
-            "nodes": [node("s", "start"), node("t", "task", title="slow", status="ready")],
-            "edges": [edge("s", "t")],
-        },
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="slow", status="ready")], [edge("s", "t")]
     )
-    run_id = (await client.post(f"/api/projects/{pid}/workflow/runs")).json()["id"]
+    run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     async with asyncio.timeout(10):
         while not scheduler._live:
             await asyncio.sleep(0.02)
@@ -323,7 +436,10 @@ async def test_cancel_stops_the_run_and_its_cell(client, runner, cells, schedule
 async def test_a_restart_closes_dangling_runs(client, runner, maker):
     _, pid = await setup(client)
     async with maker() as s:
-        wr = WorkflowRun(project_id=pid, graph={})
+        wf = Workflow(project_id=pid)
+        s.add(wf)
+        await s.flush()
+        wr = WorkflowRun(project_id=pid, workflow_id=wf.id, graph={})
         s.add(wr)
         await s.flush()
         s.add(WorkflowNodeRun(run_id=wr.id, node_id="x", kind="task", label="x", seq=1, started_at=utcnow()))
@@ -334,3 +450,125 @@ async def test_a_restart_closes_dangling_runs(client, runner, maker):
         nr = (await s.scalars(select(WorkflowNodeRun))).one()
     assert wr.status == RunStatus.FAILED and "restarted" in wr.outcome
     assert nr.status == NodeStatus.FAILED and "restarted" in nr.error
+
+
+# ----- tasks that play a workflow -----
+
+
+async def play_task(client, pid: int, wid: int | None, title: str = "Player", **extra) -> dict:
+    r = await client.post(
+        f"/api/projects/{pid}/tasks",
+        json={"title": title, "harness": "workflow", "workflow_id": wid, "status": "ready", **extra},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def attempt_of(client, task_id: int) -> dict:
+    async with asyncio.timeout(10):
+        while (
+            not (attempts := (await client.get(f"/api/tasks/{task_id}/attempts")).json())
+            or attempts[0]["status"] == "running"
+        ):
+            await asyncio.sleep(0.02)
+    return (await client.get(f"/api/attempts/{attempts[0]['id']}")).json()
+
+
+async def test_a_task_validates_the_workflow_it_plays(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    other = (await make_project(client, "Other"))["id"]
+    foreign = await make_workflow(client, other)
+    for wf in (None, foreign, 9999):
+        r = await client.post(
+            f"/api/projects/{pid}/tasks", json={"title": "x", "harness": "workflow", "workflow_id": wf}
+        )
+        assert r.status_code == 422, wf
+    task = await play_task(client, pid, wid, status="inbox")  # not ready, so nothing starts it while we edit
+    assert task["harness"] == "workflow" and task["workflow_id"] == wid
+    back = await client.patch(f"/api/tasks/{task['id']}", json={"harness": ""})
+    assert back.json()["harness"] == "" and back.json()["workflow_id"] is None  # not playing one any more
+    again = await client.patch(f"/api/tasks/{task['id']}", json={"harness": "workflow", "workflow_id": wid})
+    assert again.json()["workflow_id"] == wid
+    assert (await client.patch(f"/api/tasks/{task['id']}", json={"workflow_id": foreign})).status_code == 422
+
+
+async def test_a_task_plays_its_workflow_and_reports_the_run(client, runner, cells):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid, "Flow")
+    await save(
+        client, wid,
+        [node("s", "start"), node("t", "task", "Step", title="Inner", status="ready"), node("e", "end", note="All done")],
+        [edge("s", "t"), edge("t", "e")],
+    )  # fmt: skip
+    task = await play_task(client, pid, wid)
+    attempt = await attempt_of(client, task["id"])
+    assert attempt["status"] == "succeeded" and attempt["result"] == "All done"
+    assert (
+        'Playing the workflow "Flow"' in attempt["log"]
+        and "[2] Step (task)" in attempt["log"]
+        and "Workflow succeeded: All done" in attempt["log"]
+    )
+    run = (await client.get(f"/api/workflow-runs/{attempt['workflow_run_id']}")).json()
+    assert run["status"] == "succeeded" and run["trigger"] == "task" and run["workflow_id"] == wid
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()["status"] == "done"
+    assert [s.title for s in cells.specs] == ["Inner"]  # the playing task itself ran no cell
+
+
+async def test_a_failing_workflow_fails_the_task_that_plays_it(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(
+        client,
+        wid,
+        [node("s", "start"), node("t", "task", title="will fail", status="ready")],
+        [edge("s", "t")],
+    )
+    task = await play_task(client, pid, wid)
+    attempt = await attempt_of(client, task["id"])
+    assert attempt["status"] == "failed" and "failed" in attempt["log"]
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()["status"] == "failed"
+
+
+async def test_playing_a_workflow_never_starves_the_cells_it_needs(client, runner, cells):
+    """With a single cell slot, the task that plays a workflow must not hold it while waiting for the inner task."""
+    _, pid = await setup(client)
+    settings = (await client.get("/api/settings")).json()
+    await client.put("/api/settings", json={**settings, "max_concurrent_cells": 1})
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="Inner", status="ready")], [edge("s", "t")]
+    )
+    first, second = await play_task(client, pid, wid, "P1"), await play_task(client, pid, wid, "P2")
+    assert (await attempt_of(client, first["id"]))["status"] == "succeeded"
+    assert (await attempt_of(client, second["id"]))["status"] == "succeeded"
+
+
+async def test_a_workflow_that_plays_itself_through_a_task_is_stopped(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    player = await play_task(client, pid, wid, "Player", status="inbox")
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", action="run", title="Player")], [edge("s", "t")]
+    )
+    detail = await run(
+        client,
+        pid,
+        [node("s", "start"), node("t", "task", action="run", title="Player")],
+        [edge("s", "t")],
+        wid=wid,
+    )
+    assert detail["status"] == "failed"
+    attempt = await attempt_of(client, player["id"])
+    assert attempt["status"] == "failed" and "would loop" in attempt["log"]
+
+
+async def test_a_task_whose_workflow_was_deleted_fails_clearly(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    task = await play_task(client, pid, wid, status="inbox")
+    await client.delete(f"/api/workflows/{wid}")
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()["workflow_id"] is None
+    await client.post(f"/api/tasks/{task['id']}/run")
+    attempt = await attempt_of(client, task["id"])
+    assert attempt["status"] == "failed" and "no longer exists" in attempt["log"]

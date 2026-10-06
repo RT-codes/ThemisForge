@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
+import { seedGraph, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -67,4 +67,18 @@ test('a graph survives saving and loading, minus editor state', () => {
 test('new node ids continue after the loaded ones', () => {
   assert.equal(nextNodeNumber([]), 0)
   assert.equal(nextNodeNumber(['n3', 'n12', 'x']), 12)
+})
+
+test('a new workflow gets the first free numbered name', () => {
+  assert.equal(nextWorkflowName([]), 'Workflow 1')
+  assert.equal(nextWorkflowName(['Workflow 1', 'Workflow 2']), 'Workflow 3')
+  assert.equal(nextWorkflowName(['Nightly', 'Workflow 2']), 'Workflow 1') // gaps are reused
+  assert.equal(nextWorkflowName(['WORKFLOW 1', ' workflow 2 ']), 'Workflow 3') // case and spacing do not matter
+})
+
+test('a new workflow begins with a Start node only', () => {
+  const g = seedGraph()
+  assert.deepEqual(g.nodes.map((n) => n.kind), ['start'])
+  assert.deepEqual(g.edges, [])
+  assert.notEqual(seedGraph().nodes, g.nodes) // never shared between workflows
 })

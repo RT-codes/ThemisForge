@@ -72,7 +72,7 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each projects.list as p (p.id)}
-						{@const open = route.name === 'project' && route.id === p.id}
+						{@const open = (route.name === 'project' || route.name === 'workflow') && route.id === p.id}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton>
 								{#snippet child({ props })}
@@ -85,23 +85,23 @@
 							{#if open}
 								<Sidebar.MenuSub>
 									<Sidebar.MenuSubItem>
-										<Sidebar.MenuSubButton isActive={route.page === 'overview'}>
+										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'overview'}>
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}" {...props}><LayoutDashboardIcon /><span>Overview</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
 									<Sidebar.MenuSubItem>
-										<Sidebar.MenuSubButton isActive={route.page === 'tasks'}>
+										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'tasks'}>
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
 									<Sidebar.MenuSubItem>
-										<Sidebar.MenuSubButton isActive={route.page === 'workflow'}>
+										<Sidebar.MenuSubButton isActive={route.name === 'workflow'}>
 											{#snippet child({ props })}
-												<a href="/projects/{p.id}/workflow" {...props}><WorkflowIcon /><span>Workflow editor</span></a>
+												<a href="/projects/{p.id}/workflows/new" {...props}><WorkflowIcon /><span>Workflows</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>

@@ -15,7 +15,7 @@
 	import { SvelteSet } from 'svelte/reactivity'
 	import { slide } from 'svelte/transition'
 
-	let { projectId, selected = $bindable(null) }: { projectId: number; selected?: number | null } = $props()
+	let { workflowId, selected = $bindable(null) }: { workflowId: number; selected?: number | null } = $props()
 
 	let runs = $state<WorkflowRunSummary[]>([])
 	let loaded = $state(false)
@@ -52,7 +52,7 @@
 
 	async function loadList() {
 		try {
-			runs = await api.workflowRuns(projectId)
+			runs = await api.workflowRuns(workflowId)
 			if (selected === null && runs.length) selected = runs[0].id
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the runs'

@@ -37,8 +37,10 @@
 
 	const route = $derived(router.route)
 	const title = $derived(
-		route.name === 'project'
-			? (projects.get(route.id)?.name ?? 'Project') + (route.page === 'tasks' ? ' / Tasks' : route.page === 'workflow' ? ' / Workflow editor' : '')
+		route.name === 'workflow'
+			? (projects.get(route.id)?.name ?? 'Project') + ' / Workflow'
+			: route.name === 'project'
+			? (projects.get(route.id)?.name ?? 'Project') + (route.page === 'tasks' ? ' / Tasks' : '')
 			: route.name === 'settings'
 				? 'Settings'
 				: route.name === 'access'
@@ -79,15 +81,17 @@
 					<HomePage />
 				{:else if route.name === 'project'}
 					{#key route.id}
-						{#if route.page === 'workflow'}
-							{#await loadWorkflow() then editor}
-								<editor.default id={route.id} />
-							{/await}
-						{:else if route.page === 'tasks'}
+						{#if route.page === 'tasks'}
 							<ProjectPage id={route.id} />
 						{:else}
 							<ProjectOverview id={route.id} />
 						{/if}
+					{/key}
+				{:else if route.name === 'workflow'}
+					{#key route.id}
+						{#await loadWorkflow() then editor}
+							<editor.default projectId={route.id} workflowId={route.workflowId} run={route.run} />
+						{/await}
 					{/key}
 				{:else if route.name === 'settings'}
 					<SettingsPage />

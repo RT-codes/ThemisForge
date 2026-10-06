@@ -25,6 +25,14 @@ class Router {
     })
   }
 
+  /** change the address without adding a history entry (a new workflow gets its real address once it is saved) */
+  replace(url: string) {
+    const target = new URL(url, window.location.origin)
+    window.history.replaceState({}, '', target.pathname + target.hash)
+    this.path = target.pathname
+    this.hash = target.hash.slice(1)
+  }
+
   navigate(url: string) {
     const target = new URL(url, window.location.origin)
     if (target.pathname === this.path && target.hash === window.location.hash) return

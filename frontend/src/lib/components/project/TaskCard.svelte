@@ -7,6 +7,7 @@
 	import ClockIcon from '@lucide/svelte/icons/clock'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import RepeatIcon from '@lucide/svelte/icons/repeat'
+	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 
 	let {
 		task,
@@ -63,7 +64,9 @@
 
 	{#if chips.length || task.harness}
 		<div class="mt-2 flex flex-wrap gap-1">
-			{#if task.harness === 'codex'}
+			{#if task.harness === 'workflow'}
+				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] text-primary"><WorkflowIcon class="size-3" />Workflow</span>
+			{:else if task.harness === 'codex'}
 				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] text-primary"><BotIcon class="size-3" />Codex</span>
 			{/if}
 			{#each chips as chip (chip.key)}

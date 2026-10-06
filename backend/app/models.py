@@ -108,8 +108,12 @@ class Task(Base):
     next_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None, index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     review_on_success: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    # What runs in the cell: "" = the placeholder program, "codex" = Codex (see app/harness.py).
+    # What runs: "" = the placeholder program in a cell, "codex" = Codex in a cell (see app/harness.py),
+    # "workflow" = play the workflow below instead of running a cell.
     harness: Mapped[str] = mapped_column(String(20), default="", server_default="")
+    workflow_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflows.id", ondelete="SET NULL"), default=None
+    )
 
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
@@ -133,6 +137,10 @@ class Attempt(Base):
     exit_code: Mapped[int | None] = mapped_column(Integer, default=None)
     log: Mapped[str] = mapped_column(Text, default="")
     result: Mapped[str] = mapped_column(Text, default="")
+    # set when the task played a workflow: the run that did the work
+    workflow_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"), default=None
+    )
 
     task: Mapped[Task] = relationship(back_populates="attempts")
 
@@ -213,13 +221,16 @@ class NodeStatus(StrEnum):
 
 
 class Workflow(Base):
-    """The workflow drawn in a project's editor: nodes and edges as JSON (see app/workflows.py)."""
+    """A workflow in a project's library: nodes and edges as JSON (see app/workflows.py)."""
 
     __tablename__ = "workflows"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), unique=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100), default="Workflow")
+    description: Mapped[str] = mapped_column(Text, default="")
     graph: Mapped[dict[str, Any]] = mapped_column(JSON, default=lambda: {"nodes": [], "edges": []})
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
 
 
@@ -230,8 +241,13 @@ class WorkflowRun(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), index=True)
+    # the run that is waiting for the task that started this one (a workflow played from a task inside a workflow)
+    parent_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"), default=None
+    )
     status: Mapped[str] = mapped_column(String(20), default=RunStatus.RUNNING)
-    trigger: Mapped[str] = mapped_column(String(20), default="test")
+    trigger: Mapped[str] = mapped_column(String(20), default="test")  # test | task
     outcome: Mapped[str] = mapped_column(Text, default="")  # what the End node said, or why the run failed
     started_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)

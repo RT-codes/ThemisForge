@@ -6,8 +6,22 @@ summary: Draw a workflow, test it, and look back at every run, node by node.
 
 # Workflows
 
-Every project has a **Workflow editor**. Draw nodes, connect them, and press **Test run** to run the whole thing. The
-workflow is saved automatically as you edit.
+A project keeps a **library of workflows**, listed in the **Workflows** section of its overview. Click a workflow there
+to edit it, or use the trash icon to delete it (with its run history). Each workflow belongs to the project it was made
+in.
+
+**Workflows** in the sidebar, and **New workflow** on the overview, open an empty editor with a Start node. A new
+workflow is **only saved once you change something in it**, so opening one and walking away leaves nothing behind. It
+gets the first free name, "Workflow 1", "Workflow 2" and so on, which you can change at the top.
+
+In the editor, draw nodes, connect them, and press **Test run** to run the whole thing. Changes are saved
+automatically. The buttons left of the title:
+
+- **Save** saves right now (and keeps a new workflow even if you have not changed anything yet).
+- **Load** opens a list of all the project's workflows. Pick one to open it, or start a new one.
+- **Recent** drops down the last five workflows you edited, for a quick switch.
+
+Whatever you were editing is saved before the next workflow opens.
 
 ## Nodes
 
@@ -28,6 +42,16 @@ Select a node to configure it in the panel on the right.
 - A node that fails stops its path. An agent can be told to **carry on** instead.
 - A node that more than one path leads to runs once.
 - Task and Agent nodes create real tasks in the project, so they also show up on the Tasks page.
+
+## Workflows and tasks play each other
+
+- A **Task node** can create, update or run any task of the project, and wait for it.
+- A **task** can play a workflow: set the task's **Run with** to **Workflow** and pick one from the library. When the task
+  runs, the workflow runs instead of a container, and the attempt history shows its progress with a link to the full run.
+
+So workflows orchestrate tasks, and tasks orchestrate workflows. A task that plays a workflow does not take up one of the
+cell slots (Settings, Cells), because it mostly waits for the tasks inside it. A workflow that would end up playing
+itself through its own tasks is stopped, and so are chains nested more than five levels deep.
 
 ## Run history
 

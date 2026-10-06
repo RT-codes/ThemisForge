@@ -77,6 +77,9 @@ Three things hold all state:
 - `data/`: project workspaces and per-attempt files,
 - `backend/.env`: **without the secret key, stored keys cannot be decrypted.**
 
+Before every upgrade that changes the database, ThemisForge saves a copy in `backend/backups/` (the latest five are
+kept), so a migration can never be the only copy of your data.
+
 For a consistent copy of the database while the server runs, use `sqlite3 backend/themisforge.db ".backup backup.db"`,
 or stop the service first.
 

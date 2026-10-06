@@ -1,8 +1,11 @@
 import asyncio
+import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import make_url
 
@@ -31,8 +34,57 @@ def _is_unversioned_legacy_db(url: str) -> bool:
     return "users" in tables and "alembic_version" not in tables
 
 
+KEEP_BACKUPS = 5
+
+
+def _current_revision(db_file: Path) -> str | None:
+    con = sqlite3.connect(db_file)
+    try:
+        row = con.execute("SELECT version_num FROM alembic_version").fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None  # no version table: a brand new or an old unversioned database
+    finally:
+        con.close()
+
+
+def backup_before_upgrade(url: str, head: str) -> Path | None:
+    """Save a copy of the database before it is migrated. A migration that goes wrong must never be the only copy
+    of someone's data. Returns the backup, or None when there was nothing to protect."""
+    parsed = make_url(url)
+    if parsed.get_backend_name() != "sqlite" or not parsed.database or not Path(parsed.database).exists():
+        return None
+    db_file = Path(parsed.database)
+    current = _current_revision(db_file)
+    if current == head:
+        return None
+    probe = sqlite3.connect(db_file)
+    try:
+        if probe.execute("SELECT count(*) FROM sqlite_master WHERE type = 'table'").fetchone()[0] == 0:
+            return None  # an empty file has nothing to lose
+    finally:
+        probe.close()
+    folder = db_file.parent / "backups"
+    folder.mkdir(exist_ok=True)
+    target = (
+        folder / f"{db_file.stem}-{current or 'unversioned'}-to-{head}-{datetime.now(UTC):%Y%m%d-%H%M%S}.db"
+    )
+    src, dst = sqlite3.connect(db_file), sqlite3.connect(target)
+    try:
+        src.backup(dst)  # a consistent copy, even while the app is writing
+    finally:
+        dst.close()
+        src.close()
+    for old in sorted(folder.glob(f"{db_file.stem}-*.db"))[:-KEEP_BACKUPS]:
+        old.unlink(missing_ok=True)
+    return target
+
+
 def _upgrade(url: str) -> None:
     cfg = _config(url)
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    if head:
+        backup_before_upgrade(url, head)
     if _is_unversioned_legacy_db(url):
         command.stamp(cfg, BASELINE)
     command.upgrade(cfg, "head")

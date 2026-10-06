@@ -1,5 +1,7 @@
 # ThemisForge
 
+![ThemisForge cover art: agents working across connected projects, tasks, workflows, shared folders, and workspaces.](docs/assets/themisforge-cover.png)
+
 **Put your agents to work. Give them a project, a schedule, and room to get things done.**
 
 ThemisForge is a self-hosted workspace for running AI agents around the clock. Organise the work you want done, give each agent its instructions, and let tasks and visual workflows handle the routine. Come back to see what ran, what it produced, and what needs your attention.

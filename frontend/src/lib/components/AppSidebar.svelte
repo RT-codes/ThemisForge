@@ -58,6 +58,8 @@
 		</div>
 	</Sidebar.Header>
 
+	<Sidebar.Separator class="mx-4 data-horizontal:w-auto" />
+
 	<Sidebar.Content>
 		<Sidebar.Group>
 			<Sidebar.GroupContent>
@@ -79,6 +81,8 @@
 				</Sidebar.Menu>
 			</Sidebar.GroupContent>
 		</Sidebar.Group>
+
+		<Sidebar.Separator class="mx-4 data-horizontal:w-auto" />
 
 		<Sidebar.Group>
 			<Sidebar.GroupLabel>Projects</Sidebar.GroupLabel>

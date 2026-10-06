@@ -1,41 +1,31 @@
 # ThemisForge
 
-![ThemisForge cover art: agents working across connected projects, tasks, workflows, shared folders, and workspaces.](docs/assets/themisforge-cover.png)
+![Themis cover art: a busy control room where AI agents work on projects, tasks, workflows and shared folders.](docs/assets/themis-cover.jpg)
 
-**Put your agents to work. Give them a project, a schedule, and room to get things done.**
+**Put AI agents to work for you, on a computer you control.**
 
-ThemisForge is a self-hosted workspace for running AI agents around the clock. Organise the work you want done, give each agent its instructions, and let tasks and visual workflows handle the routine. Come back to see what ran, what it produced, and what needs your attention.
+ThemisForge is the project. The app you use is called **Themis**: a place to give AI **agents** (assistants with a role and instructions) jobs to do, now or on a schedule, and to see what they did. It keeps working when you close the browser tab.
 
-Run it on a machine you own and manage everything from your browser. Work keeps running when you close the tab.
-
-**Connect your Codex account to power agent runs with your existing subscription.** Codex is the supported harness today; Claude and OpenRouter integrations are not available yet.
-
-> **Screenshot placeholder:** Project overview and task board.
+For example: *"Every morning, research the news in my field and write me a short summary."*
 
 ## What you can do
 
-- **Keep work organised.** Give each project its own agents, tasks, workflows, and shared files. View tasks on a board, in a list, or on a schedule timeline.
-- **Automate recurring jobs.** Run a task now, at a chosen time, or on a repeating schedule.
-- **Build a team of agents.** Configure their roles, instructions, models, and access to project folders.
-- **Connect work visually.** Draw workflows that hand results between agents, run tasks, and branch on outcomes.
-- **Keep useful output.** Share files across runs and review the logs and results of every attempt.
-- **Stay in control.** Cancel running work, set resource limits, and choose which folders agents can read or change.
+- **Give agents jobs.** Say what should be done and when: right now, at a set time, or every day.
+- **Keep work organised.** Each project has its own agents, tasks and files. Tasks show up on a board, a list or a timeline.
+- **Build a small team.** Give each agent a role and instructions. Add **skills** (how-to guides it can follow), **tools** (extra abilities, such as working with files) and **keys** (access to services it needs).
+- **Chain steps together.** Draw a **workflow**, like a flowchart, where one agent's result feeds the next step.
+- **Share files safely.** Agents hand files to each other through shared folders, and you choose which folders they may read or change.
+- **Stay in control.** Read every log and result, cancel anything, and limit how much of the computer's power agents can use.
 
-Use it for a morning research brief, recurring checks on a codebase, or a workflow where one agent drafts and another reviews. You decide the work and how often it should happen.
+## Is it safe?
 
-> **Screenshot placeholder:** Workflow editor and a completed run.
+Every job runs in its own sealed, throwaway "box" (a Docker container). It only sees the folders you approved, and it is deleted when the job ends. Each box has limits on power, memory and time.
 
-## Agent isolation and budgets
+The box is the safety fence, so agents work inside it without stopping to ask permission. Only share folders you are comfortable with them changing. Themis does not cap AI spending yet (planned): agents use your own ChatGPT plan's allowance.
 
-Each agent attempt runs inside a fresh Docker container called a **cell**, with a private working folder. You choose which shared folders it can access and whether it may write to them. Host folders must be approved by an administrator before they can be mounted. The container is removed when the run ends.
+## Install
 
-Cells have CPU, memory, and execution time limits. A shared **resource budget** controls how much CPU and memory all running cells can use together, so scheduled work waits when capacity is full. This is a hardware budget; AI spending limits are not implemented yet, and runs still consume your provider's allowance.
-
-The container provides the execution boundary; the agent's own approval prompts and sandbox are disabled inside it. Treat tasks and container images as trusted, and grant folder access deliberately. Docker isolation does not make arbitrary agent work risk-free.
-
-## Installation
-
-On a **Debian or Ubuntu** machine, as a normal user with `sudo` access:
+**Linux (Ubuntu or Debian).** You need a computer or virtual machine you control, with internet and a normal user account that has admin (`sudo`) rights. The installer adds what is missing, including Docker.
 
 ```bash
 git clone https://github.com/RT-codes/ThemisForge.git
@@ -43,28 +33,30 @@ cd ThemisForge
 ./themis install
 ```
 
-The installer installs missing Docker, uv, and Node.js dependencies, builds the app, generates your secret key, and sets up a systemd service that starts on boot.
+Then open **http://127.0.0.1:8000** and create your account. Themis starts by itself whenever the machine does. To preview the installer first, add `--dry-run`; `./themis doctor` checks that everything works.
 
-Open **http://127.0.0.1:8000** on that machine and create your administrator account.
+**To run agents** (using your ChatGPT account through Codex) you also need to:
 
-For Codex execution, install the **Codex CLI on the server** and build the agent image from the repository root:
+1. Install the [Codex command-line tool](https://github.com/openai/codex) on the same machine. The installer does not do this.
+2. Run `./themis build-images` once. It prepares the box agents work in (a few minutes, about 1 GB).
+3. In Themis, open **Settings** and press **Connect Codex**.
 
-```bash
-./themis build-images
-```
+Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-The host Codex CLI is required for connecting your account and is not installed by the application installer. The in-app guide explains account connection and configuration.
+**Windows: coming soon.** We have not tested Themis on Windows yet, so there are no instructions to give. Other systems, such as macOS, have not been tested either.
 
-To inspect the installer before running it, use `./themis install --dry-run`. For installation options, use `./themis install --help`.
+## Once it is running
 
-**Installing on a remote server?** The default address is local to that server. Follow the [deployment guide](docs/08-operations.md#exposing-themisforge-safely) to configure access through HTTPS or a trusted private network.
+1. Create your account (the first account is the administrator; everyone else joins by invitation).
+2. Create a project.
+3. Connect your ChatGPT account so agents can think.
+4. Create an agent, give it a task, and run it now or on a schedule.
+5. Watch it work and read the result.
 
-## Your next step is in the app
+**The step-by-step guide is inside the app.** Click **Docs** in the sidebar, or open **http://localhost:8000/docs** (no sign-in needed). It also covers workflows, shared folders, settings and troubleshooting.
 
-**Open Docs in ThemisForge, or visit `/docs` on your installation.** No sign-in is required to read it.
+## Coming soon
 
-The built-in guide walks you through getting started from scratch: creating your account and project, connecting Codex, configuring agents, running your first task, and scheduling work. It also covers workflows, shared folders, resource settings, and troubleshooting, with search to help you find what you need.
+Windows support, and more agent engines: Codex is the one supported today, with Claude and OpenRouter to follow. See the [roadmap](docs/11-roadmap.md). ThemisForge is under active development.
 
-On a default local installation: **http://localhost:8000/docs**.
-
-You can also browse the [documentation sources](docs/) and [roadmap](docs/11-roadmap.md) here on GitHub. ThemisForge is under active development.
+Want to help build it? See [CONTRIBUTING.md](CONTRIBUTING.md).

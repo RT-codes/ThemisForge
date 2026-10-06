@@ -13,6 +13,7 @@ summary: What is built, what comes next and what is deliberately left for later.
 - An always-on **scheduler** with a concurrency limit, cancel, and recovery after restarts.
 - **Cells** in Docker with a clear contract (`/workspace`, `/cell/input.json`, `/cell/result.md`).
 - **Settings**: Docker connection, cell defaults, time zone, encrypted keys.
+- **Workflow editor**: nodes, a Test run, and a history of runs with the log of every node.
 - **Codex agents**: tasks can run with a Codex agent in a cell, each run with its own private working folder.
 - **Codex connection**: each user signs in with ChatGPT once; the login is encrypted and can be handed to a cell.
 - **Invite only** access with requests, invite links and an administrator.

@@ -11,8 +11,9 @@ from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
 from .db import SessionLocal
 from .migrate import upgrade_database
-from .routers import access, auth, codex, projects, system
+from .routers import access, auth, codex, projects, system, workflows
 from .scheduler import Scheduler
+from .workflows import WorkflowRunner
 
 log = logging.getLogger("themis")
 
@@ -23,9 +24,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("THEMIS_SECRET_KEY is the insecure default: set a real one before exposing this server")
     await upgrade_database()
     scheduler: Scheduler = app.state.scheduler
+    await app.state.workflows.reconcile()
     if settings.scheduler_enabled:
         await scheduler.start()
     yield
+    await app.state.workflows.shutdown()
     await scheduler.stop()
     await app.state.codex_logins.shutdown()
 
@@ -43,6 +46,7 @@ app.state.scheduler = Scheduler(
 )
 
 app.state.codex_logins = CodexLogins(SessionLocal)
+app.state.workflows = WorkflowRunner(SessionLocal, lambda: app.state.scheduler)
 
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
@@ -50,6 +54,7 @@ api.include_router(access.router)
 api.include_router(projects.router)
 api.include_router(system.router)
 api.include_router(codex.router)
+api.include_router(workflows.router)
 
 
 @api.get("/health")

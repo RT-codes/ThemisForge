@@ -1,3 +1,4 @@
+import type { Graph, NodeKind } from './workflow'
 export interface User {
   id: number
   email: string
@@ -170,6 +171,48 @@ export interface CodexStatus {
   login: CodexLogin | null
 }
 
+export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type NodeRunStatus = 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled'
+
+export interface NodeRun {
+  id: number
+  node_id: string
+  kind: NodeKind
+  label: string
+  seq: number
+  status: NodeRunStatus
+  started_at: string | null
+  finished_at: string | null
+  log: string
+  result: string
+  error: string
+  task_id: number | null
+  attempt_id: number | null
+}
+
+export interface WorkflowRunSummary {
+  id: number
+  status: RunStatus
+  trigger: string
+  outcome: string
+  started_at: string
+  finished_at: string | null
+  nodes_total: number
+  nodes_succeeded: number
+  nodes_failed: number
+}
+
+export interface WorkflowRunDetail {
+  id: number
+  project_id: number
+  status: RunStatus
+  trigger: string
+  outcome: string
+  started_at: string
+  finished_at: string | null
+  nodes: NodeRun[]
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -250,6 +293,13 @@ export const api = {
   createSecret: (name: string, kind: string, value: string) =>
     request<Secret>('/secrets', send('POST', { name, kind, value })),
   deleteSecret: (id: number) => request<void>(`/secrets/${id}`, send('DELETE')),
+
+  workflow: (projectId: number) => request<{ graph: Graph; updated_at: string | null }>(`/projects/${projectId}/workflow`),
+  saveWorkflow: (projectId: number, graph: Graph) => request<{ graph: Graph; updated_at: string }>(`/projects/${projectId}/workflow`, send('PUT', graph)),
+  startWorkflowRun: (projectId: number) => request<WorkflowRunDetail>(`/projects/${projectId}/workflow/runs`, send('POST')),
+  workflowRuns: (projectId: number) => request<WorkflowRunSummary[]>(`/projects/${projectId}/workflow/runs`),
+  workflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}`),
+  cancelWorkflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}/cancel`, send('POST')),
 
   codex: () => request<CodexStatus>('/codex'),
   codexStartLogin: () => request<CodexLogin>('/codex/login', send('POST')),

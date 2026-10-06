@@ -197,6 +197,76 @@ class CodexConnection(Base):
     refreshed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
 
 
+class RunStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class NodeStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+
+
+class Workflow(Base):
+    """The workflow drawn in a project's editor: nodes and edges as JSON (see app/workflows.py)."""
+
+    __tablename__ = "workflows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), unique=True)
+    graph: Mapped[dict[str, Any]] = mapped_column(JSON, default=lambda: {"nodes": [], "edges": []})
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class WorkflowRun(Base):
+    """One execution of a workflow, with the graph as it was when the run began."""
+
+    __tablename__ = "workflow_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default=RunStatus.RUNNING)
+    trigger: Mapped[str] = mapped_column(String(20), default="test")
+    outcome: Mapped[str] = mapped_column(Text, default="")  # what the End node said, or why the run failed
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+    graph: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    nodes: Mapped[list["WorkflowNodeRun"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", order_by="WorkflowNodeRun.seq"
+    )
+
+
+class WorkflowNodeRun(Base):
+    """What happened at one node during a run: when, how it ended, its output and any error."""
+
+    __tablename__ = "workflow_node_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True)
+    node_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(20))
+    label: Mapped[str] = mapped_column(String(100))
+    seq: Mapped[int] = mapped_column(Integer)  # chronological order within the run
+    status: Mapped[str] = mapped_column(String(20), default=NodeStatus.RUNNING)
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+    log: Mapped[str] = mapped_column(Text, default="")
+    result: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), default=None)
+    attempt_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attempts.id", ondelete="SET NULL"), default=None
+    )
+
+    run: Mapped[WorkflowRun] = relationship(back_populates="nodes")
+
+
 class AppSetting(Base):
     """Key/value store for operator settings edited from the Settings page."""
 

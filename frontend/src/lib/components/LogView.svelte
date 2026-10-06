@@ -21,7 +21,7 @@
 		error: 'text-red-400',
 	}
 
-	const rows = $derived(classify(text ? text.replace(/\n$/, '').split('\n') : []))
+	const rows = $derived(classify(text ? text.replace(/^\n+/, '').replace(/\n$/, '').split('\n') : []))
 
 	let el = $state<HTMLDivElement>()
 	let stick = $state(true) // follow new output while the reader is at the bottom

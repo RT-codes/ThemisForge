@@ -4,6 +4,7 @@
 	import { projects } from '$lib/projects.svelte'
 	import { countScheduled } from '$lib/schedule'
 	import { onMount } from 'svelte'
+	import { fade } from 'svelte/transition'
 
 	let { id }: { id: number } = $props()
 
@@ -43,7 +44,7 @@
 </script>
 
 {#if project}
-	<div class="px-6 pt-8 pb-6">
+	<div class="px-6 pt-8 pb-6" in:fade={{ duration: 350 }}>
 		<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
 		{#if project.description}
 			<p class="text-sm text-muted-foreground">{project.description}</p>

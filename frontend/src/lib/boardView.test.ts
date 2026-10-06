@@ -91,6 +91,8 @@ test('what was remembered is read safely', () => {
   const ok = parseStored(JSON.stringify({ board: { search: 'x', sort: 'title', filters: { schedule: ['cron', 'bogus'], props: { p: ['A'], q: [] } } }, columns: { ready: { sort: 'newest', filters: { harness: ['codex'] } } } }))
   assert.deepEqual([ok.board.search, ok.board.sort, ok.board.filters.schedule, ok.board.filters.props], ['x', 'title', ['cron'], { p: ['A'] }])
   assert.deepEqual([ok.columns.ready.sort, ok.columns.ready.filters.harness], ['newest', ['codex']])
+  assert.deepEqual(parseStored(JSON.stringify({ hidden: ['done', 5, 'failed'] })).hidden, ['done', 'failed'])
+  assert.deepEqual(parseStored('{"hidden":"done"}').hidden, [])
   for (const junk of [null, '', 'not json', '{"board": 5, "columns": "x"}', '{"board":{"sort":"sideways"}}']) {
     assert.ok(isDefaultView(parseStored(junk).board), String(junk))
   }

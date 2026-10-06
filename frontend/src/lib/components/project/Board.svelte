@@ -4,6 +4,7 @@
 	import type { BoardViewStore } from '$lib/boardView.svelte'
 	import { STATUSES } from '$lib/format'
 	import { dropPosition } from '$lib/kanban'
+	import EyeOffIcon from '@lucide/svelte/icons/eye-off'
 	import { cn } from '$lib/utils'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import { onMount } from 'svelte'
@@ -95,8 +96,38 @@
 	let scroller = $state<HTMLDivElement>()
 	let moreLeft = $state(false)
 	let moreRight = $state(false)
+	// the scrollbar sits above the columns: a slim track whose thumb follows the board and can be dragged
+	let clientWidth = $state(0)
+	let scrollWidth = $state(0)
+	let scrollLeft = $state(0)
+	const overflowing = $derived(scrollWidth > clientWidth + 1)
+	const thumbWidth = $derived(Math.max(32, (clientWidth / Math.max(scrollWidth, 1)) * clientWidth))
+	const thumbLeft = $derived(
+		scrollWidth > clientWidth ? (scrollLeft / (scrollWidth - clientWidth)) * (clientWidth - thumbWidth) : 0
+	)
+	let drag: { startX: number; startLeft: number } | null = null
+	function scrollToThumb(left: number) {
+		if (!scroller) return
+		const room = clientWidth - thumbWidth
+		scroller.scrollLeft = room > 0 ? (Math.min(Math.max(left, 0), room) / room) * (scrollWidth - clientWidth) : 0
+	}
+	function grab(e: PointerEvent) {
+		drag = { startX: e.clientX, startLeft: thumbLeft }
+		;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+		e.stopPropagation()
+	}
+	function moveThumb(e: PointerEvent) {
+		if (drag) scrollToThumb(drag.startLeft + e.clientX - drag.startX)
+	}
+	function jump(e: PointerEvent) {
+		// a click on the track itself centres the thumb there
+		if (e.target === e.currentTarget) scrollToThumb(e.offsetX - thumbWidth / 2)
+	}
 	function measure() {
 		if (!scroller) return
+		scrollWidth = scroller.scrollWidth
+		clientWidth = scroller.clientWidth
+		scrollLeft = scroller.scrollLeft
 		moreLeft = scroller.scrollLeft > 4
 		moreRight = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4
 	}
@@ -108,9 +139,24 @@
 	})
 </script>
 
-<div class="relative h-full min-h-0">
-<div bind:this={scroller} onscroll={measure} class="flex h-full items-start gap-3 overflow-x-auto pb-2">
-	{#each STATUSES as column (column.id)}
+<div class="flex h-full min-h-0 flex-col">
+{#if overflowing}
+	<div class="relative mb-2 h-1.5 shrink-0 rounded-full bg-muted" onpointerdown={jump} role="presentation">
+		<div
+			class="absolute inset-y-0 rounded-full bg-muted-foreground/50 transition-colors hover:bg-primary active:bg-primary"
+			style:width="{thumbWidth}px"
+			style:left="{thumbLeft}px"
+			onpointerdown={grab}
+			onpointermove={moveThumb}
+			onpointerup={() => (drag = null)}
+			onpointercancel={() => (drag = null)}
+			role="presentation"
+		></div>
+	</div>
+{/if}
+<div class="relative min-h-0 flex-1">
+<div bind:this={scroller} onscroll={measure} class="no-scrollbar flex h-full items-start gap-3 overflow-x-auto">
+	{#each STATUSES.filter((s) => !view.hidden.includes(s.id)) as column (column.id)}
 		{@const items = results[column.id].shown}
 		{@const target = overColumn === column.id}
 		{@const slots = new Map(items.filter((t) => t.id !== dragId).map((t, i) => [t.id, i]))}
@@ -133,10 +179,19 @@
 				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums" title={results[column.id].filtered ? `${items.length} of ${byStatus[column.id].length} tasks match` : undefined}>
 					{results[column.id].filtered ? `${items.length} / ${byStatus[column.id].length}` : items.length}
 				</span>
+				<button
+					type="button"
+					class="ms-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					aria-label={`Hide ${column.label}`}
+					title={`Hide ${column.label} (bring it back with Statuses)`}
+					onclick={() => view.toggleHidden(column.id)}
+				>
+					<EyeOffIcon class="size-4" />
+				</button>
 				{#if column.id !== 'running'}
 					<button
 						type="button"
-						class="ms-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 						aria-label={`Add task to ${column.label}`}
 						onclick={() => onadd(column.id)}
 					>
@@ -171,7 +226,7 @@
 				{/if}
 				{#if items.length === 0 && !target}
 					<p class="m-auto px-2 py-6 text-center text-xs text-muted-foreground/70">
-						{results[column.id].filtered ? 'No tasks match' : column.id === 'running' ? 'Cells working on tasks show up here' : 'Drop tasks here'}
+						{results[column.id].filtered ? 'No tasks match' : column.id === 'running' ? 'Running tasks show up here' : 'Drop tasks here'}
 					</p>
 				{/if}
 			</div>
@@ -180,4 +235,5 @@
 </div>
 <div class={cn('pointer-events-none absolute inset-y-0 start-0 w-10 bg-gradient-to-r from-background to-transparent transition-opacity duration-200', !moreLeft && 'opacity-0')}></div>
 <div class={cn('pointer-events-none absolute inset-y-0 end-0 w-14 bg-gradient-to-l from-background to-transparent transition-opacity duration-200', !moreRight && 'opacity-0')}></div>
+</div>
 </div>

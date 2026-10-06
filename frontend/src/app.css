@@ -135,6 +135,38 @@
 		radial-gradient(40% 40% at 90% 100%, oklch(0.65 0.19 40 / 10%), transparent 70%);
 }
 
+/* sidebar link pulse: the border fades in, a shine sweeps right to left, the border fades out (600ms) */
+.nav-pulse {
+	position: relative;
+}
+.nav-pulse::before,
+.nav-pulse::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	pointer-events: none;
+}
+.nav-pulse::after {
+	border: 1px solid var(--sidebar-primary);
+	animation: nav-pulse-border 600ms ease-in-out forwards;
+}
+.nav-pulse::before {
+	background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--sidebar-primary) 45%, transparent), transparent);
+	transform: translateX(100%);
+	animation: nav-pulse-shine 600ms ease-in-out forwards;
+}
+@keyframes nav-pulse-border {
+	0% { opacity: 0; }
+	25%, 75% { opacity: 1; }
+	100% { opacity: 0; }
+}
+@keyframes nav-pulse-shine {
+	0%, 25% { transform: translateX(100%); opacity: 1; }
+	75% { transform: translateX(-100%); opacity: 1; }
+	100% { transform: translateX(-100%); opacity: 0; }
+}
+
 /* ---------- documentation (/docs) ---------- */
 @plugin "@tailwindcss/typography";
 
@@ -267,4 +299,12 @@
 	top: 50%;
 	width: 0.5rem;
 	height: 1px;
+}
+
+/* the board draws its own scrollbar above the columns */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

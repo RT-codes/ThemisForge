@@ -158,7 +158,7 @@
 {/if}
 
 <div class="forge-glow flex-1">
-	<div class="mx-auto grid w-full max-w-7xl gap-x-10 px-4 py-8 sm:px-6 lg:grid-cols-[14.5rem_minmax(0,1fr)] min-[1440px]:grid-cols-[14.5rem_minmax(0,1fr)_13rem]">
+	<div class="mx-auto grid w-full max-w-7xl gap-x-10 px-4 py-8 sm:px-6 lg:grid-cols-[14.5rem_minmax(0,1fr)]">
 		<aside class="mb-6 lg:mb-0">
 			<details class="rounded-lg border p-3 lg:hidden">
 				<summary class="cursor-pointer text-sm font-medium">Browse the docs</summary>
@@ -168,7 +168,8 @@
 		</aside>
 
 		{#if page && doc}
-			<article bind:this={article} class="min-w-0 max-w-3xl" aria-label={page.title}>
+			<div class="flex min-w-0 gap-10">
+			<article bind:this={article} class="min-w-0 max-w-3xl flex-1" aria-label={page.title}>
 				<p class="mb-2 text-xs font-medium tracking-wide text-primary uppercase">{page.group}</p>
 				<div class="docs-prose prose prose-invert max-w-none">
 					<!-- trusted: rendered from the markdown files in /docs at build time -->
@@ -191,7 +192,7 @@
 				</nav>
 			</article>
 
-			<aside class="hidden min-[1440px]:block">
+			<aside class="hidden w-48 shrink-0 min-[1440px]:block">
 				{#if doc.headings.length}
 					<div class={cn('sticky', standalone ? 'top-20' : 'top-6')}>
 						<h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">On this page</h3>
@@ -200,6 +201,7 @@
 								<li>
 									<a
 										href="#{h.id}"
+										onclick={(e) => jump(e, h.id)}
 										class={cn(
 											'-ms-px block border-s py-0.5 transition-colors',
 											h.depth === 3 ? 'ps-6' : 'ps-3',
@@ -214,6 +216,7 @@
 					</div>
 				{/if}
 			</aside>
+			</div>
 		{:else}
 			<div class="py-16 text-center">
 				<p class="text-lg font-medium">Page not found</p>

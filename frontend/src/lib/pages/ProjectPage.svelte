@@ -18,6 +18,7 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import { onMount, untrack } from 'svelte'
+	import { fade } from 'svelte/transition'
 
 	let { id }: { id: number } = $props()
 
@@ -124,7 +125,7 @@
 		<Button class="mt-4" onclick={() => router.navigate('/')}>Back home</Button>
 	</div>
 {:else if project}
-	<div class="flex min-h-0 flex-1 flex-col gap-4 px-6 py-6">
+	<div class="flex min-h-0 flex-1 flex-col gap-4 px-6 py-6" in:fade={{ duration: 350 }}>
 		<div class="flex flex-wrap items-start gap-x-6 gap-y-3">
 			<div class="min-w-0 flex-1">
 				<h2 class="truncate text-2xl font-semibold tracking-tight">Tasks</h2>
@@ -166,7 +167,7 @@
 					title="Containers running now out of how many may run at once. The scheduler checks for due tasks every few seconds, around the clock."
 				>
 					<span class="size-1.5 rounded-full {system.scheduler.running ? 'bg-emerald-400' : 'bg-destructive'}"></span>
-					{system.scheduler.running ? 'Scheduler on' : 'Scheduler off'} · {system.scheduler.active_cells}/{system.scheduler.max_cells} cells
+					{system.scheduler.running ? 'Scheduler on' : 'Scheduler off'} · {system.scheduler.active_cells}/{system.scheduler.max_cells} containers
 				</span>
 			{/if}
 		</div>

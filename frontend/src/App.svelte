@@ -9,12 +9,14 @@
 	import AccessPage from '$lib/pages/AccessPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
+	import WorkflowResume from '$lib/pages/WorkflowResume.svelte'
 	import ProjectPage from '$lib/pages/ProjectPage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
 	import { inbox } from '$lib/inbox.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { onMount } from 'svelte'
+	import { fade } from 'svelte/transition'
 
 	// the editor pulls in the flow library, so it loads on first visit
 	const loadWorkflow = () => import('$lib/pages/WorkflowEditorPage.svelte')
@@ -37,6 +39,10 @@
 	})
 
 	const route = $derived(router.route)
+	// a new page fades in; switching between tabs of the same project counts as a new page too
+	const pageKey = $derived(
+		route.name === 'project' ? `project:${route.id}:${route.page}` : route.name === 'workflow' ? `workflow:${route.id}` : route.name
+	)
 	type Crumb = { label: string; href?: string }
 	// the top bar says where you are; every part but the last leads back up
 	const crumbs = $derived.by<Crumb[]>(() => {
@@ -83,6 +89,8 @@
 				</nav>
 			</header>
 			<div class="forge-glow flex min-h-0 flex-1 flex-col">
+				{#key pageKey}
+				<div class="flex min-h-0 flex-1 flex-col" in:fade={{ duration: 350 }}>
 				{#if route.name === 'home'}
 					<HomePage />
 				{:else if route.name === 'project'}
@@ -95,9 +103,13 @@
 					{/key}
 				{:else if route.name === 'workflow'}
 					{#key route.id}
-						{#await loadWorkflow() then editor}
-							<editor.default projectId={route.id} workflowId={route.workflowId} run={route.run} />
-						{/await}
+						{#if route.resume}
+							<WorkflowResume projectId={route.id} />
+						{:else}
+							{#await loadWorkflow() then editor}
+								<editor.default projectId={route.id} workflowId={route.workflowId} run={route.run} />
+							{/await}
+						{/if}
 					{/key}
 				{:else if route.name === 'settings'}
 					<SettingsPage />
@@ -118,6 +130,8 @@
 						<a href="/" class="mt-2 inline-block text-sm text-primary hover:underline">Back home</a>
 					</div>
 				{/if}
+				</div>
+				{/key}
 			</div>
 		</Sidebar.Inset>
 	</Sidebar.Provider>

@@ -5,8 +5,10 @@
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
+	import { STATUSES } from '$lib/format'
 	import { cn } from '$lib/utils'
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down'
+	import EyeIcon from '@lucide/svelte/icons/eye'
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter'
 	import SearchIcon from '@lucide/svelte/icons/search'
 	import XIcon from '@lucide/svelte/icons/x'
@@ -18,6 +20,7 @@
 
 	const sorted = $derived(view.board.sort !== 'manual')
 	const filters = $derived(filterCount(view.board.filters))
+	const hiddenCount = $derived(STATUSES.filter((s) => view.hidden.includes(s.id)).length)
 	const anything = $derived(!isDefaultView(view.board) || Object.values(view.columns).some((c) => !isDefaultColumn(c)))
 </script>
 
@@ -70,6 +73,30 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="start" class="max-h-[70vh] w-64 overflow-y-auto">
 			<FilterMenuItems filters={view.board.filters} {defs} onchange={(f) => view.setBoard({ filters: f })} />
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
+
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="outline" size="sm" class={cn('h-8 gap-1.5', hiddenCount > 0 && 'border-primary/50 text-primary')} aria-label="Choose which statuses to show">
+					<EyeIcon />
+					Statuses
+					{#if hiddenCount > 0}<span class="rounded-full bg-primary/20 px-1.5 text-xs tabular-nums">{STATUSES.length - hiddenCount}/{STATUSES.length}</span>{/if}
+				</Button>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="start" class="w-52">
+			<DropdownMenu.Label class="text-xs text-muted-foreground">Show these statuses</DropdownMenu.Label>
+			{#each STATUSES as s (s.id)}
+				<DropdownMenu.CheckboxItem checked={!view.hidden.includes(s.id)} onCheckedChange={() => view.toggleHidden(s.id)}>
+					{s.label}
+				</DropdownMenu.CheckboxItem>
+			{/each}
+			{#if hiddenCount > 0}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item closeOnSelect={false} onSelect={() => view.showAll()}>Show all</DropdownMenu.Item>
+			{/if}
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 

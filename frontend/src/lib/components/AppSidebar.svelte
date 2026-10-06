@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SidebarPlus from '$lib/components/SidebarPlus.svelte'
 	import { auth } from '$lib/auth.svelte'
 	import * as Avatar from '$lib/components/ui/avatar/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
@@ -10,7 +11,6 @@
 	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks'
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
-	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
 	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 	import UsersIcon from '@lucide/svelte/icons/users'
@@ -32,7 +32,23 @@
 			.join('')
 			.toUpperCase()
 	)
+
+	// a clicked link gets a short border-and-shine pulse (see .nav-pulse in app.css);
+	// the plus beside a link pulses that link too
+	function pulse(e: MouseEvent) {
+		const target = e.target as Element | null
+		const link =
+			target?.closest('a[data-sidebar="menu-button"], a[data-sidebar="menu-sub-button"]') ??
+			(target?.closest('a[title="New workflow"]') &&
+				target.closest('[data-sidebar="menu-sub-item"]')?.querySelector('a[data-sidebar="menu-sub-button"]'))
+		if (!link) return
+		link.classList.remove('nav-pulse')
+		void (link as HTMLElement).offsetWidth // restart the animation when clicked again
+		link.classList.add('nav-pulse')
+	}
 </script>
+
+<svelte:window onclick={pulse} />
 
 <Sidebar.Root>
 	<Sidebar.Header>
@@ -66,9 +82,7 @@
 
 		<Sidebar.Group>
 			<Sidebar.GroupLabel>Projects</Sidebar.GroupLabel>
-			<Sidebar.GroupAction title="New project" onclick={() => (createOpen = true)}>
-				<PlusIcon /><span class="sr-only">New project</span>
-			</Sidebar.GroupAction>
+			<SidebarPlus label="New project" class="end-3 top-3.5" onclick={() => (createOpen = true)} />
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each projects.list as p (p.id)}
@@ -85,25 +99,26 @@
 							{#if open}
 								<Sidebar.MenuSub class="tree-branch">
 									<Sidebar.MenuSubItem class="tree-leaf">
-										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'overview'}>
+										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'overview'} class="me-2.5">
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}" {...props}><LayoutDashboardIcon /><span>Overview</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
 									<Sidebar.MenuSubItem class="tree-leaf">
-										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'tasks'}>
+										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'tasks'} class="me-2.5">
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
 									<Sidebar.MenuSubItem class="tree-leaf">
-										<Sidebar.MenuSubButton isActive={route.name === 'workflow'}>
+										<Sidebar.MenuSubButton isActive={route.name === 'workflow'} class="me-2.5">
 											{#snippet child({ props })}
-												<a href="/projects/{p.id}/workflows/new" {...props}><WorkflowIcon /><span>Workflow editor</span></a>
+												<a href="/projects/{p.id}/workflows" {...props}><WorkflowIcon /><span>Workflow editor</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
+										<SidebarPlus label="New workflow" href="/projects/{p.id}/workflows/new" class="-end-[1.2rem] top-1/2 -translate-y-1/2" />
 									</Sidebar.MenuSubItem>
 								</Sidebar.MenuSub>
 							{/if}

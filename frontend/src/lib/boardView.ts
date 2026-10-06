@@ -133,11 +133,13 @@ function parseFilters(v: unknown): Filters {
 }
 
 /** whatever was stored, made safe to use: a stale or edited value falls back to the default instead of breaking the board */
-export function parseStored(text: string | null): { board: BoardView; columns: Record<string, ColumnView> } {
+export function parseStored(text: string | null): { board: BoardView; columns: Record<string, ColumnView>; hidden: string[] } {
   const board = emptyView()
   const columns: Record<string, ColumnView> = {}
+  let hidden: string[] = []
   try {
     const data = JSON.parse(text ?? '{}')
+    hidden = strings(data.hidden)
     if (typeof data.board?.search === 'string') board.search = data.board.search
     if (SORT_IDS.has(data.board?.sort)) board.sort = data.board.sort
     board.filters = parseFilters(data.board?.filters)
@@ -147,5 +149,5 @@ export function parseStored(text: string | null): { board: BoardView; columns: R
   } catch {
     // unreadable: start fresh
   }
-  return { board, columns }
+  return { board, columns, hidden }
 }

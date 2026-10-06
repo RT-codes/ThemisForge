@@ -95,7 +95,7 @@
 	}
 </script>
 
-<div class="mx-auto w-full max-w-3xl px-6 py-8">
+<div class="w-full max-w-3xl px-6 py-8">
 	<h2 class="text-2xl font-semibold tracking-tight">Access</h2>
 	<p class="text-sm text-muted-foreground">
 		ThemisForge is invite only. People ask for access from the sign in screen, and you decide.

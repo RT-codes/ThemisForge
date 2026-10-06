@@ -56,6 +56,8 @@
 							{#each f.options ?? [] as o (o.value)}<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>{/each}
 						</Select.Content>
 					</Select.Root>
+				{:else if f.type === 'time'}
+					<Input id="node-{id}-{f.key}" type="time" value={data.config[f.key]} oninput={(e) => setConfig(f.key, e.currentTarget.value)} />
 				{:else if f.type === 'textarea'}
 					<Textarea id="node-{id}-{f.key}" rows={5} placeholder={f.placeholder} value={data.config[f.key]} oninput={(e) => setConfig(f.key, e.currentTarget.value)} />
 				{:else}

@@ -30,7 +30,7 @@ export type WorkflowNodeData = { kind: NodeKind; label: string; config: NodeConf
 export type FieldDef = {
   key: string
   label: string
-  type: 'text' | 'textarea' | 'select'
+  type: 'text' | 'textarea' | 'select' | 'time'
   options?: { value: string; label: string }[]
   placeholder?: string
   hint?: string
@@ -45,7 +45,8 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
   start: [],
   trigger: [
     { key: 'type', label: 'Starts when', type: 'select', options: opts(['manual', 'I run it'], ['schedule', 'On a schedule'], ['task_status', 'A task changes status']) },
-    { key: 'cron', label: 'Schedule', type: 'text', placeholder: '0 9 * * *', hint: 'minute hour day month weekday', when: { key: 'type', oneOf: ['schedule'] } },
+    { key: 'repeat', label: 'Repeats', type: 'select', options: opts(['day', 'Every day'], ['weekdays', 'Every weekday'], ['week', 'Every week'], ['month', 'Every month']), when: { key: 'type', oneOf: ['schedule'] } },
+    { key: 'time', label: 'At', type: 'time', when: { key: 'type', oneOf: ['schedule'] } },
     { key: 'status', label: 'Status', type: 'select', options: STATUSES, when: { key: 'type', oneOf: ['task_status'] } },
   ],
   task: [
@@ -72,7 +73,7 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
 
 /** every field starts empty, selects start on their first option */
 export function defaultConfig(kind: NodeKind): NodeConfig {
-  return Object.fromEntries(NODE_FIELDS[kind].map((f) => [f.key, f.type === 'select' ? f.options![0].value : '']))
+  return Object.fromEntries(NODE_FIELDS[kind].map((f) => [f.key, f.type === 'select' ? f.options![0].value : f.type === 'time' ? '09:00' : '']))
 }
 
 export const visibleFields = (kind: NodeKind, config: NodeConfig) =>
@@ -87,7 +88,7 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
     case 'start':
       return 'Begins a run'
     case 'trigger':
-      return c.type === 'schedule' ? `Cron ${c.cron || 'not set'}` : c.type === 'task_status' ? `Task becomes ${c.status}` : 'Run by hand'
+      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `Task becomes ${c.status}` : 'Run by hand'
     case 'task':
       return `${optionLabel('task', 'action', c)}${c.title ? `: ${c.title}` : ''}`
     case 'agent':

@@ -2,6 +2,8 @@
 	import { api, ApiError, type PropertyDef, type Task, type TaskStatus } from '$lib/api'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import * as Sheet from '$lib/components/ui/sheet/index.js'
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
 	import StatusBadge from '$lib/components/StatusBadge.svelte'
@@ -83,7 +85,7 @@
 		</Sheet.Header>
 
 		{#if task}
-			<div class="flex flex-wrap gap-2 px-4 pb-4">
+			<div class="flex items-center gap-2 px-4 pb-5">
 				{#if task.status === 'running'}
 					<Button size="sm" variant="secondary" disabled={busy} onclick={() => act(() => api.cancelTask(task!.id))}>
 						<SquareIcon /> Cancel run
@@ -93,15 +95,28 @@
 						<PlayIcon /> Run now
 					</Button>
 				{/if}
-				<Button size="sm" variant="ghost" class="ms-auto text-destructive hover:text-destructive" disabled={busy || task.status === 'running'} onclick={() => (confirmDelete = true)}>
-					<Trash2Icon /> Delete
-				</Button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button {...props} size="icon-sm" variant="ghost" class="ms-auto" aria-label="More actions"><EllipsisIcon /></Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-44">
+						<DropdownMenu.Item
+							class="text-destructive focus:text-destructive"
+							disabled={busy || task.status === 'running'}
+							onSelect={() => (confirmDelete = true)}
+						>
+							<Trash2Icon /> Delete task
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 			</div>
 			{#if error}
 				<p class="mx-4 mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
 			{/if}
 
-			<Tabs.Root bind:value={tab} class="gap-3">
+			<Tabs.Root bind:value={tab} class="gap-4">
 				<Tabs.List class="mx-4">
 					<Tabs.Trigger value="details">Details</Tabs.Trigger>
 					<Tabs.Trigger value="history">History</Tabs.Trigger>

@@ -132,7 +132,7 @@
 
 <div class="flex min-h-0 flex-1">
 	<aside class="flex w-72 shrink-0 flex-col overflow-y-auto border-e p-2">
-		<p class="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Runs</p>
+		<p class="px-2 pb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Runs</p>
 		{#if !loaded}
 			<p class="px-2 text-sm text-muted-foreground">Loading...</p>
 		{:else if runs.length === 0}
@@ -212,7 +212,7 @@
 
 					{#if notRun.length}
 						<div>
-							<p class="mb-1 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Did not run</p>
+							<p class="mb-1 px-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Did not run</p>
 							<ol class="grid gap-1">
 								{#each notRun as n (n.id)}
 									{@const KindIcon = nodeIcons[n.kind]}
@@ -243,19 +243,19 @@
 	<div class="ms-[34px] me-1 grid gap-3 pt-1 pb-3" transition:slide={{ duration: 200 }}>
 		{#if n.error}
 			<div class={cn('rounded-lg border px-3 py-2 text-sm', n.status === 'skipped' ? 'bg-card' : 'border-destructive/30 bg-destructive/5')}>
-				<p class={cn('text-[11px] font-medium tracking-wide uppercase', n.status === 'skipped' ? 'text-muted-foreground' : 'text-destructive')}>{reasonTitle(n)}</p>
+				<p class={cn('text-xs font-medium tracking-wide uppercase', n.status === 'skipped' ? 'text-muted-foreground' : 'text-destructive')}>{reasonTitle(n)}</p>
 				<p class="mt-0.5 break-words whitespace-pre-wrap">{n.error}</p>
 			</div>
 		{/if}
 		{#if n.result && n.result !== n.log}
 			<div>
-				<p class="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Result</p>
+				<p class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Result</p>
 				<pre class="max-h-48 overflow-auto rounded-lg border bg-card p-3 text-xs break-words whitespace-pre-wrap">{n.result}</pre>
 			</div>
 		{/if}
 		{#if n.log}
 			<div>
-				<p class="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Log{n.task_id ? ` (task #${n.task_id})` : ''}</p>
+				<p class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Log{n.task_id ? ` (task #${n.task_id})` : ''}</p>
 				<LogPanel text={n.log} title={`${n.label} - log`} subtitle={`${n.kind} node in run #${detail?.id ?? ''}`} class="h-56" />
 			</div>
 		{:else if !n.error}

@@ -40,7 +40,7 @@
 		{#each info.outputs as o, i (o.id)}
 			{@const top = i === 0 ? '30%' : '70%'}
 			<Handle type="source" id={o.id} position={Position.Right} class="workflow-handle" style="top: {top}" />
-			<span class="pointer-events-none absolute left-full ms-3 -translate-y-1/2 text-[10px] font-medium text-muted-foreground" style="top: {top}">{o.label}</span>
+			<span class="pointer-events-none absolute left-full ms-3 -translate-y-1/2 text-xs font-semibold text-foreground/80" style="top: {top}">{o.label}</span>
 		{/each}
 	{:else if info.hasOutput}
 		<Handle type="source" position={Position.Right} class="workflow-handle" />

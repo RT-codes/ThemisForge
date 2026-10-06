@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { api, ApiError, type PropertyDef, type PropertyType } from '$lib/api'
+	import ColorPicker from '$lib/components/ColorPicker.svelte'
+	import { chipStyle } from '$lib/colors'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -15,7 +17,14 @@
 		onsaved,
 	}: { open: boolean; projectId: number; defs: PropertyDef[]; onsaved: () => void } = $props()
 
-	type Row = PropertyDef & { optionsText: string; existing: boolean }
+	type Row = PropertyDef & { colors: Record<string, string>; optionsText: string; existing: boolean }
+	const parseOptions = (text: string) => [...new Set(text.split(',').map((o) => o.trim()).filter(Boolean))]
+	function setColor(row: Row, option: string, colour: string | undefined) {
+		const next = { ...row.colors }
+		if (colour) next[option] = colour
+		else delete next[option]
+		row.colors = next
+	}
 	let rows = $state<Row[]>([])
 	let error = $state('')
 	let saving = $state(false)
@@ -30,13 +39,13 @@
 
 	$effect(() => {
 		if (open) {
-			rows = defs.map((d) => ({ ...d, optionsText: d.options.join(', '), existing: true }))
+			rows = defs.map((d) => ({ ...d, colors: { ...(d.colors ?? {}) }, optionsText: d.options.join(', '), existing: true }))
 			error = ''
 		}
 	})
 
 	function add() {
-		rows.push({ key: '', name: '', type: 'text', options: [], optionsText: '', existing: false })
+		rows.push({ key: '', name: '', type: 'text', options: [], colors: {}, optionsText: '', existing: false })
 	}
 
 	async function save(e: SubmitEvent) {
@@ -56,7 +65,8 @@
 				key,
 				name: r.name.trim(),
 				type: r.type,
-				options: r.type === 'select' ? r.optionsText.split(',').map((o) => o.trim()).filter(Boolean) : [],
+				options: r.type === 'select' ? parseOptions(r.optionsText) : [],
+				colors: r.type === 'select' ? Object.fromEntries(parseOptions(r.optionsText).filter((o) => r.colors[o]).map((o) => [o, r.colors[o]])) : {},
 			})
 		}
 		saving = true
@@ -100,6 +110,16 @@
 						</div>
 						{#if row.type === 'select'}
 							<Input bind:value={row.optionsText} placeholder="Options, separated by commas" required aria-label="Options" />
+							{#if parseOptions(row.optionsText).length}
+								<div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Option colours">
+									{#each parseOptions(row.optionsText) as option (option)}
+										<span class="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 ps-1 pe-2 text-xs text-secondary-foreground" style={chipStyle(row.colors[option])}>
+											<ColorPicker value={row.colors[option]} label={`Colour of ${option}`} onchange={(c) => setColor(row, option, c)} />
+											{option}
+										</span>
+									{/each}
+								</div>
+							{/if}
 						{/if}
 					</div>
 				{:else}

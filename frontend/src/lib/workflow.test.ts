@@ -10,14 +10,14 @@ test('every kind has fields, and every select has options', () => {
 })
 
 test('defaults: selects start on the first option, text starts empty', () => {
-  assert.deepEqual(defaultConfig('trigger'), { type: 'manual', cron: '', status: 'inbox' })
+  assert.deepEqual(defaultConfig('trigger'), { type: 'manual', repeat: 'day', time: '09:00', status: 'inbox' })
   assert.equal(defaultConfig('task').title, '')
 })
 
 test('fields appear only when they apply', () => {
   const keys = (kind: NodeKind, c: Record<string, string>) => visibleFields(kind, c).map((f) => f.key)
   assert.deepEqual(keys('trigger', { type: 'manual' }), ['type'])
-  assert.deepEqual(keys('trigger', { type: 'schedule' }), ['type', 'cron'])
+  assert.deepEqual(keys('trigger', { type: 'schedule' }), ['type', 'repeat', 'time'])
   assert.deepEqual(keys('task', { action: 'run' }), ['action', 'title'])
   assert.deepEqual(keys('task', { action: 'create' }), ['action', 'title', 'description', 'status'])
   assert.deepEqual(keys('condition', { operator: 'empty' }), ['source', 'operator'])
@@ -31,7 +31,7 @@ test('a visible field never depends on a field that does not exist', () => {
 })
 
 test('summaries read well', () => {
-  assert.equal(summary('trigger', { type: 'schedule', cron: '' }), 'Cron not set')
+  assert.equal(summary('trigger', { type: 'schedule', repeat: 'weekdays', time: '08:30' }), 'Every weekday at 08:30')
   assert.equal(summary('task', { ...defaultConfig('task'), title: 'Write report' }), 'Create a task: Write report')
   assert.equal(summary('agent', { ...defaultConfig('agent'), instructions: ' Fix it\nthen test ' }), 'Fix it')
   assert.equal(summary('condition', { source: 'result', operator: 'contains', value: 'ok' }), 'The previous result contains ok')

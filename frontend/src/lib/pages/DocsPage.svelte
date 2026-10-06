@@ -158,7 +158,7 @@
 {/if}
 
 <div class="forge-glow flex-1">
-	<div class="mx-auto grid w-full max-w-7xl gap-x-10 px-4 py-8 sm:px-6 lg:grid-cols-[14.5rem_minmax(0,1fr)] xl:grid-cols-[14.5rem_minmax(0,1fr)_13rem]">
+	<div class="mx-auto grid w-full max-w-7xl gap-x-10 px-4 py-8 sm:px-6 lg:grid-cols-[14.5rem_minmax(0,1fr)] min-[1440px]:grid-cols-[14.5rem_minmax(0,1fr)_13rem]">
 		<aside class="mb-6 lg:mb-0">
 			<details class="rounded-lg border p-3 lg:hidden">
 				<summary class="cursor-pointer text-sm font-medium">Browse the docs</summary>
@@ -191,7 +191,7 @@
 				</nav>
 			</article>
 
-			<aside class="hidden xl:block">
+			<aside class="hidden min-[1440px]:block">
 				{#if doc.headings.length}
 					<div class={cn('sticky', standalone ? 'top-20' : 'top-6')}>
 						<h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">On this page</h3>

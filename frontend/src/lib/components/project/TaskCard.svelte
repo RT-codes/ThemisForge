@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { PropertyDef, Task } from '$lib/api'
-	import { describeCron, relative } from '$lib/format'
+	import { chipStyle } from '$lib/colors'
+	import { dateTime, relative } from '$lib/format'
+	import { describeSchedule } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
 	import BotIcon from '@lucide/svelte/icons/bot'
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
@@ -30,7 +32,11 @@
 			.filter((d) => task.properties[d.key] !== undefined)
 			.map((d) => {
 				const v = task.properties[d.key]
-				return { key: d.key, text: d.type === 'checkbox' ? d.name : d.type === 'select' ? String(v) : `${d.name}: ${v}` }
+				return {
+					key: d.key,
+					text: d.type === 'checkbox' ? d.name : d.type === 'select' ? String(v) : `${d.name}: ${v}`,
+					style: d.type === 'select' ? chipStyle(d.colors?.[String(v)]) : undefined,
+				}
 			})
 	)
 	const running = $derived(task.status === 'running')
@@ -65,24 +71,24 @@
 	{#if chips.length || task.harness}
 		<div class="mt-2 flex flex-wrap gap-1">
 			{#if task.harness === 'workflow'}
-				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] text-primary"><WorkflowIcon class="size-3" />Workflow</span>
+				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary"><WorkflowIcon class="size-3" />Workflow</span>
 			{:else if task.harness === 'codex'}
-				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] text-primary"><BotIcon class="size-3" />Codex</span>
+				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary"><BotIcon class="size-3" />Codex</span>
 			{/if}
 			{#each chips as chip (chip.key)}
-				<span class="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] text-secondary-foreground">{chip.text}</span>
+				<span class="rounded-md border border-transparent bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground" style={chip.style}>{chip.text}</span>
 			{/each}
 		</div>
 	{/if}
 
 	{#if task.schedule_kind !== 'none'}
-		<div class="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+		<div class="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
 			{#if task.schedule_kind === 'cron'}
 				<RepeatIcon class="size-3 shrink-0" />
-				<span class="truncate">{describeCron(task.cron)}</span>
+				<span class="min-w-0">{describeSchedule(task.cron)}</span>
 			{:else}
 				<ClockIcon class="size-3 shrink-0" />
-				<span class="truncate">One-off</span>
+				<span class="min-w-0">{task.run_at ? dateTime(task.run_at) : 'One-off'}</span>
 			{/if}
 			{#if task.next_run_at && task.status === 'ready'}
 				<span class="ms-auto shrink-0 text-foreground/70">{relative(task.next_run_at, now)}</span>

@@ -52,6 +52,33 @@ async def test_property_definitions_and_values(client):
     assert empty_select.status_code == 422
 
 
+async def test_select_options_can_have_colours(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+
+    def prop(**kw):
+        return {"key": "priority", "name": "Priority", "type": "select", "options": ["Low", "High"], **kw}
+
+    async def save(*props):
+        return await client.patch(f"/api/projects/{pid}", json={"properties": list(props)})
+
+    ok = await save(prop(colors={"High": "#EF4444", "Low": "#22c55e"}))
+    assert ok.status_code == 200
+    assert ok.json()["properties"][0]["colors"] == {"High": "#ef4444", "Low": "#22c55e"}  # stored lower case
+
+    # a colour for an option that is gone is dropped, and only selects keep colours
+    gone = await save(prop(options=["Low"], colors={"High": "#ef4444", "Low": "#22c55e"}))
+    assert gone.json()["properties"][0]["colors"] == {"Low": "#22c55e"}
+    text = await save({"key": "note", "name": "Note", "type": "text", "colors": {"x": "#ef4444"}})
+    assert text.json()["properties"][0]["colors"] == {}
+
+    for bad in ("red", "#fff", "#12345g", "rgb(1,2,3)", "ef4444"):
+        assert (await save(prop(colors={"High": bad}))).status_code == 422, bad
+
+    old = await save(prop())  # definitions made before colours existed still work
+    assert old.json()["properties"][0]["colors"] == {}
+
+
 async def test_task_crud_and_ordering(client):
     await register(client)
     pid = (await make_project(client))["id"]

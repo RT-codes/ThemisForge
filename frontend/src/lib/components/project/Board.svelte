@@ -1,15 +1,20 @@
 <script lang="ts">
 	import type { PropertyDef, Task, TaskStatus } from '$lib/api'
+	import { applyView, type ColumnResult } from '$lib/boardView'
+	import type { BoardViewStore } from '$lib/boardView.svelte'
 	import { STATUSES } from '$lib/format'
 	import { dropPosition } from '$lib/kanban'
 	import { cn } from '$lib/utils'
 	import PlusIcon from '@lucide/svelte/icons/plus'
+	import { onMount } from 'svelte'
+	import ColumnBar from './ColumnBar.svelte'
 	import TaskCard from './TaskCard.svelte'
 
 	let {
 		tasks,
 		defs,
 		now,
+		view,
 		onopen,
 		onadd,
 		onmove,
@@ -17,6 +22,7 @@
 		tasks: Task[]
 		defs: PropertyDef[]
 		now: number
+		view: BoardViewStore
 		onopen: (task: Task) => void
 		onadd: (status: TaskStatus) => void
 		onmove: (task: Task, status: TaskStatus, position: number) => void
@@ -26,6 +32,11 @@
 		Object.fromEntries(
 			STATUSES.map((s) => [s.id, tasks.filter((t) => t.status === s.id).sort((a, b) => a.position - b.position)])
 		) as Record<TaskStatus, Task[]>
+	)
+
+	// each column as it is displayed: after the board's search and filters, its own, and the order
+	const results = $derived(
+		Object.fromEntries(STATUSES.map((s) => [s.id, applyView(byStatus[s.id], view.board, view.column(s.id))])) as Record<TaskStatus, ColumnResult>
 	)
 
 	let dragId = $state<number | null>(null)
@@ -44,6 +55,10 @@
 		overColumn = status
 		const cards = [...column.querySelectorAll<HTMLElement>('[data-card]')].filter((c) => Number(c.dataset.card) !== dragId)
 		let index = cards.length
+		if (!results[status].reorderable) {
+			overIndex = index // the cards are not in your order, so a card can only go to the end
+			return
+		}
 		for (let i = 0; i < cards.length; i++) {
 			const box = cards[i].getBoundingClientRect()
 			if (e.clientY < box.top + box.height / 2) {
@@ -61,10 +76,12 @@
 		reset()
 		if (!task || !allowed) return
 		const siblings = byStatus[status].filter((t) => t.id !== task.id)
+		const reorderable = results[status].reorderable
+		if (status === task.status && !reorderable) return // a sorted or filtered column has no order of its own to change
 		if (status === task.status && byStatus[status].findIndex((t) => t.id === task.id) === index) return // same spot
 		const position = dropPosition(
 			siblings.map((t) => t.position),
-			index
+			reorderable ? index : siblings.length // not in your order: to the end of the column
 		)
 		onmove(task, status, position)
 	}
@@ -73,18 +90,35 @@
 		dragId = null
 		overColumn = null
 	}
+
+	// the board scrolls sideways: a soft fade on an edge says there is more that way
+	let scroller = $state<HTMLDivElement>()
+	let moreLeft = $state(false)
+	let moreRight = $state(false)
+	function measure() {
+		if (!scroller) return
+		moreLeft = scroller.scrollLeft > 4
+		moreRight = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4
+	}
+	onMount(() => {
+		measure()
+		const observer = new ResizeObserver(measure)
+		if (scroller) observer.observe(scroller)
+		return () => observer.disconnect()
+	})
 </script>
 
-<div class="flex h-full gap-3 overflow-x-auto pb-2">
+<div class="relative h-full min-h-0">
+<div bind:this={scroller} onscroll={measure} class="flex h-full items-start gap-3 overflow-x-auto pb-2">
 	{#each STATUSES as column (column.id)}
-		{@const items = byStatus[column.id]}
+		{@const items = results[column.id].shown}
 		{@const target = overColumn === column.id}
 		{@const slots = new Map(items.filter((t) => t.id !== dragId).map((t, i) => [t.id, i]))}
 		<section
 			role="list"
 			aria-label={column.label}
 			class={cn(
-				'flex w-72 shrink-0 flex-col rounded-xl border bg-card/40 transition-colors',
+				'flex max-h-full min-h-44 w-[17rem] shrink-0 flex-col rounded-xl border bg-card/40 transition-colors',
 				target && 'border-primary/50 bg-primary/5',
 				dragged && column.id === 'running' && 'opacity-50'
 			)}
@@ -96,7 +130,9 @@
 		>
 			<header class="flex h-12 items-center gap-2 px-3 pt-1">
 				<h3 class="text-sm font-medium" title={column.hint}>{column.label}</h3>
-				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">{items.length}</span>
+				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums" title={results[column.id].filtered ? `${items.length} of ${byStatus[column.id].length} tasks match` : undefined}>
+					{results[column.id].filtered ? `${items.length} / ${byStatus[column.id].length}` : items.length}
+				</span>
 				{#if column.id !== 'running'}
 					<button
 						type="button"
@@ -108,6 +144,7 @@
 					</button>
 				{/if}
 			</header>
+			<ColumnBar {view} status={column.id} label={column.label} {defs} />
 			<div class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
 				{#each items as task (task.id)}
 					{@const slot = slots.get(task.id)}
@@ -134,10 +171,13 @@
 				{/if}
 				{#if items.length === 0 && !target}
 					<p class="m-auto px-2 py-6 text-center text-xs text-muted-foreground/70">
-						{column.id === 'running' ? 'Cells working on tasks show up here' : 'Drop tasks here'}
+						{results[column.id].filtered ? 'No tasks match' : column.id === 'running' ? 'Cells working on tasks show up here' : 'Drop tasks here'}
 					</p>
 				{/if}
 			</div>
 		</section>
 	{/each}
+</div>
+<div class={cn('pointer-events-none absolute inset-y-0 start-0 w-10 bg-gradient-to-r from-background to-transparent transition-opacity duration-200', !moreLeft && 'opacity-0')}></div>
+<div class={cn('pointer-events-none absolute inset-y-0 end-0 w-14 bg-gradient-to-l from-background to-transparent transition-opacity duration-200', !moreRight && 'opacity-0')}></div>
 </div>

@@ -53,20 +53,6 @@ export const toLocalInput = (iso: string | null) => {
 }
 export const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null)
 
-export const CRON_PRESETS: { label: string; cron: string }[] = [
-  { label: 'Every 15 minutes', cron: '*/15 * * * *' },
-  { label: 'Every hour', cron: '0 * * * *' },
-  { label: 'Every day at 09:00', cron: '0 9 * * *' },
-  { label: 'Weekdays at 09:00', cron: '0 9 * * 1-5' },
-  { label: 'Every Monday at 09:00', cron: '0 9 * * 1' },
-  { label: 'First of the month', cron: '0 9 1 * *' },
-]
-
-export function describeCron(cron: string | null): string {
-  if (!cron) return ''
-  return CRON_PRESETS.find((p) => p.cron === cron)?.label ?? cron
-}
-
 export const slug = (name: string) =>
   name
     .toLowerCase()

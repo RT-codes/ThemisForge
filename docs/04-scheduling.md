@@ -1,7 +1,7 @@
 ---
 title: Scheduling
 group: Using ThemisForge
-summary: Manual, one-off and recurring schedules, cron syntax, time zones and what happens when things are late.
+summary: Manual, one-off and repeating schedules, time zones and what happens when things are late.
 ---
 
 # Scheduling
@@ -15,38 +15,33 @@ and starts a cell for each, up to the concurrency limit.
 | --- | --- |
 | **Manual** | No schedule. Runs when the task is Ready and a cell is free, or when you press **Run now**. |
 | **Once** | Runs a single time at a date and time you choose (shown in your local time). |
-| **Recurring** | Runs on every occurrence of a cron expression, for as long as the task is Ready. |
+| **Recurring** | Repeats on a schedule you pick, for as long as the task is Ready. |
 
-## Cron in 30 seconds
+## Repeating
 
-A cron expression has five fields:
+Choose how a task repeats in the task editor:
 
-```text
-┌───────── minute        (0-59)
-│ ┌─────── hour          (0-23)
-│ │ ┌───── day of month  (1-31)
-│ │ │ ┌─── month         (1-12)
-│ │ │ │ ┌─ day of week   (0-6, Sunday is 0)
-│ │ │ │ │
-* * * * *
-```
-
-| Expression | Meaning |
+| Repeat | Example |
 | --- | --- |
-| `*/15 * * * *` | Every 15 minutes |
-| `0 * * * *` | Every hour, on the hour |
-| `0 9 * * *` | Every day at 09:00 |
-| `0 9 * * 1-5` | Weekdays at 09:00 |
-| `0 9 * * 1` | Every Monday at 09:00 |
-| `30 18 1 * *` | The 1st of each month at 18:30 |
+| **Every day** | Every day at 09:00 |
+| **Every weekday** | Monday to Friday at 18:30 |
+| **Every week on chosen days** | Every Monday and Thursday at 07:00 |
+| **Every month on a day** | The 1st of every month at 09:00 (days 1 to 28, so every month has one) |
+| **Every hour** | At a minute past the hour of your choice |
+| **Every few minutes** | Every 5, 10, 15, 20 or 30 minutes |
 
-The task editor offers presets for the common ones and a field for your own expression. Expressions with six fields
-(seconds) are rejected.
+The task card and the task list show the schedule in words, like "Every weekday at 18:30".
+
+> [!NOTE]
+> Under the hood a repeating schedule is stored as a cron expression, which is why a task created through the API can
+> carry one the editor has no wording for. Such a task is shown as a **custom schedule**, keeps running as before, and
+> is replaced as soon as you pick a repeat in the editor.
 
 ## Time zones
 
 Recurring schedules are evaluated in the **time zone set on the Settings page**, not in UTC and not in your browser's
-zone. "Every day at 09:00" therefore means 09:00 in that zone, including across daylight saving changes.
+zone. "Every day at 09:00" therefore means 09:00 in that zone, including across daylight saving changes. The task editor
+names the zone next to the time so there is no guessing.
 
 One-off times are picked in your browser's local time and stored as an exact moment.
 

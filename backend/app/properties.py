@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 PropertyType = Literal["text", "number", "select", "checkbox", "date"]
+_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 class PropertyDef(BaseModel):
@@ -14,6 +15,9 @@ class PropertyDef(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     type: PropertyType = "text"
     options: list[str] = Field(default_factory=list, max_length=50)
+    colors: dict[str, str] = Field(
+        default_factory=dict, max_length=50
+    )  # option -> "#rrggbb", for select properties
 
     @field_validator("options")
     @classmethod
@@ -22,6 +26,14 @@ class PropertyDef(BaseModel):
         if len(set(cleaned)) != len(cleaned):
             raise ValueError("Select options must be unique")
         return cleaned
+
+    @field_validator("colors")
+    @classmethod
+    def valid_colors(cls, v: dict[str, str]) -> dict[str, str]:
+        for option, color in v.items():
+            if not _HEX_COLOR.match(color):
+                raise ValueError(f"'{color}' is not a colour like #3b82f6 (option '{option}')")
+        return {option: color.lower() for option, color in v.items()}
 
 
 def validate_definitions(defs: list[PropertyDef]) -> list[dict[str, Any]]:
@@ -33,6 +45,9 @@ def validate_definitions(defs: list[PropertyDef]) -> list[dict[str, Any]]:
             raise ValueError(f"Select property '{d.name}' needs at least one option")
         if d.type != "select":
             d.options = []
+        d.colors = {
+            o: c for o, c in d.colors.items() if o in d.options
+        }  # a colour only means something for an option that exists
     return [d.model_dump() for d in defs]
 
 

@@ -50,7 +50,7 @@
 		{/if}
 
 		<a href="/projects/{id}/tasks" class="mt-8 block rounded-xl border bg-card p-5 transition-colors hover:border-primary/40">
-			<h3 class="text-sm font-medium">Tasks</h3>
+			<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
 			<div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
 				{#each stats as s (s.label)}
 					<div>

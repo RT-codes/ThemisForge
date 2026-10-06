@@ -13,7 +13,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
 	import WorkflowIcon from '@lucide/svelte/icons/workflow'
-	import UserPlusIcon from '@lucide/svelte/icons/user-plus'
+	import UsersIcon from '@lucide/svelte/icons/users'
 	import { inbox } from '$lib/inbox.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
@@ -83,25 +83,25 @@
 								<Sidebar.MenuBadge>{p.task_counts.running}</Sidebar.MenuBadge>
 							{/if}
 							{#if open}
-								<Sidebar.MenuSub>
-									<Sidebar.MenuSubItem>
+								<Sidebar.MenuSub class="tree-branch">
+									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'overview'}>
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}" {...props}><LayoutDashboardIcon /><span>Overview</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
-									<Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'tasks'}>
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
-									<Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'workflow'}>
 											{#snippet child({ props })}
-												<a href="/projects/{p.id}/workflows/new" {...props}><WorkflowIcon /><span>Workflows</span></a>
+												<a href="/projects/{p.id}/workflows/new" {...props}><WorkflowIcon /><span>Workflow editor</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
@@ -124,7 +124,7 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton isActive={route.name === 'access'}>
 						{#snippet child({ props })}
-							<a href="/access" {...props}><UserPlusIcon /><span>Access</span></a>
+							<a href="/access" {...props}><UsersIcon /><span>Access</span></a>
 						{/snippet}
 					</Sidebar.MenuButton>
 					{#if inbox.pendingAccess > 0}

@@ -102,9 +102,9 @@
 									</span>
 								</span>
 								{#if w.id === currentId}
-									<span class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">Open now</span>
+									<span class="shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">Open now</span>
 								{:else if w.last_run}
-									<span class={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', runTone[w.last_run.status])}>{runLabel[w.last_run.status]}</span>
+									<span class={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', runTone[w.last_run.status])}>{runLabel[w.last_run.status]}</span>
 								{/if}
 							</button>
 						</li>

@@ -242,3 +242,29 @@
 	scale: 1.3;
 	box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 30%, transparent);
 }
+
+/* Sidebar tree: a branch line that reaches every sub page (like the `tree` command) and ends at the last one. */
+.tree-branch {
+	border-left-width: 0;
+}
+.tree-leaf::before,
+.tree-leaf::after {
+	content: '';
+	position: absolute;
+	left: -0.625rem; /* the left edge of the list, where a border used to run */
+	background: var(--sidebar-border);
+	pointer-events: none;
+}
+.tree-leaf::before {
+	top: -0.25rem; /* up into the gap above, so the line stays unbroken */
+	bottom: -0.25rem;
+	width: 1px;
+}
+.tree-leaf:last-child::before {
+	bottom: 50%; /* the last branch turns off here instead of running on */
+}
+.tree-leaf::after {
+	top: 50%;
+	width: 0.5rem;
+	height: 1px;
+}

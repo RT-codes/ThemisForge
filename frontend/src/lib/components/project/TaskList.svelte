@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { PropertyDef, Task } from '$lib/api'
 	import StatusBadge from '$lib/components/StatusBadge.svelte'
-	import { describeCron, relative } from '$lib/format'
+	import { chipStyle } from '$lib/colors'
+	import { dateTime, relative } from '$lib/format'
+	import { describeSchedule } from '$lib/recurrence'
 
 	let { tasks, defs, now, onopen }: { tasks: Task[]; defs: PropertyDef[]; now: number; onopen: (task: Task) => void } = $props()
 
@@ -9,8 +11,8 @@
 	const sorted = $derived([...tasks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.position - b.position))
 
 	function schedule(t: Task) {
-		if (t.schedule_kind === 'cron') return describeCron(t.cron)
-		if (t.schedule_kind === 'once') return 'One-off'
+		if (t.schedule_kind === 'cron') return describeSchedule(t.cron)
+		if (t.schedule_kind === 'once') return t.run_at ? dateTime(t.run_at) : 'One-off'
 		return 'Manual'
 	}
 </script>
@@ -43,7 +45,11 @@
 						<td class="px-4 py-2.5 text-muted-foreground">{t.status === 'ready' && t.next_run_at ? relative(t.next_run_at, now) : '-'}</td>
 						<td class="px-4 py-2.5 text-muted-foreground">{t.last_run_at ? relative(t.last_run_at, now) : '-'}</td>
 						{#each defs as d (d.key)}
-							<td class="px-4 py-2.5 text-muted-foreground">{t.properties[d.key] === undefined ? '-' : d.type === 'checkbox' ? 'Yes' : t.properties[d.key]}</td>
+							<td class="px-4 py-2.5 text-muted-foreground">
+								{#if t.properties[d.key] === undefined}-{:else if d.type === 'checkbox'}Yes{:else if d.type === 'select' && chipStyle(d.colors?.[String(t.properties[d.key])])}
+									<span class="rounded-md border border-transparent px-1.5 py-0.5 text-xs" style={chipStyle(d.colors?.[String(t.properties[d.key])])}>{t.properties[d.key]}</span>
+								{:else}{t.properties[d.key]}{/if}
+							</td>
 						{/each}
 					</tr>
 				{/each}

@@ -57,5 +57,5 @@ Open the task, switch **Schedule** to *Recurring*, pick *Every hour* (or any oth
 ## Where to go next
 
 - [Projects and tasks](/docs/tasks): statuses, custom properties, the board.
-- [Scheduling](/docs/scheduling): one-off and cron schedules, time zones.
+- [Scheduling](/docs/scheduling): one-off and repeating schedules, time zones.
 - [Cells and workspaces](/docs/cells): what the container sees and where files end up.

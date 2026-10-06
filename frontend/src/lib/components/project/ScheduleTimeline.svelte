@@ -62,8 +62,8 @@
 <div class="grid gap-6 lg:grid-cols-[1fr_16rem]">
 	<section class="min-w-0 rounded-xl border bg-card/40 p-4">
 		<div class="mb-4 flex flex-wrap items-center gap-3">
-			<h3 class="text-sm font-medium">Timeline</h3>
-			<span class="text-xs text-muted-foreground">times in your local time, recurring tasks follow {timezone}</span>
+			<h3 class="text-base font-semibold tracking-tight">Timeline</h3>
+			<span class="text-xs text-muted-foreground">shown in your local time; repeating tasks follow the {timezone} time zone</span>
 			<div class="ms-auto flex gap-1 rounded-lg bg-muted p-1" role="radiogroup" aria-label="Time window">
 				{#each [{ h: 24, label: '24 hours' }, { h: 168, label: '7 days' }] as w (w.h)}
 					<button
@@ -93,7 +93,7 @@
 		{:else}
 			<div class="grid grid-cols-[minmax(6rem,12rem)_1fr] gap-x-4 gap-y-1">
 				<div></div>
-				<div class="relative h-5 text-[11px] text-muted-foreground">
+				<div class="relative h-5 text-xs text-muted-foreground">
 					{#each ticks as t (t.left)}
 						<span class="absolute -translate-x-1/2 whitespace-nowrap tabular-nums" style:left="{t.left}%">{t.label}</span>
 					{/each}
@@ -128,7 +128,7 @@
 	</section>
 
 	<aside class="rounded-xl border bg-card/40 p-4">
-		<h3 class="mb-3 text-sm font-medium">Up next</h3>
+		<h3 class="mb-3 text-base font-semibold tracking-tight">Up next</h3>
 		{#if upNext.length === 0}
 			<p class="text-xs text-muted-foreground">No runs coming up.</p>
 		{:else}

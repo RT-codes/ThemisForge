@@ -67,8 +67,8 @@
 <section bind:this={section} id="workflows" class="mt-6 scroll-mt-6 rounded-xl border bg-card">
 	<div class="flex items-center gap-3 p-5 pb-3">
 		<div class="min-w-0 flex-1">
-			<h3 class="text-sm font-medium">Workflows</h3>
-			<p class="text-xs text-muted-foreground">Flows of tasks, agents and checks. A task can play one, and a workflow can run tasks.</p>
+			<h3 class="text-base font-semibold tracking-tight">Workflows</h3>
+			<p class="text-sm text-muted-foreground">Flows of tasks, agents and checks. A task can play one, and a workflow can run tasks.</p>
 		</div>
 		<Button size="sm" onclick={create}><PlusIcon /> New workflow</Button>
 	</div>
@@ -110,7 +110,7 @@
 						variant="ghost"
 						size="icon-sm"
 						aria-label={`Delete ${w.name}`}
-						class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+						class="-me-2 shrink-0 text-muted-foreground/60 transition-colors hover:text-destructive"
 						onclick={() => ((doomed = w), (confirmOpen = true))}
 					>
 						<Trash2Icon />

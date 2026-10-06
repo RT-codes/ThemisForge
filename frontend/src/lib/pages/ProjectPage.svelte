@@ -2,6 +2,8 @@
 	import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus } from '$lib/api'
 	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
+	import { BoardViewStore } from '$lib/boardView.svelte'
+	import BoardToolbar from '$lib/components/project/BoardToolbar.svelte'
 	import Board from '$lib/components/project/Board.svelte'
 	import ScheduleTimeline from '$lib/components/project/ScheduleTimeline.svelte'
 	import TaskList from '$lib/components/project/TaskList.svelte'
@@ -15,7 +17,7 @@
 	import { router } from '$lib/router.svelte'
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import PlusIcon from '@lucide/svelte/icons/plus'
-	import { onMount } from 'svelte'
+	import { onMount, untrack } from 'svelte'
 
 	let { id }: { id: number } = $props()
 
@@ -25,6 +27,7 @@
 	let notFound = $state(false)
 	let loadError = $state('')
 	let tab = $state('board')
+	const view = new BoardViewStore(untrack(() => id)) // the board is rebuilt for every project, so the id does not change here
 	let now = $state(Date.now())
 	let revision = $state(0)
 
@@ -124,10 +127,7 @@
 	<div class="flex min-h-0 flex-1 flex-col gap-4 px-6 py-6">
 		<div class="flex flex-wrap items-start gap-x-6 gap-y-3">
 			<div class="min-w-0 flex-1">
-				<h2 class="truncate text-2xl font-semibold tracking-tight">{project.name}</h2>
-				{#if project.description}
-					<p class="mt-1 max-w-2xl text-sm text-muted-foreground">{project.description}</p>
-				{/if}
+				<h2 class="truncate text-2xl font-semibold tracking-tight">Tasks</h2>
 			</div>
 			<div class="flex items-center gap-2">
 				<Button onclick={() => addTask()}><PlusIcon /> New task</Button>
@@ -163,7 +163,7 @@
 			{#if system}
 				<span
 					class="ms-auto inline-flex items-center gap-1.5 text-muted-foreground"
-					title="The scheduler checks for due tasks every few seconds, around the clock"
+					title="Containers running now out of how many may run at once. The scheduler checks for due tasks every few seconds, around the clock."
 				>
 					<span class="size-1.5 rounded-full {system.scheduler.running ? 'bg-emerald-400' : 'bg-destructive'}"></span>
 					{system.scheduler.running ? 'Scheduler on' : 'Scheduler off'} · {system.scheduler.active_cells}/{system.scheduler.max_cells} cells
@@ -176,13 +176,19 @@
 		{/if}
 
 		<Tabs.Root bind:value={tab} class="min-h-0 flex-1 gap-4">
-			<Tabs.List>
-				<Tabs.Trigger value="board">Board</Tabs.Trigger>
-				<Tabs.Trigger value="list">List</Tabs.Trigger>
-				<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
-			</Tabs.List>
+			<div class="flex flex-wrap items-center gap-3">
+				<Tabs.List>
+					<Tabs.Trigger value="board">Board</Tabs.Trigger>
+					<Tabs.Trigger value="list">List</Tabs.Trigger>
+					<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
+				</Tabs.List>
+				<!-- search, order and filters for the whole board; each status adds its own under its title -->
+				{#if tab === 'board'}
+					<div class="ms-auto"><BoardToolbar {view} {defs} /></div>
+				{/if}
+			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} {defs} {now} onopen={openTask} onadd={addTask} onmove={move} />
+				<Board {tasks} {defs} {now} {view} onopen={openTask} onadd={addTask} onmove={move} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
 				<TaskList {tasks} {defs} {now} onopen={openTask} />

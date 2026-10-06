@@ -17,6 +17,7 @@ export interface PropertyDef {
   name: string
   type: PropertyType
   options: string[]
+  colors?: Record<string, string> // option -> "#rrggbb", for select properties
 }
 
 export interface Project {

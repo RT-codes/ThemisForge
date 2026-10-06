@@ -9,7 +9,8 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import { onMount } from 'svelte'
 
-	let { class: className = '' }: { class?: string } = $props()
+	// bare: just the connection itself, for use inside a section that already has a title
+	let { class: className = '', bare = false }: { class?: string; bare?: boolean } = $props()
 
 	let codex = $state<CodexStatus | null>(null)
 	let error = $state('')
@@ -46,14 +47,7 @@
 	}
 </script>
 
-<Card.Root class={cn(className)}>
-	<Card.Header>
-		<Card.Title>Codex</Card.Title>
-		<Card.Description>
-			Sign in with your ChatGPT account so tasks use your plan's Codex usage. You do this once: the login is kept, refreshed automatically and survives restarts and rebuilds.
-		</Card.Description>
-	</Card.Header>
-	<Card.Content class="grid gap-4">
+{#snippet body()}
 		{#if !codex}
 			{#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}
 		{:else}
@@ -115,5 +109,18 @@
 			{/if}
 			{#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}
 		{/if}
-	</Card.Content>
+{/snippet}
+
+{#if bare}
+	<div class={cn('grid gap-4', className)}>{@render body()}</div>
+{:else}
+<Card.Root class={cn(className)}>
+	<Card.Header>
+		<Card.Title>Codex</Card.Title>
+		<Card.Description>
+			Sign in with your ChatGPT account so tasks use your plan's Codex usage. You do this once: the login is kept, refreshed automatically and survives restarts and rebuilds.
+		</Card.Description>
+	</Card.Header>
+	<Card.Content class="grid gap-4">{@render body()}</Card.Content>
 </Card.Root>
+{/if}

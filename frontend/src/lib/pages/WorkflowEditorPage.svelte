@@ -11,7 +11,6 @@
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { nextWorkflowName, seedGraph, type Graph } from '$lib/workflow'
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left'
 	import CheckIcon from '@lucide/svelte/icons/check'
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
 	import ClockIcon from '@lucide/svelte/icons/clock'
@@ -24,7 +23,6 @@
 	// workflowId null: a new workflow that exists nowhere until the first change (or an explicit Save)
 	let { projectId, workflowId, run = null }: { projectId: number; workflowId: number | null; run?: number | null } = $props()
 
-	const project = $derived(projects.get(projectId))
 	let workflow = $state<WorkflowDetail | null>(null)
 	let initialGraph = $state<Graph>(seedGraph())
 	let canvasKey = $state(0)
@@ -217,7 +215,7 @@
 								<span class="flex size-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"><WorkflowIcon class="size-3.5" /></span>
 								<span class="min-w-0 flex-1">
 									<span class="block truncate text-sm">{w.name}</span>
-									<span class="block text-[11px] text-muted-foreground">{relative(w.updated_at, now)}</span>
+									<span class="block text-xs text-muted-foreground">{relative(w.updated_at, now)}</span>
 								</span>
 							</DropdownMenu.Item>
 						{:else}
@@ -230,18 +228,15 @@
 			</div>
 
 			<div class="min-w-0 flex-1">
-				<a href="/projects/{projectId}#workflows" class="mb-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
-					<ArrowLeftIcon class="size-3" />{project?.name ?? 'Project'}
-				</a>
 				<input
 					bind:value={name}
 					onblur={rename}
 					onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 					aria-label="Workflow name"
 					maxlength="100"
-					class="-ms-2 block w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-0.5 text-lg font-semibold tracking-tight transition-colors outline-none hover:border-border focus:border-ring"
+					class="-ms-2 block w-full min-w-0 rounded-md border border-transparent bg-transparent px-2 py-1 text-lg font-semibold tracking-tight transition-colors outline-none hover:border-border focus:border-ring"
 				/>
-				{#if renameError}<p class="text-xs text-destructive" role="alert">{renameError}</p>{/if}
+				{#if renameError}<p class="-mt-0.5 text-xs text-destructive" role="alert">{renameError}</p>{/if}
 			</div>
 
 			<Tabs.Root bind:value={tab} class="shrink-0">

@@ -6,11 +6,15 @@ summary: Docker connection, cell defaults, time zone and stored keys.
 
 # Settings
 
-The **Settings** page is visible to the administrator and controls how this installation runs cells.
+The **Settings** page has two parts. **Your account** holds your own connections (see [Connecting Codex](/docs/codex)) and
+everyone can use it. **Administration** controls how this installation runs, and only the administrator sees it.
+
+Every section folds away, and a folded section says in one line what is inside. ThemisForge remembers which ones you
+left open. Change something and a bar slides in at the bottom with **Discard** and **Save changes**.
 
 ## Docker
 
-Cells are Docker containers, so ThemisForge needs to reach a Docker engine. The Docker card runs a live check and
+Cells are Docker containers, so ThemisForge needs to reach a Docker engine. The Docker section runs a live check and
 reports one of three things:
 
 - **Connected**: shows the Docker version, the host, the operating system, CPUs and memory.

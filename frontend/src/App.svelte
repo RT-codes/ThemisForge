@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte'
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
 	import AppSidebar from '$lib/components/AppSidebar.svelte'
 	import InviteScreen from '$lib/components/InviteScreen.svelte'
 	import LoginScreen from '$lib/components/LoginScreen.svelte'
@@ -36,21 +37,17 @@
 	})
 
 	const route = $derived(router.route)
-	const title = $derived(
-		route.name === 'workflow'
-			? (projects.get(route.id)?.name ?? 'Project') + ' / Workflow'
-			: route.name === 'project'
-			? (projects.get(route.id)?.name ?? 'Project') + (route.page === 'tasks' ? ' / Tasks' : '')
-			: route.name === 'settings'
-				? 'Settings'
-				: route.name === 'access'
-					? 'Access'
-					: route.name === 'docs'
-						? 'Docs'
-						: route.name === 'home'
-							? 'Home'
-							: 'Not found'
-	)
+	type Crumb = { label: string; href?: string }
+	// the top bar says where you are; every part but the last leads back up
+	const crumbs = $derived.by<Crumb[]>(() => {
+		if (route.name === 'workflow' || route.name === 'project') {
+			const project: Crumb = { label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }
+			const page = route.name === 'workflow' ? 'Workflow editor' : route.page === 'tasks' ? 'Tasks' : 'Overview'
+			return [project, { label: page }]
+		}
+		const single: Record<string, string> = { settings: 'Settings', access: 'Access', docs: 'Docs', home: 'Home' }
+		return [{ label: single[route.name] ?? 'Not found' }]
+	})
 </script>
 
 {#if auth.loading}
@@ -74,7 +71,16 @@
 			<header class="flex h-14 shrink-0 items-center gap-2 border-b px-4">
 				<Sidebar.Trigger class="-ms-1" />
 				<Separator orientation="vertical" class="me-2 h-4 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center" />
-				<h1 class="truncate text-sm font-medium">{title}</h1>
+				<nav aria-label="Breadcrumb" class="flex min-w-0 items-center gap-1.5 text-sm">
+					{#each crumbs as crumb, i (i)}
+						{#if i > 0}<ChevronRightIcon class="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" />{/if}
+						{#if crumb.href && i < crumbs.length - 1}
+							<a href={crumb.href} class="truncate text-muted-foreground transition-colors hover:text-foreground">{crumb.label}</a>
+						{:else}
+							<h1 class="truncate font-medium" aria-current="page">{crumb.label}</h1>
+						{/if}
+					{/each}
+				</nav>
 			</header>
 			<div class="forge-glow flex min-h-0 flex-1 flex-col">
 				{#if route.name === 'home'}

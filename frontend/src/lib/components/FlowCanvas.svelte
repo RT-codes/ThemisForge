@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Background, Controls, MarkerType, MiniMap, SvelteFlow, useSvelteFlow, type Connection, type Edge, type Node } from '@xyflow/svelte'
 	import '@xyflow/svelte/dist/style.css'
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import PlayIcon from '@lucide/svelte/icons/play'
@@ -29,6 +30,8 @@
 	} = $props()
 
 	const nodeTypes = { workflow: WorkflowNode }
+	// the minimap tells node types apart by colour
+	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	let nodes = $state.raw<Node[]>([])
@@ -49,7 +52,7 @@
 		counter = nextNodeNumber(initialGraph.nodes.map((n) => n.id))
 		lastSaved = JSON.stringify(toGraph(nodes, edges)) // the starting point: only a difference from it counts as a change
 		loaded = true
-		setTimeout(() => fitView({ maxZoom: 1, padding: 0.15 }), 50)
+		setTimeout(() => fitView({ maxZoom: 1, padding: 0.08 }), 50)
 	})
 
 	$effect(() => {
@@ -95,6 +98,8 @@
 		}
 	}
 
+	let clearOpen = $state(false)
+
 	const hasSelection = $derived(nodes.some((n) => n.selected) || edges.some((e) => e.selected))
 	// the panel on the right configures the node when exactly one is selected
 	const selectedNodes = $derived(nodes.filter((n) => n.selected))
@@ -131,7 +136,7 @@
 		}
 		addNode(kind, freeSpot(at))
 		// bring the whole graph into view; wait for the config panel to finish sliding in, which resizes the canvas
-		setTimeout(() => fitView({ maxZoom: 1, padding: 0.25, duration: 350 }), 240)
+		setTimeout(() => fitView({ maxZoom: 1, padding: 0.2, duration: 350 }), 240)
 	}
 
 	function onDrop(e: DragEvent) {
@@ -160,16 +165,16 @@
 			{#if testing}<LoaderCircleIcon class="animate-spin" />{:else}<PlayIcon />{/if} Test run
 		</Button>
 		{#if testError}
-			<p class="px-1 text-[11px] leading-snug text-destructive" role="alert">{testError}</p>
+			<p class="px-1 text-xs leading-snug text-destructive" role="alert">{testError}</p>
 		{:else if !hasStart}
-			<p class="px-1 text-[11px] leading-snug text-muted-foreground">Add a Start node to test.</p>
+			<p class="px-1 text-xs leading-snug text-muted-foreground">Add a Start node to test.</p>
 		{:else}
-			<p class={`px-1 text-[11px] leading-snug transition-colors ${saveState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
+			<p class={`px-1 text-xs leading-snug transition-colors ${saveState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
 				{saveState === 'saving' ? 'Saving...' : saveState === 'error' ? 'Could not save' : draft ? 'Saved when you change something' : 'All changes saved'}
 			</p>
 		{/if}
 		<div class="my-1.5 border-t"></div>
-		<p class="px-1.5 pb-0.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Nodes</p>
+		<p class="px-1.5 pb-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Nodes</p>
 		{#each NODE_KINDS as k (k.kind)}
 			{@const Icon = nodeIcons[k.kind]}
 			<button
@@ -187,10 +192,10 @@
 				<span class="truncate">{k.label}</span>
 			</button>
 		{/each}
-		<p class="px-1.5 pt-1 text-[11px] leading-snug text-muted-foreground">Click or drag onto the canvas. Drag between the dots to connect. The Test run starts at every Start node.</p>
+		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Drag between the dots to connect. The Test run starts at every Start node.</p>
 		<div class="mt-auto flex flex-col gap-1.5">
 			<Button variant="outline" size="sm" class="h-7 text-xs" disabled={!hasSelection} onclick={deleteSelected}><Trash2Icon class="size-3.5" /> Delete selected</Button>
-			<Button variant="outline" size="sm" class="h-7 text-xs" disabled={nodes.length === 0} onclick={() => deleteElements({ nodes, edges })}>Clear canvas</Button>
+			<Button variant="outline" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" disabled={nodes.length === 0} onclick={() => (clearOpen = true)}>Clear canvas</Button>
 		</div>
 	</aside>
 
@@ -204,12 +209,12 @@
 			deleteKey={['Backspace', 'Delete']}
 			defaultEdgeOptions={{ animated: true, style: 'stroke: var(--primary)', markerEnd: { type: MarkerType.ArrowClosed } }}
 			fitView
-			fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
+			fitViewOptions={{ maxZoom: 1, padding: 0.12 }}
 			minZoom={0.2}
 		>
 			<Background gap={24} />
 			<Controls showLock={false} />
-			<MiniMap pannable zoomable />
+			<MiniMap pannable zoomable class="max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? '#888'} nodeStrokeWidth={0} />
 		</SvelteFlow>
 	</div>
 	{#if active}
@@ -226,3 +231,21 @@
 		</aside>
 	{/if}
 </div>
+
+<AlertDialog.Root bind:open={clearOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Clear the canvas?</AlertDialog.Title>
+			<AlertDialog.Description>Every node and connection in this workflow is removed. Changes are saved as you make them, so this cannot be undone.</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Keep them</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={() => {
+					clearOpen = false
+					deleteElements({ nodes, edges })
+				}}>Clear canvas</AlertDialog.Action
+			>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

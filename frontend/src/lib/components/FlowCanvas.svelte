@@ -6,8 +6,8 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import PlayIcon from '@lucide/svelte/icons/play'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
-	import { DRAG_TYPE, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
-	import { onDestroy, onMount } from 'svelte'
+	import { DRAG_TYPE, MOUNT, NODE_KINDS, canConnect, defaultConfig, fromGraph, kindInfo, mountsFromGraph, nextNodeNumber, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
+	import { onDestroy, onMount, untrack } from 'svelte'
 	import { nodeIcons } from '$lib/workflowIcons'
 	import { slide } from 'svelte/transition'
 	import NodeConfigPanel from './NodeConfigPanel.svelte'
@@ -33,7 +33,7 @@
 
 	const nodeTypes = { workflow: WorkflowNode }
 	// the minimap tells node types apart by colour
-	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171' }
+	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	let nodes = $state.raw<Node[]>([])
@@ -155,8 +155,16 @@
 		e.dataTransfer.dropEffect = 'move'
 	}
 
-	// a node cannot connect to itself
-	const isValidConnection = (c: Connection | Edge) => c.source !== c.target
+	// a node cannot connect to itself; a Folder only joins an agent's folder point, and nothing else touches a Folder
+	const kindOf = (id: string) => (nodes.find((n) => n.id === id)?.data as WorkflowNodeData | undefined)?.kind
+	const isValidConnection = (c: Connection | Edge) => c.source !== c.target && canConnect(kindOf(c.source), kindOf(c.target), c.sourceHandle, c.targetHandle)
+
+	// a line that hands a folder over looks different from a step: dashed, teal, no arrow, not animated
+	const MOUNT_STYLE = 'stroke: #2dd4bf; stroke-width: 2; stroke-dasharray: 6 4'
+	$effect(() => {
+		const stale = edges.some((e) => e.sourceHandle === MOUNT && (e.style !== MOUNT_STYLE || e.animated || e.markerEnd))
+		if (stale) untrack(() => (edges = edges.map((e) => (e.sourceHandle === MOUNT ? { ...e, style: MOUNT_STYLE, animated: false, markerEnd: undefined } : e))))
+	})
 
 	const deleteSelected = () => deleteElements({ nodes: nodes.filter((n) => n.selected), edges: edges.filter((e) => e.selected) })
 </script>
@@ -194,7 +202,7 @@
 				<span class="truncate">{k.label}</span>
 			</button>
 		{/each}
-		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Drag between the dots to connect. The Test run starts at every Start node.</p>
+		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Drag between the dots to connect. A Folder joins an agent at the teal squares. The Test run starts at every Start node.</p>
 		<div class="mt-auto flex flex-col gap-1.5">
 			<Button variant="outline" size="sm" class="h-7 text-xs" disabled={!hasSelection} onclick={deleteSelected}><Trash2Icon class="size-3.5" /> Delete selected</Button>
 			<Button variant="outline" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" disabled={nodes.length === 0} onclick={() => (clearOpen = true)}>Clear canvas</Button>
@@ -226,6 +234,7 @@
 					{projectId}
 					id={active.id}
 					data={active.data as WorkflowNodeData}
+					attached={mountsFromGraph(nodes, edges, active.id)}
 					onchange={(patch) => updateNode(active.id, patch)}
 					onclose={deselectAll}
 					ondelete={() => deleteElements({ nodes: [{ id: active.id }] })}

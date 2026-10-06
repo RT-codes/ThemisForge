@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Handle, Position, useSvelteFlow, type NodeProps } from '@xyflow/svelte'
 	import XIcon from '@lucide/svelte/icons/x'
-	import { defaultConfig, kindInfo, summary, type WorkflowNodeData } from '$lib/workflow'
+	import { MOUNT, defaultConfig, kindInfo, summary, type WorkflowNodeData } from '$lib/workflow'
 	import { nodeIcons } from '$lib/workflowIcons'
 
 	let { id, data, selected }: NodeProps = $props()
@@ -14,12 +14,18 @@
 </script>
 
 <div
-	class="group relative flex w-52 items-center gap-3 rounded-lg border bg-card px-3 text-card-foreground shadow-sm transition-colors {info.outputs ? 'py-4' : 'py-2.5'} {selected
+	class="group relative flex w-52 items-center gap-3 rounded-lg border bg-card px-3 text-card-foreground shadow-sm transition-colors {info.mountOut ? 'border-dashed' : ''} {info.outputs ? 'py-4' : 'py-2.5'} {selected
 		? 'border-primary ring-2 ring-primary/30'
 		: 'hover:border-primary/50'}"
 >
 	{#if info.hasInput}
 		<Handle type="target" position={Position.Left} class="workflow-handle" />
+	{/if}
+	{#if info.mountIn}
+		<Handle type="target" id={MOUNT} position={Position.Bottom} class="workflow-handle mount-handle" title="Hand this agent a folder: drag from a Folder node" />
+	{/if}
+	{#if info.mountOut}
+		<Handle type="source" id={MOUNT} position={Position.Top} class="workflow-handle mount-handle" title="Drag to an agent's folder point to give it this folder" />
 	{/if}
 	<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
 		<Icon class="size-4" />

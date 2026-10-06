@@ -1,4 +1,4 @@
-export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'end'
+export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'end' | 'volume'
 
 export type NodeKindInfo = {
   kind: NodeKind
@@ -10,15 +10,20 @@ export type NodeKindInfo = {
   hasOutput: boolean
   /** named outputs, for nodes that branch (a condition answers yes or no) */
   outputs?: { id: string; label: string }[]
+  /** a Folder joins an agent from this point: a line that hands the agent a folder, not a step that follows another */
+  mountOut?: boolean
+  /** an agent takes folders at this point */
+  mountIn?: boolean
 }
 
 export const NODE_KINDS: NodeKindInfo[] = [
   { kind: 'start', label: 'Start', description: 'A run begins here', hasInput: false, hasOutput: true },
   { kind: 'trigger', label: 'Trigger', description: 'Also begins a run: on a schedule or event (not automatic yet)', hasInput: false, hasOutput: true },
   { kind: 'task', label: 'Task', description: 'Creates or updates a task', hasInput: true, hasOutput: true },
-  { kind: 'agent', label: 'Agent', description: 'Runs an agent', hasInput: true, hasOutput: true },
+  { kind: 'agent', label: 'Agent', description: 'Runs an agent', hasInput: true, hasOutput: true, mountIn: true },
   { kind: 'condition', label: 'Condition', description: 'Branches on a check: yes or no', hasInput: true, hasOutput: true, outputs: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
   { kind: 'end', label: 'End', description: 'Finishes the workflow', hasInput: true, hasOutput: false },
+  { kind: 'volume', label: 'Folder', description: 'A shared folder to hand to an Agent node', hasInput: false, hasOutput: false, mountOut: true },
 ]
 
 export const kindInfo = (kind: NodeKind) => NODE_KINDS.find((k) => k.kind === kind)!
@@ -74,6 +79,11 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'operator', label: 'Is', type: 'select', options: opts(['contains', 'contains'], ['equals', 'equal to'], ['not_equals', 'not equal to'], ['empty', 'empty']) },
     { key: 'value', label: 'Value', type: 'text', when: { key: 'operator', oneOf: ['contains', 'equals', 'not_equals'] } },
   ],
+  volume: [
+    // the options of volumeId are the project's folders: the panel fills them in
+    { key: 'volumeId', label: 'Folder', type: 'select', options: opts(['', 'Choose a folder']) },
+    { key: 'mode', label: 'The agent may', type: 'select', options: opts(['rw', 'Read and write'], ['ro', 'Read only']) },
+  ],
   end: [
     { key: 'outcome', label: 'Finishes as', type: 'select', options: opts(['success', 'Success'], ['failed', 'Failed'], ['review', 'Needs review']) },
     { key: 'note', label: 'Note', type: 'text', placeholder: 'Shown with the outcome' },
@@ -106,6 +116,8 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
       return c.operator === 'empty' ? `${optionLabel('condition', 'source', c)} is empty` : `${optionLabel('condition', 'source', c)} ${optionLabel('condition', 'operator', c)} ${c.value || '...'}`
     case 'end':
       return `Ends as ${c.outcome}`
+    case 'volume':
+      return c.volumeId ? (c.mode === 'ro' ? 'Read only' : 'Read and write') : 'No folder chosen'
   }
 }
 
@@ -124,17 +136,44 @@ export function parseMounts(text: string): MountChoice[] {
 
 export const formatMounts = (mounts: MountChoice[]): string => mounts.map((m) => `${m.volume_id}:${m.mode}`).join(',')
 
+// ----- folders handed to agents -----
+
+/** the connection point a Folder uses on both ends of the line that hands a folder to an agent */
+export const MOUNT = 'mount'
+
+export const isMountEdge = (e: { sourceHandle?: string | null }) => e.sourceHandle === MOUNT
+
+/** what may be joined to what: a Folder to an Agent through the folder points, and every other line only between steps */
+export function canConnect(source: NodeKind | undefined, target: NodeKind | undefined, sourceHandle?: string | null, targetHandle?: string | null): boolean {
+  if (sourceHandle === MOUNT || targetHandle === MOUNT) return sourceHandle === MOUNT && targetHandle === MOUNT && source === 'volume' && target === 'agent'
+  return source !== 'volume' && target !== 'volume'
+}
+
+type MountNodeLike = { id: string; data: Record<string, unknown> }
+
+/** the folders handed to an agent node by lines from Folder nodes (a Folder with none chosen hands over nothing) */
+export function mountsFromGraph(nodes: MountNodeLike[], edges: { source: string; target: string; sourceHandle?: string | null }[], agentId: string): MountChoice[] {
+  const out: MountChoice[] = []
+  for (const e of edges) {
+    if (e.target !== agentId || !isMountEdge(e)) continue
+    const config = (nodes.find((n) => n.id === e.source)?.data as WorkflowNodeData | undefined)?.config
+    const volume_id = Number(config?.volumeId)
+    if (Number.isInteger(volume_id) && volume_id > 0) out.push({ volume_id, mode: config?.mode === 'ro' ? 'ro' : 'rw' })
+  }
+  return out
+}
+
 /** the drag payload type used between the palette and the canvas */
 export const DRAG_TYPE = 'application/themis-node-kind'
 
 // ----- saving and loading -----
 
 export type GraphNode = { id: string; kind: NodeKind; label: string; config: NodeConfig; position: { x: number; y: number } }
-export type GraphEdge = { id: string; source: string; target: string; sourceHandle: string | null }
+export type GraphEdge = { id: string; source: string; target: string; sourceHandle: string | null; targetHandle?: string | null }
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 
 type FlowNodeLike = { id: string; position: { x: number; y: number }; data: Record<string, unknown> }
-type FlowEdgeLike = { id: string; source: string; target: string; sourceHandle?: string | null }
+type FlowEdgeLike = { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
 
 /** only what is worth saving: no selection, size or other editor state */
 export function toGraph(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): Graph {
@@ -143,7 +182,7 @@ export function toGraph(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): Graph {
       const d = n.data as WorkflowNodeData
       return { id: n.id, kind: d.kind, label: d.label, config: d.config ?? defaultConfig(d.kind), position: { x: Math.round(n.position.x), y: Math.round(n.position.y) } }
     }),
-    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null })),
+    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}) })),
   }
 }
 
@@ -155,7 +194,7 @@ export function fromGraph(graph: Graph) {
       position: n.position,
       data: { kind: n.kind, label: n.label, config: { ...defaultConfig(n.kind), ...n.config } } satisfies WorkflowNodeData,
     })),
-    edges: graph.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle })),
+    edges: graph.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}) })),
   }
 }
 

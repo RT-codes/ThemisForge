@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { api, ApiError, type Agent, type AgentInput, type CellDefaults, type HarnessInfo, type Project } from '$lib/api'
+	import { api, ApiError, type Agent, type AgentInput, type CellDefaults, type HarnessInfo, type KeyInfo, type McpServer, type Project, type Skill } from '$lib/api'
+	import { auth } from '$lib/auth.svelte'
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
@@ -28,6 +30,9 @@
 		reasoning_effort: '',
 		cell_profile: null,
 		mounts: [],
+		skills: [],
+		mcp_servers: [],
+		secrets: [],
 	})
 	const toInput = (a: Agent): AgentInput => ({
 		name: a.name,
@@ -39,11 +44,18 @@
 		reasoning_effort: a.reasoning_effort,
 		cell_profile: a.cell_profile ? { ...a.cell_profile } : null,
 		mounts: a.mounts.map((m) => ({ ...m })),
+		skills: [...a.skills],
+		mcp_servers: [...a.mcp_servers],
+		secrets: [...a.secrets],
 	})
 
 	let agents = $state<Agent[]>([])
 	let harnesses = $state<HarnessInfo[]>([])
 	let project = $state<Project | null>(null)
+	let skills = $state<Skill[]>([])
+	let servers = $state<McpServer[]>([])
+	let keys = $state<KeyInfo[]>([])
+	let warnings = $state<string[]>([]) // tools whose command is not in the image the agent runs in
 	let defaults = $state<CellDefaults | null>(null)
 	let loaded = $state(false)
 	let loadError = $state('')
@@ -90,11 +102,14 @@
 
 	async function load() {
 		try {
-			;[agents, harnesses, project, defaults] = await Promise.all([
+			;[agents, harnesses, project, defaults, skills, servers, keys] = await Promise.all([
 				api.agents(projectId),
 				api.harnesses(),
 				api.project(projectId),
 				api.systemStatus().then((s) => s.cell_defaults),
+				api.skills(projectId),
+				api.mcpServers(projectId),
+				api.keys(),
 			])
 			loadError = ''
 		} catch (e) {
@@ -141,6 +156,27 @@
 	}
 
 	const harness = $derived(harnesses.find((h) => h.id === draft.harness))
+	const isAdmin = $derived(!!auth.user?.is_admin)
+
+	const toggled = <T,>(list: T[], item: T, on: boolean) => (on ? [...list, item] : list.filter((x) => x !== item))
+
+	// would the tools start in the image this agent will run in? Asked after a change, the latest answer wins
+	let checking = 0
+	async function checkTools() {
+		const ticket = ++checking
+		if (draft.mcp_servers.length === 0) return void (warnings = [])
+		try {
+			const result = await api.checkAgent(projectId, { harness: draft.harness, cell_profile: draft.cell_profile, mcp_servers: draft.mcp_servers })
+			if (ticket === checking) warnings = result.warnings
+		} catch {
+			if (ticket === checking) warnings = []
+		}
+	}
+	// whenever the tools, the harness or the image change (this also covers loading an agent and saving it)
+	$effect(() => {
+		void [draft.harness, draft.cell_profile?.image, draft.mcp_servers.join(',')]
+		untrack(checkTools)
+	})
 </script>
 
 <div class="w-full max-w-6xl px-6 py-8">
@@ -244,6 +280,72 @@
 							<Textarea id="agent-instructions" bind:value={draft.instructions} rows={8} maxlength={20000} placeholder="Always put in front of whatever task this agent is given. How it should work, what to produce, what to avoid." />
 						</div>
 					</section>
+
+					{#if harness?.supports_skills}
+						<section class="grid gap-3 rounded-xl border bg-card p-5">
+							<div>
+								<h3 class="text-base font-semibold tracking-tight">Skills</h3>
+								<p class="text-sm text-muted-foreground">Guides it reads when a task calls for them.</p>
+							</div>
+							{#each skills as skill (skill.name)}
+								<label class="flex items-start gap-3 rounded-lg border px-3 py-2.5">
+									<Checkbox class="mt-0.5" checked={draft.skills.includes(skill.name)} onCheckedChange={(on) => (draft.skills = toggled(draft.skills, skill.name, !!on))} aria-label="Give it {skill.name}" />
+									<span class="min-w-0 flex-1">
+										<span class="block font-mono text-sm">{skill.name}</span>
+										<span class="block text-xs text-muted-foreground">{skill.description || 'No description'}</span>
+									</span>
+								</label>
+							{:else}
+								<p class="text-sm text-muted-foreground">No skills yet. <a class="text-primary hover:underline" href="/projects/{projectId}#skills">Add some</a> on the project overview.</p>
+							{/each}
+						</section>
+					{/if}
+
+					{#if harness?.supports_mcp}
+						<section class="grid gap-3 rounded-xl border bg-card p-5">
+							<div>
+								<h3 class="text-base font-semibold tracking-tight">Tools</h3>
+								<p class="text-sm text-muted-foreground">Extra tools it can use while it works (MCP servers).</p>
+							</div>
+							{#each servers as server (server.id)}
+								<label class="flex items-start gap-3 rounded-lg border px-3 py-2.5">
+									<Checkbox class="mt-0.5" checked={draft.mcp_servers.includes(server.id)} onCheckedChange={(on) => (draft.mcp_servers = toggled(draft.mcp_servers, server.id, !!on))} aria-label="Give it {server.name}" />
+									<span class="min-w-0 flex-1">
+										<span class="block font-mono text-sm">{server.name}</span>
+										<span class="block truncate font-mono text-xs text-muted-foreground">{server.kind === 'http' ? server.url : server.command}</span>
+									</span>
+								</label>
+							{:else}
+								<p class="text-sm text-muted-foreground">No tools yet. <a class="text-primary hover:underline" href="/projects/{projectId}#tools">Add some</a> on the project overview.</p>
+							{/each}
+							{#each warnings as warning (warning)}
+								<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-300" role="status">{warning}</p>
+							{/each}
+						</section>
+					{/if}
+
+					{#if harness?.supports_keys}
+						<section class="grid gap-3 rounded-xl border bg-card p-5">
+							<div>
+								<h3 class="text-base font-semibold tracking-tight">Keys</h3>
+								<p class="text-sm text-muted-foreground">
+									Stored keys it can use, available to its commands as environment variables. Its output is scrubbed of their values, but only give a key to an agent you trust with it.
+								</p>
+							</div>
+							{#each keys as key (key.id)}
+								<label class="flex items-center gap-3 rounded-lg border px-3 py-2.5">
+									<Checkbox checked={draft.secrets.includes(key.id)} disabled={!isAdmin} onCheckedChange={(on) => (draft.secrets = toggled(draft.secrets, key.id, !!on))} aria-label="Give it {key.name}" />
+									<span class="min-w-0 flex-1 text-sm">{key.name}</span>
+									<span class="font-mono text-xs text-muted-foreground">${key.env_name}</span>
+								</label>
+							{:else}
+								<p class="text-sm text-muted-foreground">No keys stored yet. An administrator adds them under Settings, Keys.</p>
+							{/each}
+							{#if keys.length && !isAdmin}
+								<p class="text-xs text-muted-foreground">Only an administrator can give an agent keys.</p>
+							{/if}
+						</section>
+					{/if}
 
 					<section class="grid gap-4 rounded-xl border bg-card p-5">
 						<div>

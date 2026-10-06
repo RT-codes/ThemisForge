@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from .app_settings import AppSettings
 from .cells import SECRETS_DIR
+from .keys import ENV_NAME, key_path
 
 HARNESSES = ("", "codex")  # "" = the placeholder program
 
@@ -29,11 +30,17 @@ class HarnessInfo:
     description: str
     supports_skills: bool = False
     supports_mcp: bool = False
+    supports_keys: bool = False
 
 
 CATALOG = (
     HarnessInfo(
-        "codex", "Codex", "OpenAI's Codex CLI, signed in with your ChatGPT account (Settings, Codex)."
+        "codex",
+        "Codex",
+        "OpenAI's Codex CLI, signed in with your ChatGPT account (Settings, Codex).",
+        supports_skills=True,
+        supports_mcp=True,
+        supports_keys=True,
     ),
 )
 
@@ -43,13 +50,20 @@ CODEX_AUTH = f"{CODEX_HOME}/auth.json"
 
 # Codex may refresh its login while it runs. The refreshed file is printed (base64, between markers) on exit so the
 # host can store it: the cell has nowhere durable to put it, and a lost refresh would force a reconnect.
-def codex_script(model: str, effort: str) -> str:
+def codex_script(model: str, effort: str, key_envs: Sequence[str] = ()) -> str:
     # model and effort are validated settings (no shell metacharacters), still quoted for good measure
+    # Keys are exported from their in-memory files, so only the names are in this script (it is visible on the host).
+    # Codex hides variables with KEY, SECRET or TOKEN in their name from the commands the agent runs, unless told not to.
+    for env in key_envs:
+        if not ENV_NAME.match(env):
+            raise ValueError(f"Not a valid variable name: {env}")
+    exports = "".join(f'export {env}="$(cat {key_path(env)})"\n' for env in key_envs)
+    policy = "-c shell_environment_policy.ignore_default_excludes=true " if key_envs else ""
     return f"""\
 export CODEX_HOME={CODEX_HOME}
-echo "[codex] model {shlex.quote(model)}, reasoning effort {shlex.quote(effort)}"
+{exports}echo "[codex] model {shlex.quote(model)}, reasoning effort {shlex.quote(effort)}"
 trap 'echo "@@THEMIS-WRITEBACK-BEGIN {CODEX_AUTH}@@"; base64 < "$CODEX_HOME/auth.json" | tr -d "\\n"; echo; echo "@@THEMIS-WRITEBACK-END@@"' EXIT
-codex exec -m {shlex.quote(model)} -c model_reasoning_effort={shlex.quote(effort)} -c model_reasoning_summary=detailed -c show_raw_agent_reasoning=true \\
+codex exec -m {shlex.quote(model)} {policy}-c model_reasoning_effort={shlex.quote(effort)} -c model_reasoning_summary=detailed -c show_raw_agent_reasoning=true \\
   --json --skip-git-repo-check --ephemeral --dangerously-bypass-approvals-and-sandbox \\
   -C /workspace -o /cell/result.md -- "$(cat /cell/prompt.md)" < /dev/null
 """
@@ -63,13 +77,15 @@ class HarnessPlan:
     uses_codex: bool = False
 
 
-def plan_for(harness: str, cfg: AppSettings, *, model: str = "", effort: str = "") -> HarnessPlan | None:
+def plan_for(
+    harness: str, cfg: AppSettings, *, model: str = "", effort: str = "", key_envs: Sequence[str] = ()
+) -> HarnessPlan | None:
     """None means the placeholder program, which needs nothing special. An agent may choose its own model and
-    reasoning effort; empty means the ones in Settings."""
+    reasoning effort (empty means the ones in Settings) and be given keys, available as these variables."""
     if harness == "codex":
         return HarnessPlan(
             image=cfg.codex_image,
-            script=codex_script(model or cfg.codex_model, effort or cfg.codex_reasoning_effort),
+            script=codex_script(model or cfg.codex_model, effort or cfg.codex_reasoning_effort, key_envs),
             writeback=(CODEX_AUTH,),
             uses_codex=True,
         )

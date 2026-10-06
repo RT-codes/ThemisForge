@@ -6,7 +6,7 @@ import logging
 import shutil
 import time
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -17,10 +17,14 @@ from .budget import Cost, admit, never_fits
 from .cells import CellError, CellManager, CellResult, CellSpec, Mount
 from .codex import CodexError, lease_codex, lease_is_busy
 from .config import settings
+from .crypto import decrypt
 from .harness import CODEX_AUTH, HarnessPlan, agent_preamble, build_prompt, plan_for, renderer_for
-from .models import Agent, Attempt, AttemptStatus, Project, Task, TaskStatus, utcnow
+from .keys import Redactor, key_path, unique_env_names
+from .mcp import CONFIG_PATH, McpSpec, config_toml
+from .models import Agent, Attempt, AttemptStatus, McpServer, Project, Secret, Task, TaskStatus, utcnow
 from .profiles import Profile, resolve_profile
 from .scheduling import finish_task
+from .skills import missing as missing_skills
 from .volumes import MountError, plan_mounts
 
 log = logging.getLogger("themis.scheduler")
@@ -52,6 +56,11 @@ class _Plan:
     harness: HarnessPlan | None
     mounts: list[Mount]
     error: str = ""  # why it cannot run at all
+    skills: list[str] = field(default_factory=list)
+    mcp: list[McpSpec] = field(default_factory=list)
+    keys: dict[int, str] = field(
+        default_factory=dict
+    )  # key id -> variable name, for the keys the agent is given
 
     @property
     def cost(self) -> Cost:
@@ -279,11 +288,13 @@ class Scheduler:
         s: AsyncSession, task: Task, project: Project, agent: Agent | None, cfg: AppSettings
     ) -> _Plan:
         harness = agent.harness if agent else task.harness
+        skills, mcp, keys, error = await Scheduler._capabilities(s, project, agent)
         hp = plan_for(
             harness,
             cfg,
             model=agent.model if agent else "",
             effort=agent.reasoning_effort if agent else "",
+            key_envs=sorted(keys.values()),
         )
         extra = task.run_options or {}
         profile = resolve_profile(
@@ -293,14 +304,65 @@ class Scheduler:
             agent.cell_profile if agent else None,
             extra.get("profile"),
         )
-        plan = _Plan(task, project, agent, profile, hp, [])
-        if harness != "workflow":  # a task that plays a workflow starts no cell, so it mounts nothing
+        plan = _Plan(task, project, agent, profile, hp, [], error=error, skills=skills, mcp=mcp, keys=keys)
+        if (
+            harness != "workflow" and not plan.error
+        ):  # a task that plays a workflow starts no cell, so it mounts nothing
             try:
                 refs = [*(agent.mounts if agent else []), *extra.get("mounts", [])]
                 plan.mounts = await plan_mounts(s, project.id, refs, cfg)
             except MountError as e:
                 plan.error = str(e)
         return plan
+
+    @staticmethod
+    async def _capabilities(
+        s: AsyncSession, project: Project, agent: Agent | None
+    ) -> tuple[list[str], list[McpSpec], dict[int, str], str]:
+        """What an agent is given besides its words: skills, tool servers and keys. Anything that was deleted since
+        the agent was set up stops the run with a reason, instead of running without it."""
+        if agent is None or not (agent.skills or agent.mcp_servers or agent.secrets):
+            return [], [], {}, ""
+        if gone := missing_skills(project.id, agent.skills):
+            return [], [], {}, f"The skill '{gone[0]}' no longer exists. Check the agent's Skills."
+        rows = []
+        if agent.mcp_servers:
+            rows = list(
+                await s.scalars(
+                    select(McpServer).where(
+                        McpServer.project_id == project.id, McpServer.id.in_(agent.mcp_servers)
+                    )
+                )
+            )
+            if len(rows) != len(set(agent.mcp_servers)):
+                return [], [], {}, "A tool server this agent uses no longer exists. Check the agent's Tools."
+        specs = [
+            McpSpec(
+                name=r.name,
+                kind=r.kind,
+                command=r.command,
+                args=tuple(r.args),
+                url=r.url,
+                env=dict(r.env),
+                secret_env=dict(r.secret_env),
+                bearer_secret_id=r.bearer_secret_id,
+            )
+            for r in rows
+        ]
+        wanted = set(agent.secrets) | {spec.bearer_secret_id for spec in specs if spec.bearer_secret_id}
+        every = wanted | {i for spec in specs for i in spec.key_ids}
+        found = (
+            {x.id: x for x in await s.scalars(select(Secret).where(Secret.id.in_(every)))} if every else {}
+        )
+        if gone_keys := every - set(found):
+            return (
+                [],
+                [],
+                {},
+                f"A key this agent uses no longer exists (key {min(gone_keys)}). Check its Keys and Tools.",
+            )
+        names = unique_env_names([(i, found[i].name) for i in sorted(every)])
+        return list(agent.skills), specs, {i: names[i] for i in sorted(wanted)}, ""
 
     async def _fail(self, s: AsyncSession, plan: _Plan, budget: Cost, cfg: AppSettings, now) -> None:
         """Record an attempt that never started, with the reason in its log."""
@@ -383,6 +445,9 @@ class Scheduler:
             timeout_seconds=profile.timeout_seconds,
             docker_host=cfg.docker_host,
             mounts=plan.mounts,
+            skills=plan.skills,
+            keys=plan.keys,
+            mcp=plan.mcp,
         )
 
     # running a cell
@@ -390,6 +455,9 @@ class Scheduler:
     async def _execute(self, attempt_id: int, spec: CellSpec, tz: str) -> None:
         buf = _LogBuffer(self.maker, attempt_id)
         outcome, exit_code, result = AttemptStatus.FAILED, None, ""
+        redact = Redactor(
+            []
+        )  # replaces the values of the keys this run was given, in everything that is stored
         try:
             async with AsyncExitStack() as stack:
                 lease = None
@@ -398,17 +466,24 @@ class Scheduler:
                         await buf.write("[Waiting for another Codex run of the same user to finish]\n")
                     lease = await stack.enter_async_context(lease_codex(self.maker, spec.owner_id))
                     spec.secret_files[CODEX_AUTH] = lease.auth_json
+                    if spec.keys or spec.mcp:
+                        values = await self._key_values(spec)
+                        for key_id, env in spec.keys.items():
+                            spec.secret_files[key_path(env)] = values[key_id]
+                        if spec.mcp:
+                            spec.secret_files[CONFIG_PATH] = config_toml(spec.mcp, values, spec.keys)
+                        redact = Redactor(list(values.values()))
                 renderer = renderer_for(spec.harness)
 
                 async def sink(chunk: str) -> None:
                     if renderer is None:
-                        await buf.write(chunk)
+                        await buf.write(redact(chunk))
                     elif text := renderer.feed(chunk):
-                        await buf.write(text)
+                        await buf.write(redact(text))
 
                 res = await self._play_or_run(spec, attempt_id, sink)
                 if renderer is not None and (tail := renderer.flush()):
-                    await buf.write(tail)
+                    await buf.write(redact(tail))
                 if (
                     lease is not None
                     and (fresh := res.writeback.get(CODEX_AUTH))
@@ -418,7 +493,7 @@ class Scheduler:
                         await lease.save_back(fresh)
                     except CodexError as e:
                         await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
-            exit_code, result = res.exit_code, res.result
+            exit_code, result = res.exit_code, redact(res.result)
             outcome = AttemptStatus.SUCCEEDED if res.exit_code == 0 else AttemptStatus.FAILED
         except asyncio.CancelledError:
             reason = self._live[attempt_id].cancel_reason if attempt_id in self._live else None
@@ -433,6 +508,23 @@ class Scheduler:
             log.exception("attempt %s crashed", attempt_id)
             await buf.write(f"\n[Unexpected error] {e}\n")
         await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz)
+
+    async def _key_values(self, spec: CellSpec) -> dict[int, str]:
+        """The readable values of the keys this run uses, by id."""
+        need = set(spec.keys) | {i for server in spec.mcp for i in server.key_ids}
+        async with self.maker() as s:
+            rows = (await s.scalars(select(Secret).where(Secret.id.in_(need)))).all()
+        values: dict[int, str] = {}
+        for row in rows:
+            value = decrypt(row.value_encrypted)
+            if value is None:
+                raise CellError(
+                    "A stored key could not be read. If THEMIS_SECRET_KEY changed, add the keys again."
+                )
+            values[row.id] = value
+        if set(values) != need:
+            raise CellError("A key this agent uses was removed before its run started")
+        return values
 
     async def _play_or_run(self, spec: CellSpec, attempt_id: int, sink) -> CellResult:
         """A task that plays a workflow hands it to the workflow engine; everything else runs in a cell."""

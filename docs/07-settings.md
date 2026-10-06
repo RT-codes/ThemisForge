@@ -92,7 +92,9 @@ Store credentials for model providers and tools (Anthropic, OpenAI, Google, GitH
 > [!WARNING]
 > If you change `THEMIS_SECRET_KEY`, previously stored keys can no longer be read. Add them again after changing it.
 
-Keys are stored and managed here, but are **not yet injected into cells**. That arrives with agents.
+An administrator can give a key to an agent (the **Keys** part of the [agent page](/docs/agents#keys)) or to a tool. Deleting a
+key takes it away from every agent and tool that had it. The list of key names (never their values) is visible to every
+signed in user, because they need it to see what an agent has.
 
 ## Insecure secret key notice
 

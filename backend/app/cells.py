@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from . import skills as skill_store
 from .config import settings
 from .docker_check import docker_env
 
@@ -84,10 +85,23 @@ class CellSpec:
     harness: str = ""
     workflow_id: int | None = None  # for harness "workflow": the workflow to play (no cell is started)
     mounts: list[Mount] = field(default_factory=list)  # shared folders, mounted at /workspace/NAME
+    skills: list[str] = field(
+        default_factory=list
+    )  # the agent's skills, copied in and mounted read only (app/skills.py)
+    keys: dict[int, str] = field(
+        default_factory=dict
+    )  # key id -> the variable it is exported as (app/keys.py)
+    mcp: list = field(
+        default_factory=list
+    )  # tool servers (McpSpec, app/mcp.py), written into the harness config
 
     @property
     def workspace_dir(self) -> Path:
         return settings.data_dir / "projects" / str(self.project_id) / "workspaces" / str(self.attempt_id)
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.cell_dir / "skills"
 
     @property
     def cell_dir(self) -> Path:
@@ -112,6 +126,11 @@ class CellManager(Protocol):
 def prepare_dirs(spec: CellSpec) -> None:
     spec.workspace_dir.mkdir(parents=True, exist_ok=True)
     spec.cell_dir.mkdir(parents=True, exist_ok=True)
+    if spec.skills:
+        skill_store.stage(spec.project_id, spec.skills, spec.skills_dir)
+        (spec.workspace_dir / ".agents" / "skills").mkdir(
+            parents=True, exist_ok=True
+        )  # the mountpoint, made as us
     for mount in spec.mounts:
         mount.source.mkdir(parents=True, exist_ok=True)
         # made here, as us: if Docker had to create the mountpoint it would belong to root
@@ -269,6 +288,7 @@ class DockerCellManager:
             *extra,
             "-v", f"{spec.workspace_dir}:/workspace",
             *[a for m in spec.mounts for a in ("-v", f"{m.source}:/workspace/{m.name}{':ro' if m.read_only else ''}")],
+            *(["-v", f"{spec.skills_dir}:{skill_store.MOUNT_AT}:ro"] if spec.skills else []),
             "-v", f"{spec.cell_dir}:/cell",
             "-e", f"THEMIS_TASK_ID={spec.task_id}",
             "-e", f"THEMIS_TASK_TITLE={spec.title}",

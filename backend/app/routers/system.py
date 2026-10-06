@@ -14,7 +14,7 @@ from ..config import settings as boot_settings
 from ..crypto import encrypt, hint_for
 from ..deps import AdminUser, CurrentUser, SessionDep
 from ..docker_check import check_docker
-from ..models import AccessRequest, Secret
+from ..models import AccessRequest, Agent, McpServer, Secret
 from ..schemas import SecretIn, SecretOut
 
 router = APIRouter(tags=["system"])
@@ -168,5 +168,13 @@ async def delete_secret(secret_id: int, session: SessionDep, _: AdminUser) -> No
     secret = await session.get(Secret, secret_id)
     if secret is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Secret not found")
+    # agents and tools that used the key stop referring to it; a run never starts with a key that is gone
+    for agent in await session.scalars(select(Agent)):
+        if secret.id in agent.secrets:
+            agent.secrets = [i for i in agent.secrets if i != secret.id]
+    for server in await session.scalars(select(McpServer)):
+        server.secret_env = {k: i for k, i in server.secret_env.items() if i != secret.id}
+        if server.bearer_secret_id == secret.id:
+            server.bearer_secret_id = None
     await session.delete(secret)
     await session.commit()

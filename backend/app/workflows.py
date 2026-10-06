@@ -47,7 +47,11 @@ log = logging.getLogger("themis.workflows")
 
 MAX_NESTING = 5  # workflows playing tasks that play workflows...
 
-Kind = Literal["start", "trigger", "task", "agent", "condition", "end"]
+Kind = Literal["start", "trigger", "task", "agent", "condition", "end", "volume"]
+
+# A "mount" line joins a Folder (volume) node to an Agent node: it hands that folder to the agent. It is not a step, so
+# the run never follows it.
+MOUNT = "mount"
 START_KINDS = ("start", "trigger")
 
 
@@ -68,7 +72,10 @@ class GraphEdge(BaseModel):
     id: str = Field(min_length=1, max_length=100)
     source: str
     target: str
-    sourceHandle: str | None = Field(default=None, max_length=20)  # "yes" / "no" on a condition
+    sourceHandle: str | None = Field(
+        default=None, max_length=20
+    )  # "yes" / "no" on a condition, "mount" on a folder
+    targetHandle: str | None = Field(default=None, max_length=20)  # "mount" where a folder joins an agent
 
 
 class Graph(BaseModel):
@@ -80,11 +87,34 @@ class Graph(BaseModel):
         ids = [n.id for n in self.nodes]
         if len(set(ids)) != len(ids):
             raise ValueError("Node ids must be unique")
-        known = set(ids)
+        known = {n.id: n for n in self.nodes}
         for e in self.edges:
             if e.source not in known or e.target not in known:
                 raise ValueError("An edge points at a node that does not exist")
+            source, target = known[e.source], known[e.target]
+            if e.sourceHandle == MOUNT:
+                if source.kind != "volume" or target.kind != "agent":
+                    raise ValueError("A folder can only be handed to an Agent node")
+            elif "volume" in (source.kind, target.kind):
+                raise ValueError("A Folder node is not a step: join it to an Agent node's folder point")
         return self
+
+    def mounts_for(self, node_id: str) -> list[dict]:
+        """The folders handed to an agent node by lines from Folder nodes, as {"volume_id", "mode"}."""
+        nodes = {n.id: n for n in self.nodes}
+        out = []
+        for e in self.edges:
+            if e.target != node_id or e.sourceHandle != MOUNT:
+                continue
+            folder = nodes[e.source]
+            raw = folder.config.get("volumeId", "").strip()
+            if not raw.isdigit():
+                raise NodeError(
+                    f"The folder '{folder.label or 'Folder'}' has no folder chosen. Open it and pick one."
+                )
+            mode = folder.config.get("mode", "rw")
+            out.append({"volume_id": int(raw), "mode": mode if mode in ("ro", "rw") else "rw"})
+        return out
 
     @property
     def start_nodes(self) -> list[GraphNode]:
@@ -121,6 +151,7 @@ class Outcome:
 class _Ctx:
     run_id: int
     project_id: int
+    graph: Graph
 
 
 def evaluate_condition(config: dict[str, str], prev: Prev | None) -> tuple[bool, str]:
@@ -238,7 +269,9 @@ class WorkflowRunner:
             s.add(run)
             await s.commit()
             run_id = run.id
-        task = asyncio.create_task(self._run(_Ctx(run_id, project_id), graph), name=f"workflow-run-{run_id}")
+        task = asyncio.create_task(
+            self._run(_Ctx(run_id, project_id, graph), graph), name=f"workflow-run-{run_id}"
+        )
         self._live[run_id] = task
         task.add_done_callback(lambda _t, rid=run_id: self._live.pop(rid, None))
         return run_id
@@ -340,7 +373,8 @@ class WorkflowRunner:
         nodes = {n.id: n for n in graph.nodes}
         outgoing: dict[str, list[GraphEdge]] = {}
         for e in graph.edges:
-            outgoing.setdefault(e.source, []).append(e)
+            if e.sourceHandle != MOUNT:  # a folder handed to an agent is not a step to follow
+                outgoing.setdefault(e.source, []).append(e)
         queue: deque[tuple[str, Prev | None]] = deque((n.id, None) for n in graph.start_nodes)
         done: dict[str, Outcome] = {}
         carried_on: set[str] = set()  # failed nodes the workflow continued after
@@ -447,7 +481,7 @@ class WorkflowRunner:
         if prev and prev.result.strip():
             instructions += f"\n\nResult of the previous step ({prev.label}):\n{prev.result.strip()}"
         title = node.label or "Agent"
-        run_options = self._run_options(c)
+        run_options = self._run_options(c, ctx.graph.mounts_for(node.id))
         async with self.maker() as s:
             agent = None
             if agent_id := c.get("agentId", "").strip():
@@ -473,9 +507,10 @@ class WorkflowRunner:
         return await self._wait_for_task(nr_id, task_id, before=0)
 
     @staticmethod
-    def _run_options(c: dict) -> dict | None:
+    def _run_options(c: dict, attached: list[dict] | None = None) -> dict | None:
         """The cell size and shared folders set on an Agent node, for this run only. Node settings are plain text:
-        the cell fields are separate keys, the folders one string like "3:rw,5:ro" (volume id and mode)."""
+        the cell fields are separate keys, the folders one string like "3:rw,5:ro" (volume id and mode). Folders handed
+        over by lines from Folder nodes (`attached`) come first; one named in the node's own list wins for that folder."""
         try:
             fields = {
                 "cellImage": "image",
@@ -485,7 +520,7 @@ class WorkflowRunner:
             }
             asked = {name: c[key].strip() for key, name in fields.items() if c.get(key, "").strip()}
             profile = ProfileOverrides.model_validate(asked).clean() if asked else None
-            mounts = []
+            mounts = [MountRef.model_validate(m).model_dump() for m in attached or []]
             for part in filter(None, (p.strip() for p in c.get("mounts", "").split(","))):
                 volume_id, _, mode = part.partition(":")
                 mounts.append(MountRef(volume_id=int(volume_id), mode=mode or "rw").model_dump())
@@ -607,7 +642,7 @@ class WorkflowRunner:
         nodes = {n.id: n for n in graph.nodes}
         rows = []
         for n in graph.nodes:
-            if n.id in done:
+            if n.id in done or n.kind == "volume":  # a Folder node is never a step, so it is never "not run"
                 continue
             seq += 1
             rows.append(
@@ -629,7 +664,7 @@ class WorkflowRunner:
         done: dict[str, Outcome],
         carried_on: set[str],
     ) -> str:
-        incoming = [e for e in graph.edges if e.target == node.id]
+        incoming = [e for e in graph.edges if e.target == node.id and e.sourceHandle != MOUNT]
         if not incoming:
             return "Not run: nothing leads to this node, so no Start node reaches it."
         for e in incoming:

@@ -22,22 +22,22 @@ summary: What is built, what comes next and what is deliberately left for later.
   with optional turn taking, and administrator approved mount roots for host folders.
 - **Agents**: a name, role, instructions, harness, model, cell and folders per agent, an editor page for them, and
   an agent picker on tasks and workflow Agent nodes.
+- **Skills, tools and keys**: SKILL.md skills, MCP tool servers and stored keys given to an agent, with log redaction and a check
+  that a tool's command exists in the agent's image.
+- **Folder nodes in workflows**: a Folder node joined to an Agent node hands that agent a shared folder for the step, with
+  lines the run does not treat as steps.
 - **Cell profiles**: the cell size layered from Settings, to the project, to the agent, to a single workflow step.
 - **Invite only** access with requests, invite links and an administrator.
 - **Installer**, `doctor`, systemd service and migrations.
 
 ## Next
 
-1. **Skills, tools and keys for agents.** Skills and MCP servers an agent can use, and stored keys handed to its cell
-   with redaction in logs. The Codex login already travels safely into cells and back; other keys still need the
-   same path.
-2. **Folders in the workflow canvas.** Folder nodes you connect to an Agent node, instead of picking them in its panel.
-3. **Tasks from agents, webhooks and workflows**, using the same task path as everything else.
-4. **Notifications and email.** Tell the administrator about new access requests, and tell people when work needs
+1. **Tasks from agents, webhooks and workflows**, using the same task path as everything else.
+2. **Notifications and email.** Tell the administrator about new access requests, and tell people when work needs
    review or fails. Email the invite link.
-5. **Live updates** instead of polling.
-6. **Password reset.**
-7. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,
+3. **Live updates** instead of polling.
+4. **Password reset.**
+5. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,
    week or month filter.
 
 ## Later

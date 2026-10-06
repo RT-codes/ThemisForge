@@ -149,8 +149,50 @@ export interface Agent {
   reasoning_effort: '' | 'low' | 'medium' | 'high'
   cell_profile: ProfileOverrides | null
   mounts: MountRef[]
+  skills: string[]
+  mcp_servers: number[]
+  secrets: number[]
   created_at: string
   updated_at: string
+}
+
+export interface Skill {
+  name: string
+  description: string
+  files: number
+}
+
+export interface SkillDetail extends Skill {
+  content: string
+}
+
+export interface McpServer {
+  id: number
+  project_id: number
+  name: string
+  kind: 'stdio' | 'http'
+  command: string
+  args: string[]
+  url: string
+  env: Record<string, string>
+  secret_env: Record<string, number>
+  bearer_secret_id: number | null
+  created_at: string
+}
+
+export type McpInput = Omit<McpServer, 'id' | 'project_id' | 'created_at'>
+
+/** a stored key as an agent sees it: never its value, only the variable it is available as */
+export interface KeyInfo {
+  id: number
+  name: string
+  kind: string
+  env_name: string
+}
+
+export interface AgentCheck {
+  image: string
+  warnings: string[]
 }
 
 export type AgentInput = Omit<Agent, 'id' | 'project_id' | 'created_at' | 'updated_at'>
@@ -161,6 +203,7 @@ export interface HarnessInfo {
   description: string
   supports_skills: boolean
   supports_mcp: boolean
+  supports_keys: boolean
 }
 
 export interface AppSettings {
@@ -407,6 +450,17 @@ export const api = {
   createVolume: (projectId: number, body: VolumeInput) => request<Volume>(`/projects/${projectId}/volumes`, send('POST', body)),
   updateVolume: (id: number, patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) => request<Volume>(`/volumes/${id}`, send('PATCH', patch)),
   deleteVolume: (id: number) => request<void>(`/volumes/${id}`, send('DELETE')),
+  skills: (projectId: number) => request<Skill[]>(`/projects/${projectId}/skills`),
+  skill: (projectId: number, name: string) => request<SkillDetail>(`/projects/${projectId}/skills/${name}`),
+  saveSkill: (projectId: number, name: string, content: string) => request<Skill>(`/projects/${projectId}/skills/${name}`, send('PUT', { content })),
+  deleteSkill: (projectId: number, name: string) => request<void>(`/projects/${projectId}/skills/${name}`, send('DELETE')),
+  mcpServers: (projectId: number) => request<McpServer[]>(`/projects/${projectId}/mcp-servers`),
+  createMcpServer: (projectId: number, body: McpInput) => request<McpServer>(`/projects/${projectId}/mcp-servers`, send('POST', body)),
+  updateMcpServer: (id: number, body: McpInput) => request<McpServer>(`/mcp-servers/${id}`, send('PUT', body)),
+  deleteMcpServer: (id: number) => request<void>(`/mcp-servers/${id}`, send('DELETE')),
+  keys: () => request<KeyInfo[]>('/keys'),
+  checkAgent: (projectId: number, body: { harness: string; cell_profile: ProfileOverrides | null; mcp_servers: number[] }) =>
+    request<AgentCheck>(`/projects/${projectId}/agents/check`, send('POST', body)),
   harnesses: () => request<HarnessInfo[]>('/harnesses'),
   agents: (projectId: number) => request<Agent[]>(`/projects/${projectId}/agents`),
   createAgent: (projectId: number, body: AgentInput) => request<Agent>(`/projects/${projectId}/agents`, send('POST', body)),

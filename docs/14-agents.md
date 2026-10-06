@@ -24,9 +24,54 @@ Open **Agents** under a project in the sidebar. The list is on the left; pick an
 | **Instructions** | For the agent: always put in front of whatever task it is given. How to work, what to produce, what to avoid. |
 | **Cell** | The size of its container. **Automatic** by default (the project's cell, which uses the defaults in Settings); press **Customise** only if this agent needs something different. |
 | **Folders** | The [shared folders](/docs/cells#shared-folders) mounted in its workspace, and whether it may write to them. |
+| **Skills** | Guides it reads when a task calls for them (see below). |
+| **Tools** | Extra tools it can use, as MCP servers (see below). |
+| **Keys** | Stored keys its commands can use (see below). |
 
 When the agent runs, its prompt starts with who it is and its instructions, then the task, then a list of the folders it
 has and whether each is read only. The project's `shared` folder is always among them.
+
+## Skills
+
+A **skill** is a folder with a `SKILL.md` file: a name and a description between two `---` lines, then instructions. The
+description is how an agent decides when a skill applies, so say *when* to use it. Skills belong to a project: create
+and edit them under **Skills** on the project overview, then tick the ones an agent should have on its page.
+
+- A skill folder can hold more than `SKILL.md`: scripts or reference files you put there on disk
+  (`data/projects/<project id>/skills/<name>/`) are given to the agent too, and the editor leaves them alone.
+- Each run gets its own copy of only the skills the agent has, mounted **read only** at `/workspace/.agents/skills`, where
+  Codex looks for them. An agent cannot change a skill, and does not see the ones it was not given.
+- Deleting a skill takes it away from the agents that had it.
+
+## Tools
+
+A **tool** is an MCP server that gives an agent more to work with, such as a file system, a search service or a database.
+Add them under **Tools** on the project overview, then tick the ones an agent should have.
+
+- **With a command**: type the command line (`npx -y @modelcontextprotocol/server-filesystem /workspace`). It is started
+  inside the agent's container, so the image must have what it runs. Under **Settings** you can add plain settings as
+  environment variables, and an administrator can add keys.
+- **At a web address**: the URL of a server on the web, with an optional key sent as a bearer token.
+
+When an agent is saved, the commands of its tools are looked up in the image it runs in, and anything that is missing is
+reported on the page, because an agent whose tool fails to start just carries on without it. The check needs the image on
+this machine (see [Settings](/docs/settings) for the Codex image). A tool is written into the agent's Codex configuration
+for each run, in memory.
+
+## Keys
+
+An administrator can give an agent stored keys (Settings, Keys). They are available to the agent's commands as environment
+variables named after the key in capitals, shown on the page: a key called "GitHub token" is `$GITHUB_TOKEN`.
+
+- A key reaches the cell as an in-memory file and is exported by the cell's start script. It is never on the command line,
+  so it does not show in the host's process list.
+- Everything the cell prints is scrubbed before it is stored: the value of a key is replaced by `[hidden]` in the log and
+  the result. This stops accidents such as printing the environment. It **cannot** stop an agent that deliberately
+  re-encodes a value, so only give a key to an agent you trust with it.
+- Only administrators can give keys to agents and tools, because a key is paid for or trusted by the whole installation.
+  Everyone can see which keys exist (names only) and which an agent has.
+- If a key is deleted, agents and tools lose it; a run that finds a key, skill or tool missing stops with a note that says
+  which.
 
 ## Using an agent
 
@@ -58,5 +103,5 @@ Codex image from Settings.
 - Names are unique per project, so two agents in different projects can share a name.
 - Deleting an agent does not delete the tasks it did. A task keeps running as a plain Codex task; workflow nodes that
   used the agent fail with a note until you pick another one. An agent that is running a task cannot be deleted.
-- Removing a shared folder from the project also removes it from the agents that mounted it.
+- Removing a shared folder, skill or tool from the project also removes it from the agents that had it.
 - Agents are saved with the **Save changes** button; switching to another agent without saving drops your edits.

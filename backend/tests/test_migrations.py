@@ -138,3 +138,43 @@ async def test_only_the_latest_backups_are_kept(tmp_path):
     await asyncio.to_thread(_alembic, f"sqlite+aiosqlite:///{path}", "upgrade", "0005")
     await upgrade_database(f"sqlite+aiosqlite:///{path}")
     assert len(list(folder.glob("k-*.db"))) == KEEP_BACKUPS
+
+
+async def test_ids_of_volumes_and_agents_survive_the_switch_to_never_reused_ids(tmp_path):
+    """0010 recreates three tables; the rows, and the links other tables have to them, must come through."""
+    path = tmp_path / "ids.db"
+    url = f"sqlite+aiosqlite:///{path}"
+    await asyncio.to_thread(_alembic, url, "upgrade", "0009")
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        INSERT INTO users (id, email, name, password_hash, is_admin, created_at) VALUES (1, 'a@b.co', 'Ada', 'x', 1, '2026-01-01 00:00:00');
+        INSERT INTO projects (id, owner_id, name, description, properties, created_at) VALUES (1, 1, 'P', '', '[]', '2026-01-01 00:00:00');
+        INSERT INTO volumes (id, project_id, name, kind, host_path, mode, exclusive_write, created_at) VALUES (7, 1, 'shared', 'managed', '', 'rw', 0, '2026-01-01 00:00:00');
+        INSERT INTO agents (id, project_id, name, role, description, instructions, harness, model, reasoning_effort, mounts, skills, mcp_servers, secrets, created_at, updated_at)
+            VALUES (4, 1, 'Writer', '', '', '', 'codex', '', '', '[{"volume_id": 7, "mode": "rw"}]', '["pdf"]', '[2]', '[]', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        INSERT INTO mcp_servers (id, project_id, name, kind, command, args, url, env, secret_env, created_at) VALUES (2, 1, 'files', 'stdio', 'npx', '[]', '', '{}', '{}', '2026-01-01 00:00:00');
+        INSERT INTO tasks (id, project_id, title, description, status, position, properties, schedule_kind, review_on_success, harness, agent_id, created_at, updated_at)
+            VALUES (1, 1, 'T', '', 'inbox', 1, '{}', 'none', 0, 'codex', 4, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        """
+    )
+    con.commit()
+    con.close()
+
+    await upgrade_database(url)
+
+    con = sqlite3.connect(path)
+    assert con.execute("SELECT id, name, mode FROM volumes").fetchall() == [(7, "shared", "rw")]
+    assert con.execute("SELECT id, name, mounts, skills FROM agents").fetchall() == [
+        (4, "Writer", '[{"volume_id": 7, "mode": "rw"}]', '["pdf"]')
+    ]
+    assert con.execute("SELECT id, command FROM mcp_servers").fetchall() == [(2, "npx")]
+    assert con.execute("SELECT agent_id FROM tasks").fetchall() == [
+        (4,)
+    ]  # the link to the agent was not lost
+    for table in ("volumes", "agents", "mcp_servers"):
+        assert (
+            "AUTOINCREMENT"
+            in con.execute("SELECT sql FROM sqlite_master WHERE name = ?", (table,)).fetchone()[0].upper()
+        )
+    con.close()

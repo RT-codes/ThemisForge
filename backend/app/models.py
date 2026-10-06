@@ -304,7 +304,12 @@ class Volume(Base):
     """A folder that outlives a run and can be mounted into cells at /workspace/NAME (see app/volumes.py)."""
 
     __tablename__ = "volumes"
-    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_volumes_project_id_name"),)
+    # ids are never reused (SQLite would hand a deleted newest id to the next row): workflow nodes refer to a folder by
+    # id, and a stale one must never quietly point at a different folder
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_volumes_project_id_name"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -322,7 +327,11 @@ class Agent(Base):
     """A configured worker of a project: who it is, what it was told, how it runs (see app/harness.py)."""
 
     __tablename__ = "agents"
-    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_agents_project_id_name"),)
+    # never reuse an id: workflow nodes name their agent by id, and an agent can hold keys
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_agents_project_id_name"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -339,5 +348,40 @@ class Agent(Base):
         JSON, default=None
     )  # overrides, like a project's
     mounts: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)  # [{"volume_id", "mode"}]
+    skills: Mapped[list[str]] = mapped_column(
+        JSON, default=list, server_default="[]"
+    )  # names, see app/skills.py
+    mcp_servers: Mapped[list[int]] = mapped_column(JSON, default=list, server_default="[]")  # McpServer ids
+    secrets: Mapped[list[int]] = mapped_column(
+        JSON, default=list, server_default="[]"
+    )  # Secret ids, see app/keys.py
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class McpServer(Base):
+    """A tool server (MCP) a project's agents can be given, written into the harness config for each run."""
+
+    __tablename__ = "mcp_servers"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_mcp_servers_project_id_name"),
+        {"sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(40))  # a slug: it is the server's name in the agent's config
+    kind: Mapped[str] = mapped_column(String(10), default="stdio")  # "stdio" (a command) | "http"
+    command: Mapped[str] = mapped_column(Text, default="")
+    args: Mapped[list[str]] = mapped_column(JSON, default=list)
+    url: Mapped[str] = mapped_column(Text, default="")
+    env: Mapped[dict[str, str]] = mapped_column(
+        JSON, default=dict
+    )  # plain settings for the server's environment
+    secret_env: Mapped[dict[str, int]] = mapped_column(
+        JSON, default=dict
+    )  # environment variable -> Secret id
+    bearer_secret_id: Mapped[int | None] = mapped_column(
+        Integer, default=None
+    )  # http: the key sent as a bearer token
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)

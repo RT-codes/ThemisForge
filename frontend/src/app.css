@@ -275,6 +275,16 @@
 	box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 30%, transparent);
 }
 
+/* The folder points: square and teal, so a line that hands an agent a folder is not mistaken for a step. */
+.svelte-flow__handle.workflow-handle.mount-handle {
+	background: #2dd4bf;
+	border-radius: 4px;
+}
+.svelte-flow__handle.workflow-handle.mount-handle:hover,
+.svelte-flow__handle.workflow-handle.mount-handle.connectingfrom {
+	box-shadow: 0 0 0 4px color-mix(in oklab, #2dd4bf 30%, transparent);
+}
+
 /* Sidebar tree: a branch line that reaches every sub page (like the `tree` command) and ends at the last one. */
 .tree-branch {
 	border-left-width: 0;

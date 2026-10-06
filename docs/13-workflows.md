@@ -33,6 +33,7 @@ Whatever you were editing is saved before the next workflow opens.
 | **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along. |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
+| **Folder** | Not a step: hands a [shared folder](/docs/cells#shared-folders) to an Agent node (see below). |
 
 Select a node to configure it in the panel on the right.
 
@@ -41,9 +42,26 @@ Select a node to configure it in the panel on the right.
 Pick an **agent** and write the **instructions** for this step. The agent's own instructions, model, cell and folders apply,
 and what you write here is the task it is given. With **No agent** the node runs a plain Codex agent, as before.
 
-Under **Cell and folders** a step can change the cell size or mount extra [shared folders](/docs/cells#shared-folders) for
+Under **Cell and folders** a step can change the cell size or mount extra [shared folders](/docs/cells#shared-folders) (or join Folder nodes to it, see below) for
 this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press **Customise**. If an agent is deleted, the nodes that
 used it fail with a note that says so until you pick another.
+
+### Handing folders to an agent
+
+A **Folder** node chooses one of the project's shared folders and how the agent may use it (read and write, or read only).
+Join it to an agent by dragging from the teal square on the Folder node to the teal square under the Agent node. The line is
+dashed and teal and has no arrow, because it is not a step: it only says "this agent gets this folder".
+
+- The agent gets the folder for that step, **on top of** its own folders and the project's `shared` folder. Several Folder
+  nodes can feed one agent, and one Folder node can feed several agents.
+- Only a Folder can be joined to an agent's folder point, and nothing else can be joined to a Folder. The editor refuses
+  other lines while you drag.
+- If the same folder is also named in the agent node's own **Extra folders** list, that list decides its access.
+- Folder nodes are not steps, so they never run and never appear in a run's history, not even under "Did not run". A Folder
+  node that is not joined to anything does nothing.
+- A Folder node with no folder chosen stops the agent it is joined to, with a note that says which node. If the folder
+  was removed from the project, the agent's run fails with a note too.
+- The agent's panel lists the folders handed over on the canvas, read only. Change them on the Folder nodes.
 
 ## How a run works
 

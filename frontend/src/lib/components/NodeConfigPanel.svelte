@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Agent, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
+	import { api, type Agent, type CellDefaults, type ProfileOverrides, type Project, type Volume } from '$lib/api'
 	import { effectiveCell } from '$lib/cell'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
@@ -8,7 +8,7 @@
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
-	import { formatMounts, kindInfo, parseMounts, visibleFields, type FieldDef, type WorkflowNodeData } from '$lib/workflow'
+	import { formatMounts, kindInfo, parseMounts, visibleFields, type FieldDef, type MountChoice, type WorkflowNodeData } from '$lib/workflow'
 	import { nodeIcons } from '$lib/workflowIcons'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
@@ -20,6 +20,7 @@
 		projectId,
 		id,
 		data,
+		attached = [],
 		onchange,
 		onclose,
 		ondelete,
@@ -27,6 +28,7 @@
 		projectId: number
 		id: string
 		data: WorkflowNodeData
+		attached?: MountChoice[] // folders handed to this agent by lines from Folder nodes on the canvas
 		onchange: (patch: Partial<WorkflowNodeData>) => void
 		onclose: () => void
 		ondelete: () => void
@@ -44,7 +46,9 @@
 	let agentsLoaded = $state(false)
 	let project = $state<Project | null>(null)
 	let defaults = $state<CellDefaults | null>(null)
+	let volumes = $state<Volume[]>([])
 	onMount(async () => {
+		if (data.kind === 'agent' || data.kind === 'volume') api.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
 		if (data.kind !== 'agent') return
 		try {
 			;[agents, project, defaults] = await Promise.all([api.agents(projectId), api.project(projectId), api.systemStatus().then((s) => s.cell_defaults)])
@@ -83,13 +87,27 @@
 		})
 	})
 	const optionsOf = (f: FieldDef) =>
-		f.key === 'agentId' ? [...(f.options ?? []), ...agents.map((a) => ({ value: String(a.id), label: a.name }))] : (f.options ?? [])
+		f.key === 'agentId'
+			? [...(f.options ?? []), ...agents.map((a) => ({ value: String(a.id), label: a.name }))]
+			: f.key === 'volumeId'
+				? [...(f.options ?? []), ...volumes.map((v) => ({ value: String(v.id), label: `/workspace/${v.name}` }))]
+				: (f.options ?? [])
 	function labelOf(f: FieldDef): string {
 		const value = data.config[f.key]
 		const found = optionsOf(f).find((o) => o.value === value)
 		if (found) return found.label
-		return f.key === 'agentId' && agentsLoaded ? 'An agent that was deleted' : ''
+		if (f.key === 'agentId' && agentsLoaded) return 'An agent that was deleted'
+		return f.key === 'volumeId' && volumes.length ? 'A folder that was removed' : ''
 	}
+
+	// choosing a folder on a Folder node names the node after it, unless it was given a name of its own
+	function pick(f: FieldDef, value: string) {
+		if (data.kind !== 'volume' || f.key !== 'volumeId') return setConfig(f.key, value)
+		const volume = volumes.find((v) => String(v.id) === value)
+		const unnamed = data.label === kindInfo('volume').label || data.label.startsWith('/workspace/')
+		onchange({ config: { ...data.config, volumeId: value }, ...(unnamed && volume ? { label: `/workspace/${volume.name}` } : {}) })
+	}
+	const volumeName = (volumeId: number) => volumes.find((v) => v.id === volumeId)?.name
 	// open from the start when the node already has settings in there; after that it stays as the person left it
 	let advancedOpen = $state(untrack(() => cell !== null || advancedFields.some((f) => (data.config[f.key] ?? '') !== '')))
 	const chosenAgent = $derived(agents.find((a) => String(a.id) === data.config.agentId))
@@ -116,7 +134,7 @@
 			<div class="grid gap-1.5" transition:slide={{ duration: 160 }}>
 				<Label for="node-{id}-{f.key}">{f.label}</Label>
 				{#if f.type === 'select'}
-					<Select.Root type="single" value={data.config[f.key]} onValueChange={(v) => setConfig(f.key, v)}>
+					<Select.Root type="single" value={data.config[f.key]} onValueChange={(v) => pick(f, v)}>
 						<Select.Trigger id="node-{id}-{f.key}" class="w-full">{labelOf(f)}</Select.Trigger>
 						<Select.Content>
 							{#each optionsOf(f) as o (o.value)}<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>{/each}
@@ -150,6 +168,20 @@
 				</summary>
 				<div class="grid grid-cols-[minmax(0,1fr)] gap-4 border-t p-3">
 					<p class="text-xs text-muted-foreground">Only for this step, on top of the agent's own cell and folders.</p>
+					{#if attached.length}
+						<div class="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+							<Label>Handed over on the canvas</Label>
+							<ul class="grid gap-1.5">
+								{#each attached as m (m.volume_id)}
+									<li class="flex items-center gap-2 rounded-lg border border-dashed border-teal-400/40 px-3 py-2 text-sm">
+										<span class="min-w-0 flex-1 truncate font-mono">/workspace/{volumeName(m.volume_id) ?? `folder ${m.volume_id}`}</span>
+										<span class="shrink-0 text-xs text-muted-foreground">{m.mode === 'ro' ? 'Read only' : 'Read and write'}</span>
+									</li>
+								{/each}
+							</ul>
+							<p class="text-xs text-muted-foreground">From the Folder nodes joined to this agent's folder point. Change them on those nodes.</p>
+						</div>
+					{/if}
 					<div class="grid grid-cols-[minmax(0,1fr)] gap-1.5">
 						<Label>Cell</Label>
 						<CellChoice bind:value={cell} inherited={inheritedCell} source={chosenAgent ? "the agent's cell" : "the project's cell"} prefix="node-{id}" />

@@ -18,8 +18,9 @@ Whatever runs in a cell (today a placeholder, later an agent harness) gets the s
 | --- | --- |
 | `/workspace` | This attempt's **private working folder**, read and write. Nothing else sees it, and it is removed after the retention period (default 7 days, see Settings). |
 | `/workspace/NAME` | A **shared folder** mounted inside it, read and write or read only. `/workspace/shared` is in every cell; see [Shared folders](#shared-folders). |
+| `/workspace/.agents/skills` | Agent tasks only: the agent's [skills](/docs/agents#skills), read only. |
 | `/cell/prompt.md` | Agent tasks only: the instructions handed to the agent. |
-| `/run/themis-secrets` | Agent tasks only: credentials for this attempt (such as the Codex login), in memory and gone with the cell. |
+| `/run/themis-secrets` | Agent tasks only: credentials for this attempt (the Codex login, keys given to the agent, the tool configuration), in memory and gone with the cell. The agent is told never to read it. |
 | `/cell/input.json` | The task, written before the cell starts: title, description and properties. |
 | `/cell/result.md` | Optional. Whatever the cell writes here is stored as the attempt's **result**. |
 | Exit code `0` | The attempt **succeeded**. Any other exit code means it **failed**. |
@@ -111,8 +112,8 @@ Until agent harnesses arrive, each cell runs a small placeholder program: it pri
 contract above are the real thing.
 
 > [!NOTE]
-> Stored keys are not passed into cells yet. A connected Codex login can be (see [Connecting Codex](/docs/codex)). That arrives together with agents. See the
-> [roadmap](/docs/roadmap).
+> Stored keys reach a cell only when an administrator gives them to an agent, and then as in-memory files and environment
+> variables, never on the command line. See [Agents](/docs/agents#keys).
 
 ## Using your own image
 

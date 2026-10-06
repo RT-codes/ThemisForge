@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { seedGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
+import { seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -104,4 +104,59 @@ test('folders on a node are kept as plain text and read back the same', () => {
 
 test('folder text that is damaged is read as far as it makes sense', () => {
   assert.deepEqual(parseMounts('3, x:rw, 0:rw, 3:ro, 7:odd'), [{ volume_id: 3, mode: 'rw' }, { volume_id: 7, mode: 'rw' }])
+})
+
+// ----- folders handed to agents -----
+
+test('a Folder joins an agent only through the folder points', () => {
+  assert.ok(canConnect('volume', 'agent', MOUNT, MOUNT))
+  for (const [from, to] of [['volume', 'task'], ['volume', 'end'], ['start', 'agent'], ['agent', 'agent']] as const)
+    assert.ok(!canConnect(from, to, MOUNT, MOUNT), `${from} -> ${to}`)
+  assert.ok(!canConnect('volume', 'agent', MOUNT, null), 'a folder point must meet a folder point')
+  assert.ok(!canConnect('volume', 'agent', null, MOUNT))
+})
+
+test('nothing else may be joined to a Folder, and steps still connect as before', () => {
+  assert.ok(!canConnect('start', 'volume'))
+  assert.ok(!canConnect('volume', 'agent'))
+  assert.ok(canConnect('start', 'agent'))
+  assert.ok(canConnect('condition', 'task', 'yes', null))
+  assert.ok(canConnect('agent', 'end'))
+})
+
+test('a line from a Folder is recognised as one that hands a folder over', () => {
+  assert.ok(isMountEdge({ sourceHandle: MOUNT }))
+  assert.ok(!isMountEdge({ sourceHandle: 'yes' }) && !isMountEdge({ sourceHandle: null }) && !isMountEdge({}))
+})
+
+const folderNode = (id: string, volumeId: string, mode = 'rw') => ({ id, data: { kind: 'volume', label: id, config: { volumeId, mode } } })
+
+test('an agent is handed the folders that are joined to it, with the access each Folder says', () => {
+  const nodes = [folderNode('f1', '3', 'ro'), folderNode('f2', '5'), folderNode('f3', ''), folderNode('f4', '9')]
+  const edges = [
+    { source: 'f1', target: 'a', sourceHandle: MOUNT },
+    { source: 'f2', target: 'a', sourceHandle: MOUNT },
+    { source: 'f3', target: 'a', sourceHandle: MOUNT }, // no folder chosen yet: nothing to hand over
+    { source: 'f4', target: 'b', sourceHandle: MOUNT }, // another agent's
+    { source: 's', target: 'a', sourceHandle: null }, // a step, not a folder
+  ]
+  assert.deepEqual(mountsFromGraph(nodes, edges, 'a'), [{ volume_id: 3, mode: 'ro' }, { volume_id: 5, mode: 'rw' }])
+  assert.deepEqual(mountsFromGraph(nodes, edges, 'b'), [{ volume_id: 9, mode: 'rw' }])
+  assert.deepEqual(mountsFromGraph(nodes, edges, 'nobody'), [])
+})
+
+test('a Folder node says what it hands over, and starts without a folder', () => {
+  assert.equal(summary('volume', defaultConfig('volume')), 'No folder chosen')
+  assert.equal(summary('volume', { volumeId: '3', mode: 'ro' }), 'Read only')
+  assert.equal(summary('volume', { volumeId: '3', mode: 'rw' }), 'Read and write')
+  assert.ok(kindInfo('volume').mountOut && !kindInfo('volume').hasInput && !kindInfo('volume').hasOutput)
+  assert.ok(kindInfo('agent').mountIn)
+})
+
+test('the folder points survive saving and loading a graph', () => {
+  const graph = { nodes: [], edges: [{ id: 'e', source: 'f', target: 'a', sourceHandle: MOUNT, targetHandle: MOUNT }] }
+  const flow = fromGraph(graph)
+  assert.equal(flow.edges[0].targetHandle, MOUNT)
+  assert.deepEqual(toGraph([], flow.edges).edges[0], graph.edges[0])
+  assert.ok(!('targetHandle' in toGraph([], [{ id: 'x', source: 'a', target: 'b' }]).edges[0])) // an ordinary line stays as it was
 })

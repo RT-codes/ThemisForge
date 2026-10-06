@@ -300,3 +300,25 @@ async def test_writers_on_a_locked_folder_take_turns_without_blocking_others(
     await drain(scheduler)
     assert (await client.get(f"/api/tasks/{first['id']}")).json()["status"] == "done"
     assert (await client.get(f"/api/tasks/{plain['id']}")).json()["status"] == "done"
+
+
+async def test_the_id_of_a_removed_folder_is_never_given_to_a_new_one(client):
+    """A workflow node refers to a folder by id. If the newest folder is removed and another is made, the old id must
+    not quietly mean the new folder."""
+    await register(client)
+    pid = (await make_project(client))["id"]
+    await client.get(f"/api/projects/{pid}/volumes")  # makes `shared`
+    gone = (await client.post(f"/api/projects/{pid}/volumes", json={"name": "gone"})).json()
+    await client.delete(f"/api/volumes/{gone['id']}")
+    fresh = (await client.post(f"/api/projects/{pid}/volumes", json={"name": "fresh"})).json()
+    assert fresh["id"] != gone["id"]
+
+
+async def test_the_id_of_a_removed_agent_is_never_given_to_a_new_one(client):
+    from tests.test_agents import make_agent
+
+    await register(client)
+    pid = (await make_project(client))["id"]
+    gone = await make_agent(client, pid, name="Gone")
+    await client.delete(f"/api/agents/{gone['id']}")
+    assert (await make_agent(client, pid, name="Fresh"))["id"] != gone["id"]

@@ -8,10 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from .. import skills as skill_store
+from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
-from ..harness import CATALOG
-from ..models import Agent, Task, TaskStatus, Volume
+from ..harness import CATALOG, plan_for
+from ..models import Agent, McpServer, Project, Secret, Task, TaskStatus, Volume
 from ..profiles import ProfileOverrides
+from ..toolcheck import missing_commands
 from ..volumes import MountRef
 from .projects import _bad, _project
 
@@ -35,6 +38,11 @@ class AgentIn(BaseModel):
     reasoning_effort: Literal["", "low", "medium", "high"] = ""  # empty: the effort in Settings
     cell_profile: ProfileOverrides | None = None
     mounts: list[MountRef] = Field(default_factory=list, max_length=50)
+    skills: list[str] = Field(default_factory=list, max_length=50)  # skill names, see app/skills.py
+    mcp_servers: list[int] = Field(default_factory=list, max_length=50)  # tool servers of the project
+    secrets: list[int] = Field(
+        default_factory=list, max_length=50
+    )  # keys, available to the agent as variables
 
     @field_validator("name")
     @classmethod
@@ -64,6 +72,9 @@ class AgentPatch(BaseModel):
     reasoning_effort: Literal["", "low", "medium", "high"] | None = None
     cell_profile: ProfileOverrides | None = None  # sent as null: back to the project's cell
     mounts: list[MountRef] | None = Field(default=None, max_length=50)
+    skills: list[str] | None = Field(default=None, max_length=50)
+    mcp_servers: list[int] | None = Field(default=None, max_length=50)
+    secrets: list[int] | None = Field(default=None, max_length=50)
 
     @field_validator("model")
     @classmethod
@@ -85,8 +96,22 @@ class AgentOut(BaseModel):
     reasoning_effort: str
     cell_profile: dict[str, Any] | None
     mounts: list[MountRef]
+    skills: list[str]
+    mcp_servers: list[int]
+    secrets: list[int]
     created_at: datetime
     updated_at: datetime
+
+
+class CheckIn(BaseModel):
+    harness: Literal["codex"] = "codex"
+    cell_profile: ProfileOverrides | None = None
+    mcp_servers: list[int] = Field(default_factory=list, max_length=50)
+
+
+class CheckOut(BaseModel):
+    image: str  # the image the agent would run in
+    warnings: list[str]
 
 
 class HarnessOut(BaseModel):
@@ -95,6 +120,7 @@ class HarnessOut(BaseModel):
     description: str
     supports_skills: bool
     supports_mcp: bool
+    supports_keys: bool
 
 
 async def _agent(session, agent_id: int, user) -> Agent:
@@ -117,6 +143,64 @@ async def _mounts(session, project_id: int, refs: list[MountRef]) -> list[dict]:
         if missing := set(by_id) - found:
             raise _bad(f"Folder {min(missing)} does not exist in this project")
     return [r.model_dump() for r in by_id.values()]
+
+
+async def _capabilities(session, project_id: int, body, user, before: Agent | None = None) -> dict:
+    """Checks and returns the skills, tool servers and keys an agent is given (only what the request sets).
+
+    Skills and tool servers must exist in the project, keys must exist, and only an administrator may change which
+    keys an agent has, because a key is paid for or trusted by the whole installation."""
+    out: dict = {}
+    if body.skills is not None:
+        names = list(dict.fromkeys(body.skills))
+        if gone := skill_store.missing(project_id, names):
+            raise _bad(f"The skill '{gone[0]}' does not exist in this project")
+        out["skills"] = names
+    if body.mcp_servers is not None:
+        ids = list(dict.fromkeys(body.mcp_servers))
+        found = set(
+            await session.scalars(
+                select(McpServer.id).where(McpServer.project_id == project_id, McpServer.id.in_(ids))
+            )
+        )
+        if gone := set(ids) - found:
+            raise _bad(f"Tool {min(gone)} does not exist in this project")
+        out["mcp_servers"] = ids
+    if body.secrets is not None:
+        ids = list(dict.fromkeys(body.secrets))
+        found = set(await session.scalars(select(Secret.id).where(Secret.id.in_(ids)))) if ids else set()
+        if gone := set(ids) - found:
+            raise _bad(f"Key {min(gone)} does not exist")
+        if set(ids) != set(before.secrets if before else []) and not user.is_admin:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an administrator can give an agent keys")
+        out["secrets"] = ids
+    return out
+
+
+@router.post("/projects/{project_id}/agents/check", response_model=CheckOut)
+async def check_agent_tools(
+    project_id: int, body: CheckIn, session: SessionDep, user: CurrentUser
+) -> CheckOut:
+    """Before saving: would the agent's tool servers start in the image it will run in?"""
+    project: Project = await _project(session, project_id, user)
+    cfg = await load_settings(session)
+    hp = plan_for(body.harness, cfg)
+    image = (
+        (body.cell_profile.image if body.cell_profile else None)
+        or (project.cell_profile or {}).get("image")
+        or (hp.image if hp else cfg.cell_image)
+    )
+    commands = {}
+    if body.mcp_servers:
+        rows = await session.scalars(
+            select(McpServer).where(
+                McpServer.project_id == project_id,
+                McpServer.id.in_(body.mcp_servers),
+                McpServer.kind == "stdio",
+            )
+        )
+        commands = {r.name: r.command for r in rows}
+    return CheckOut(image=image, warnings=await missing_commands(image, commands, cfg.docker_host))
 
 
 @router.get("/harnesses", response_model=list[HarnessOut])
@@ -148,6 +232,7 @@ async def create_agent(project_id: int, body: AgentIn, session: SessionDep, user
         reasoning_effort=body.reasoning_effort,
         cell_profile=body.cell_profile.clean() if body.cell_profile else None,
         mounts=await _mounts(session, project_id, body.mounts),
+        **await _capabilities(session, project_id, body, user),
     )
     session.add(agent)
     try:
@@ -179,6 +264,8 @@ async def update_agent(agent_id: int, body: AgentPatch, session: SessionDep, use
         agent.cell_profile = body.cell_profile.clean() if body.cell_profile else None
     if "mounts" in fields and body.mounts is not None:
         agent.mounts = await _mounts(session, agent.project_id, body.mounts)
+    for key, value in (await _capabilities(session, agent.project_id, body, user, before=agent)).items():
+        setattr(agent, key, value)
     try:
         await session.commit()
     except IntegrityError:

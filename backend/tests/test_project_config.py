@@ -323,12 +323,29 @@ async def test_a_host_folder_cannot_be_the_config_folder(client, project):
 # ----- trying a tool -----
 
 
-async def test_a_command_tool_is_checked_against_the_image_and_the_result_is_remembered(client, project):
+async def test_a_command_tool_is_checked_against_the_image_and_the_result_is_remembered(
+    client, project, monkeypatch
+):
+    answers = [
+        [],
+        [
+            "'npx' is not in the image x, so the tool 'files' would fail to start. Choose an image that has it."
+        ],
+    ]
+
+    async def fake_missing(
+        image, commands, docker_host=""
+    ):  # the real one asks Docker, which a test machine may not have
+        return answers.pop(0)
+
+    monkeypatch.setattr("app.routers.tools.missing_commands", fake_missing)
     server = await make_server(client, project)
-    r = await client.post(f"/api/mcp-servers/{server['id']}/test")
-    assert r.status_code == 200 and r.json()["ok"] is True and r.json()["tools"] == []
+    worked = (await client.post(f"/api/mcp-servers/{server['id']}/test")).json()
+    assert worked["ok"] is True and worked["tools"] == [] and "is available in" in worked["message"]
+    failed = (await client.post(f"/api/mcp-servers/{server['id']}/test")).json()
+    assert failed["ok"] is False and "is not in the image" in failed["message"]
     (shown,) = (await client.get(f"/api/projects/{project}/mcp-servers")).json()
-    assert shown["last_test"]["ok"] is True
+    assert shown["last_test"]["ok"] is False  # the latest result is the one remembered
 
 
 async def test_a_web_tool_is_tried_with_its_key_for_an_administrator_only(client, project, monkeypatch):

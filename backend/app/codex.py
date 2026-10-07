@@ -15,8 +15,10 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import tempfile
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -26,8 +28,10 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from .app_settings import load_settings
 from .config import DEFAULT_SECRET_KEY, settings
 from .crypto import decrypt, encrypt
+from .docker_check import docker_env
 from .models import CodexConnection, utcnow
 
 log = logging.getLogger("themis.codex")
@@ -166,6 +170,116 @@ class LoginFlow:
         return self.status in ("starting", "waiting")
 
 
+class _Launch:
+    """One run of Codex's sign in: what to start, how to fetch the login it produced, and how to clean up after it."""
+
+    argv: list[str]
+    env: dict[str, str]
+
+    def explain(self, last_line: str) -> str:
+        return ""
+
+    async def collect(self) -> str:
+        raise NotImplementedError
+
+    async def cleanup(self) -> None:
+        raise NotImplementedError
+
+
+SIGN_IN_ARGS = [
+    "login",
+    "-c",
+    'cli_auth_credentials_store="file"',
+    "--device-auth",
+]  # a login file, not the OS keychain
+
+
+class _HostLogin(_Launch):
+    """Runs a Codex CLI installed on this machine (development)."""
+
+    def __init__(self, exe: str) -> None:
+        self._home = tempfile.mkdtemp(
+            prefix="themis-codex-"
+        )  # private to this user and outside the repository
+        self.argv = [exe, *SIGN_IN_ARGS]
+        self.env = {**os.environ, "CODEX_HOME": self._home}
+
+    async def collect(self) -> str:
+        auth_file = Path(self._home) / "auth.json"
+        if not auth_file.is_file():
+            raise CodexError("The sign in did not finish. Start again to get a new code.")
+        return auth_file.read_text(encoding="utf-8")
+
+    async def cleanup(self) -> None:
+        shutil.rmtree(self._home, ignore_errors=True)
+
+
+class _ContainerLogin(_Launch):
+    """Runs Codex's sign in inside a throwaway container of the cell image, which already has Codex in it, so nothing has
+    to be installed on this machine. The person sees the same code and link; the login file is copied out of the
+    container when it is done (which also works when Docker is on another machine), and the container is removed."""
+
+    HOME = "/tmp/codex-login"  # inside the container
+
+    def __init__(self, user_id: int, image: str, docker_host: str) -> None:
+        self._name = f"themis-login-{user_id}-{uuid.uuid4().hex[:8]}"
+        self._env = docker_env(docker_host)
+        self.env = self._env
+        self.argv = [
+            "docker",
+            "run",
+            "--name",
+            self._name,
+            "--label",
+            "themis.login=1",
+            "-e",
+            f"CODEX_HOME={self.HOME}",
+            image,
+            # Codex wants its home folder to exist, and an image has none for it: make it, then become Codex
+            "sh",
+            "-c",
+            f'mkdir -p "$CODEX_HOME" && exec codex {" ".join(shlex.quote(a) for a in SIGN_IN_ARGS)}',
+        ]
+
+    def explain(self, last_line: str) -> str:
+        # Docker's own complaint (no such image, cannot connect) is more useful than "did not finish"
+        low = last_line.lower()
+        return (
+            f" ({last_line[:200]})"
+            if last_line and ("docker" in low or "image" in low or "daemon" in low)
+            else ""
+        )
+
+    async def _docker(self, *args: str) -> tuple[int, bytes]:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", *args, env=self._env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+        )
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), 30)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return 124, b""
+        return proc.returncode or 0, out
+
+    async def collect(self) -> str:
+        folder = tempfile.mkdtemp(prefix="themis-codex-")
+        try:
+            code, _ = await self._docker("cp", f"{self._name}:{self.HOME}/auth.json", f"{folder}/auth.json")
+            file = Path(folder) / "auth.json"
+            if code != 0 or not file.is_file():
+                raise CodexError("The sign in did not finish. Start again to get a new code.")
+            return file.read_text(encoding="utf-8")
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    async def cleanup(self) -> None:
+        with contextlib.suppress(Exception):
+            await self._docker(
+                "rm", "-f", self._name
+            )  # also when cancelled or timed out: nothing is left running
+
+
 class CodexLogins:
     """Runs `codex login --device-auth` for users: they get a code and a link, sign in on any device, done.
     The server never needs a browser callback, which also makes it work behind a reverse proxy."""
@@ -177,16 +291,31 @@ class CodexLogins:
     def get(self, user_id: int) -> LoginFlow | None:
         return self._flows.get(user_id)
 
+    async def unavailable_reason(self) -> str | None:
+        """Why nobody can sign in to Codex on this server right now, or None when it works."""
+        if settings.codex_login == "host":
+            if codex_executable() is None:
+                return "The Codex CLI was not found on this machine. Install it, or set THEMIS_CODEX_BIN."
+            return None
+        if shutil.which("docker") is None:
+            return "Docker was not found on this server. Themis signs in to Codex inside a Docker container, so it needs Docker."
+        return None
+
+    async def _launch(self, user_id: int) -> "_Launch":
+        async with self._maker() as session:
+            cfg = await load_settings(session)
+        if settings.codex_login == "host":
+            return _HostLogin(codex_executable() or settings.codex_bin)
+        return _ContainerLogin(user_id, cfg.codex_image, cfg.docker_host)
+
     async def start(self, user_id: int) -> LoginFlow:
-        exe = codex_executable()
-        if exe is None:
-            raise CodexError(
-                "The Codex CLI was not found on this machine. Install it, or set THEMIS_CODEX_BIN."
-            )
+        if (reason := await self.unavailable_reason()) is not None:
+            raise CodexError(reason)
         await self.cancel(user_id)
         flow = LoginFlow()
         self._flows[user_id] = flow
-        flow.task = asyncio.create_task(self._run(user_id, flow, exe))
+        launch = await self._launch(user_id)
+        flow.task = asyncio.create_task(self._run(user_id, flow, launch))
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(flow.ready.wait(), CODE_WAIT_SECONDS)
         return flow
@@ -203,25 +332,26 @@ class CodexLogins:
         for user_id in list(self._flows):
             await self.cancel(user_id)
 
-    async def _run(self, user_id: int, flow: LoginFlow, exe: str) -> None:
-        home = tempfile.mkdtemp(prefix="themis-codex-")  # private to this user and outside the repository
+    async def _run(self, user_id: int, flow: LoginFlow, launch: "_Launch") -> None:
         proc: asyncio.subprocess.Process | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
-                exe, "login", "-c", 'cli_auth_credentials_store="file"', "--device-auth",
-                env={**os.environ, "CODEX_HOME": home},
+                *launch.argv,
+                env=launch.env,
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )  # fmt: skip
             async with asyncio.timeout(LOGIN_TIMEOUT_SECONDS):
-                await self._read_prompt(proc, flow)
+                last = await self._read_prompt(proc, flow)
                 exit_code = await proc.wait()
-            auth_file = Path(home) / "auth.json"
-            if exit_code != 0 or not auth_file.is_file():
-                raise CodexError("The sign in did not finish. Start again to get a new code.")
+            if exit_code != 0:
+                raise CodexError(
+                    "The sign in did not finish. Start again to get a new code." + launch.explain(last)
+                )
+            text = await launch.collect()
             async with self._maker() as session:
-                await save_auth(session, user_id, auth_file.read_text(encoding="utf-8"), fresh=True)
+                await save_auth(session, user_id, text, fresh=True)
             flow.status = "connected"
         except asyncio.CancelledError:
             flow.status = "cancelled"
@@ -239,15 +369,17 @@ class CodexLogins:
                 with contextlib.suppress(ProcessLookupError):
                     proc.kill()
                 await proc.wait()
-            shutil.rmtree(home, ignore_errors=True)
+            await launch.cleanup()
 
     @staticmethod
-    async def _read_prompt(proc: asyncio.subprocess.Process, flow: LoginFlow) -> None:
+    async def _read_prompt(proc: asyncio.subprocess.Process, flow: LoginFlow) -> str:
         """Read Codex's instructions (a link, then a one-time code) and keep draining until it exits."""
         assert proc.stdout is not None
         want_code = False
+        last = ""
         while raw := await proc.stdout.readline():
             line = _ANSI.sub("", raw.decode(errors="replace")).strip()
+            last = line or last
             if not flow.verification_url and (url := _URL.search(line)):
                 flow.verification_url = url.group(0)
             elif want_code and not flow.code and _CODE.match(line):
@@ -258,3 +390,4 @@ class CodexLogins:
                 flow.status = "waiting"
                 flow.expires_at = utcnow() + timedelta(seconds=LOGIN_TIMEOUT_SECONDS)
                 flow.ready.set()
+        return last

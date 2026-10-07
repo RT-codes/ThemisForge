@@ -11,7 +11,6 @@ from ..codex import (
     CodexError,
     CodexLogins,
     LoginFlow,
-    codex_executable,
     get_connection,
     key_is_secure,
 )
@@ -30,7 +29,10 @@ class LoginState(BaseModel):
 
 
 class CodexStatus(BaseModel):
-    cli_installed: bool
+    can_sign_in: (
+        bool  # false when this server cannot run the sign in (no Docker, or no Codex CLI in host mode)
+    )
+    sign_in_problem: str  # why, in words for the person
     secret_key_secure: bool  # a login is only stored under a real THEMIS_SECRET_KEY
     connected: bool
     needs_reconnect: bool  # stored, but unreadable (the secret key changed)
@@ -59,8 +61,10 @@ def _logins(request: Request) -> CodexLogins:
 async def _status(request: Request, session: SessionDep, user: CurrentUser) -> CodexStatus:
     conn = await get_connection(session, user.id)
     readable = conn is not None and decrypt(conn.auth_encrypted) is not None
+    problem = await _logins(request).unavailable_reason()
     return CodexStatus(
-        cli_installed=codex_executable() is not None,
+        can_sign_in=problem is None,
+        sign_in_problem=problem or "",
         secret_key_secure=key_is_secure(),
         connected=readable,
         needs_reconnect=conn is not None and not readable,

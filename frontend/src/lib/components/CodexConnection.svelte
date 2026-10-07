@@ -56,10 +56,10 @@
 					<span class="font-medium text-yellow-300">Set a real secret key first.</span>
 					Your login is encrypted with <code>THEMIS_SECRET_KEY</code>, which is still the development default. Ask the administrator to set one (see Settings), then come back.
 				</p>
-			{:else if !codex.cli_installed}
+			{:else if !codex.can_sign_in}
 				<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
-					<span class="font-medium text-yellow-300">The Codex CLI was not found on the server.</span>
-					Install it, or set <code>THEMIS_CODEX_BIN</code> to its location, then restart Themis.
+					<span class="font-medium text-yellow-300">Signing in is not available right now.</span>
+					{codex.sign_in_problem}
 				</p>
 			{/if}
 
@@ -103,7 +103,7 @@
 				{#if login?.status === 'failed'}
 					<p class="text-sm text-destructive" role="alert">{login.error}</p>
 				{/if}
-				<Button type="button" class="justify-self-start" disabled={busy || !codex.secret_key_secure || !codex.cli_installed} onclick={() => run(api.codexStartLogin)}>
+				<Button type="button" class="justify-self-start" disabled={busy || !codex.secret_key_secure || !codex.can_sign_in} onclick={() => run(api.codexStartLogin)}>
 					{codex.needs_reconnect ? 'Reconnect Codex' : 'Connect Codex'}
 				</Button>
 			{/if}

@@ -337,7 +337,8 @@ export interface CodexLogin {
 }
 
 export interface CodexStatus {
-  cli_installed: boolean
+  can_sign_in: boolean // false when this server cannot run the sign in (Docker is missing, or in development no Codex CLI)
+  sign_in_problem: string // why, in words for the person
   secret_key_secure: boolean
   connected: boolean
   needs_reconnect: boolean

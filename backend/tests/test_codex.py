@@ -31,6 +31,9 @@ def fake_codex(tmp_path, monkeypatch):
         shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" "$@"\n')
         shim.chmod(0o755)
     monkeypatch.setattr(settings, "codex_bin", str(shim))
+    monkeypatch.setattr(
+        settings, "codex_login", "host"
+    )  # these tests sign in with the stand-in CLI on this machine
 
     def mode(name: str) -> None:
         monkeypatch.setenv("FAKE_CODEX_MODE", name)
@@ -61,7 +64,7 @@ async def wait_for(client, status: str, timeout: float = 10) -> dict:
 async def test_not_connected_by_default(client, fake_codex):
     await register(client)
     body = (await client.get("/api/codex")).json()
-    assert body["cli_installed"] and body["secret_key_secure"]
+    assert body["can_sign_in"] and body["sign_in_problem"] == "" and body["secret_key_secure"]
     assert not body["connected"] and not body["needs_reconnect"] and body["login"] is None
 
 
@@ -81,8 +84,10 @@ async def test_refuses_with_the_insecure_default_key(client, fake_codex, monkeyp
 
 async def test_cli_missing(client, monkeypatch):
     monkeypatch.setattr(settings, "codex_bin", "definitely-not-installed-codex")
+    monkeypatch.setattr(settings, "codex_login", "host")
     await register(client)
-    assert not (await client.get("/api/codex")).json()["cli_installed"]
+    status = (await client.get("/api/codex")).json()
+    assert not status["can_sign_in"] and "not found" in status["sign_in_problem"]
     r = await client.post("/api/codex/login")
     assert r.status_code == 503 and "not found" in r.json()["detail"]
 

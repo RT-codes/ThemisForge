@@ -23,15 +23,16 @@ Every user connects their own Codex. Nobody else, administrators included, can s
 
 ## Requirements
 
-- The **Codex CLI** installed on the server. If it is not on `PATH`, set `THEMIS_CODEX_BIN` to its location
-  (on Windows, for example `codex.cmd`).
+- **Docker** on the server (Themis needs it anyway). The sign in runs Codex inside a throwaway container of the agent
+  image, so there is **nothing else to install**: no Node, no Codex on the server itself.
 - A real `THEMIS_SECRET_KEY`. Themis refuses to store a login while the development default is in use.
 
 ## How the login is kept safe
 
 - It is **encrypted at rest** with a key derived from `THEMIS_SECRET_KEY`, and never shown or returned by the API.
-- The sign in happens in a temporary folder in the system temp directory, outside the repository, and that folder is
-  deleted right after. A login can not end up in a commit.
+- The sign in happens in a throwaway container, from which Themis copies the login file out; the container (and the
+  temporary copy) are removed right after. A login can not end up in a commit. (For development, `THEMIS_CODEX_LOGIN=host`
+  signs in with a Codex CLI installed on the server instead, found through `THEMIS_CODEX_BIN`.)
 - When a task needs it, the login is streamed into the cell's memory (a tmpfs under `/run/themis-secrets`), never an
   environment variable, command line argument, host file or log line. It disappears with the cell.
 - Runs for one user take turns using the login, because Codex rotates refresh tokens and two cells refreshing at once
@@ -57,7 +58,7 @@ Set a task's **Run with** to **Codex agent**. When it runs, Themis:
 4. shows what the agent said and ran in the attempt **log**, and stores its final message as the **result**,
 5. saves the login back if Codex refreshed it during the run.
 
-Build the image once with `./themis build-images`. Each run gets its own private working folder at `/workspace`,
+The installer gets the image for you (and `themis upgrade` gets the one that matches each new version). In a development checkout, build it once with `./themis build-images`. Each run gets its own private working folder at `/workspace`,
 so two agents never edit the same files. If the owner has not connected Codex, the attempt fails and says so.
 
 Runs of the same user take turns: Codex rotates its refresh tokens, so two cells refreshing the same login at once

@@ -7,11 +7,14 @@
 	import PlayIcon from '@lucide/svelte/icons/play'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import { DRAG_TYPE, MOUNT, NODE_KINDS, canConnect, defaultConfig, fromGraph, kindInfo, mountsFromGraph, nextNodeNumber, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
-	import { onDestroy, onMount, untrack } from 'svelte'
+	import { onDestroy, onMount, setContext, untrack } from 'svelte'
 	import { nodeIcons } from '$lib/workflowIcons'
 	import { slide } from 'svelte/transition'
 	import NodeConfigPanel from './NodeConfigPanel.svelte'
+	import SelectionBox from './SelectionBox.svelte'
+	import WorkflowEdge from './WorkflowEdge.svelte'
 	import WorkflowNode from './WorkflowNode.svelte'
+	import { RUN_VIEW, RunView } from '$lib/workflowRun.svelte'
 
 	// The canvas edits a graph. It does not know where the graph lives: the page decides what saving and testing mean,
 	// which is how a brand new workflow can stay unsaved until something is actually changed.
@@ -22,6 +25,9 @@
 		ontest,
 		saveState = $bindable('saved'),
 		draft = false,
+		runId = null,
+		onviewrun,
+		onrunended,
 	}: {
 		projectId: number
 		initialGraph: Graph
@@ -29,15 +35,28 @@
 		ontest: () => Promise<void>
 		saveState?: 'saved' | 'saving' | 'error'
 		draft?: boolean // a new workflow that has not been saved yet
+		runId?: number | null // the test run to follow on the canvas
+		onviewrun?: () => void // open the details of that run
+		onrunended?: () => void // the run was played to its end: it is not followed again if the canvas comes back
 	} = $props()
 
 	const nodeTypes = { workflow: WorkflowNode }
+	const edgeTypes = { workflow: WorkflowEdge }
 	// the minimap tells node types apart by colour
 	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	let nodes = $state.raw<Node[]>([])
 	let edges = $state.raw<Edge[]>([])
+
+	// a test run is played on the canvas itself (see workflowRun.svelte.ts); nodes and connections read it from context
+	const runView = new RunView(() => edges)
+	setContext(RUN_VIEW, runView)
+	$effect(() => {
+		if (runId) untrack(() => runView.follow(runId).then((ended) => ended && onrunended?.()))
+		else untrack(() => runView.stop())
+	})
+	onDestroy(() => runView.stop())
 	let counter = 0
 	let wrapper: HTMLDivElement
 
@@ -105,7 +124,9 @@
 	const hasSelection = $derived(nodes.some((n) => n.selected) || edges.some((e) => e.selected))
 	// the panel on the right configures the node when exactly one is selected
 	const selectedNodes = $derived(nodes.filter((n) => n.selected))
-	const active = $derived(selectedNodes.length === 1 ? selectedNodes[0] : null)
+	// not while a selection box is being dragged: the panel sliding in would resize the canvas under the pointer
+	let selecting = $state(false)
+	const active = $derived(!selecting && selectedNodes.length === 1 ? selectedNodes[0] : null)
 
 	function updateNode(id: string, patch: Partial<WorkflowNodeData>) {
 		nodes = nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
@@ -166,14 +187,37 @@
 		if (stale) untrack(() => (edges = edges.map((e) => (e.sourceHandle === MOUNT ? { ...e, style: MOUNT_STYLE, animated: false, markerEnd: undefined } : e))))
 	})
 
+	// Escape lets go of the selection (unless a field is being typed in)
+	function onkeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape' || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+		if (nodes.some((n) => n.selected)) nodes = nodes.map((n) => (n.selected ? { ...n, selected: false } : n))
+		if (edges.some((e) => e.selected)) edges = edges.map((e) => (e.selected ? { ...e, selected: false } : e))
+	}
+
+	// Safety net: Svelte Flow keeps its own idea of which of Shift and Ctrl is held, from key-down and key-up events. If a
+	// key-up is ever missed (the window lost focus, a shortcut of the system took it), it believes the key is still down
+	// and every click starts a selection box instead of moving a node. A click that says no modifier is held settles it.
+	// Only then: Shift, Ctrl and Meta share one "adding to the selection" flag in Svelte Flow, so letting one go while
+	// another is really held would switch off the one in use.
+	function settleKeys(e: PointerEvent) {
+		if (e.shiftKey || e.ctrlKey || e.metaKey) return
+		for (const key of ['Shift', 'Control', 'Meta']) window.dispatchEvent(new KeyboardEvent('keyup', { key }))
+	}
+
+	const deleteSelectedNodes = () => deleteElements({ nodes: selectedNodes })
 	const deleteSelected = () => deleteElements({ nodes: nodes.filter((n) => n.selected), edges: edges.filter((e) => e.selected) })
 </script>
 
+<svelte:window {onkeydown} onpointerup={() => (selecting = false)} onblur={() => (selecting = false)} />
+
 <div class="flex min-h-0 flex-1">
 	<aside class="flex w-44 shrink-0 flex-col gap-1 border-e p-2">
-		<Button class="h-8 w-full" disabled={!loaded || testing || !hasStart} onclick={test}>
-			{#if testing}<LoaderCircleIcon class="animate-spin" />{:else}<PlayIcon />{/if} Test run
+		<Button class="h-8 w-full" disabled={!loaded || testing || runView.active || !hasStart} onclick={test}>
+			{#if testing || runView.active}<LoaderCircleIcon class="animate-spin" />{:else}<PlayIcon />{/if} {runView.active ? 'Running' : 'Test run'}
 		</Button>
+		{#if runId && onviewrun}
+			<Button variant="ghost" size="sm" class="h-7 justify-start px-1.5 text-xs text-muted-foreground" onclick={onviewrun}>Run details</Button>
+		{/if}
 		{#if testError}
 			<p class="px-1 text-xs leading-snug text-destructive" role="alert">{testError}</p>
 		{:else if !hasStart}
@@ -209,21 +253,27 @@
 		</div>
 	</aside>
 
-	<div class="min-w-0 flex-1" bind:this={wrapper} role="presentation" ondrop={onDrop} ondragover={onDragOver}>
+	<div class="min-w-0 flex-1" bind:this={wrapper} role="presentation" ondrop={onDrop} ondragover={onDragOver} onpointerdowncapture={settleKeys}>
 		<SvelteFlow
 			bind:nodes
 			bind:edges
 			{nodeTypes}
+			{edgeTypes}
 			{isValidConnection}
 			colorMode="dark"
 			deleteKey={['Backspace', 'Delete']}
-			defaultEdgeOptions={{ animated: true, style: 'stroke: var(--primary)', markerEnd: { type: MarkerType.ArrowClosed } }}
+			selectionKey="Shift"
+			multiSelectionKey={['Shift', 'Control', 'Meta']}
+			onselectionstart={() => (selecting = true)}
+			onselectionend={() => (selecting = false)}
+			defaultEdgeOptions={{ type: 'workflow', animated: true, style: 'stroke: var(--primary)', markerEnd: { type: MarkerType.ArrowClosed } }}
 			fitView
 			fitViewOptions={{ maxZoom: 1, padding: 0.12 }}
 			minZoom={0.2}
 		>
 			<Background gap={24} />
 			<Controls showLock={false} />
+			<SelectionBox selected={selectedNodes} ondelete={deleteSelectedNodes} onclear={deselectAll} />
 			<MiniMap pannable zoomable class="max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? '#888'} nodeStrokeWidth={0} />
 		</SvelteFlow>
 	</div>

@@ -33,12 +33,20 @@ class Router {
     this.hash = target.hash.slice(1)
   }
 
+  /** A page with unsaved work sets this. It is asked before every in-app navigation: return true to hold the move (and
+   * call `go` later if the person decides to leave), or false to let it through. The browser's own back button and
+   * closing the tab cannot be held this way; a page covers those with `beforeunload`. */
+  guard: ((go: () => void) => boolean) | null = null
+
   navigate(url: string) {
     const target = new URL(url, window.location.origin)
     if (target.pathname === this.path && target.hash === window.location.hash) return
-    window.history.pushState({}, '', target.pathname + target.hash)
-    this.path = target.pathname
-    this.hash = target.hash.slice(1)
+    const go = () => {
+      window.history.pushState({}, '', target.pathname + target.hash)
+      this.path = target.pathname
+      this.hash = target.hash.slice(1)
+    }
+    if (!this.guard?.(go)) go()
   }
 }
 

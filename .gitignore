@@ -27,3 +27,8 @@ __pycache__/
 auth.json
 .codex/
 codex-home/
+
+# Local AI assistant files (Claude Code and Serena): instructions, settings, memories and caches
+.claude/
+.serena/
+CLAUDE.md

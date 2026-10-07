@@ -10,7 +10,10 @@ The rules for host folders are the safety net, so they are checked when a volume
 starts (the folder, a symlink or the approved list may have changed since).
 """
 
+import os
 import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -30,6 +33,10 @@ DEFAULT_NAME = "shared"
 
 class MountError(Exception):
     """A folder cannot be mounted. The message is shown to the person who runs the task."""
+
+
+class FileError(Exception):
+    """A path inside a folder cannot be used (it escapes the folder, is badly formed, or does not exist)."""
 
 
 class MountRef(BaseModel):
@@ -81,6 +88,53 @@ def host_target(path: str, roots: list[MountRoot]) -> tuple[Path, bool]:
     )
 
 
+def resolve_volume(volume: Volume, cfg: AppSettings) -> tuple[Path, bool]:
+    """The real folder on this machine behind a volume, and whether its approved root lets cells write there.
+
+    Host folders are validated again on every call, for the same reason they are on every cell start."""
+    if volume.kind == "host":
+        return host_target(volume.host_path, cfg.mount_roots)
+    return managed_dir(volume.project_id, volume.name), True
+
+
+def safe_path(root: Path, rel: str, *, follow_leaf: bool = True) -> Path:
+    """The real path of `rel` (a slash separated path relative to a volume's root), refusing anything outside it.
+
+    This is the one gate between the Files page and the disk: every read or change goes through it. The folder
+    part is always resolved, so a symlink in the middle cannot lead out. The last part is resolved too unless
+    `follow_leaf` is False, which lets a symlink itself be renamed or removed without touching its target."""
+    parts = [p for p in rel.split("/") if p]
+    if any(p in (".", "..") or "\0" in p for p in parts):
+        raise FileError("That path is not valid")
+    root = root.resolve()
+    target = root.joinpath(*parts)
+    real = target.resolve() if follow_leaf else target.parent.resolve() / target.name
+    if real != root and root not in real.parents:
+        raise FileError("That path is outside the folder")
+    return real
+
+
+@dataclass
+class Entry:
+    name: str
+    is_dir: bool
+    size: int
+    modified: datetime
+
+
+def list_dir(folder: Path) -> list[Entry]:
+    """The contents of a folder, folders first. A symlink is listed as a plain file and never followed."""
+    entries = []
+    with os.scandir(folder) as it:
+        for e in it:
+            st = e.stat(follow_symlinks=False)
+            is_dir = e.is_dir(follow_symlinks=False)
+            entries.append(
+                Entry(e.name, is_dir, 0 if is_dir else st.st_size, datetime.fromtimestamp(st.st_mtime, UTC))
+            )
+    return sorted(entries, key=lambda e: (not e.is_dir, e.name.lower()))
+
+
 async def ensure_default_volume(session: AsyncSession, project_id: int) -> Volume:
     """Every project has a `shared` folder from the start, created the first time it is needed."""
     volume = await session.scalar(
@@ -115,16 +169,12 @@ async def plan_mounts(
         volume = volumes.get(volume_id)
         if volume is None or volume.project_id != project_id:
             raise MountError("A shared folder this run uses no longer exists")
-        writable = volume.mode == "rw"
-        if volume.kind == "host":
-            source, allowed = host_target(volume.host_path, cfg.mount_roots)
-            writable = writable and allowed
-            if mode == "rw" and volume.mode == "rw" and not allowed:
-                raise MountError(
-                    f"'{volume.name}' is no longer approved for writing. Check Settings, Mount roots."
-                )
-        else:
-            source = managed_dir(project_id, volume.name)
+        source, allowed = resolve_volume(volume, cfg)
+        writable = volume.mode == "rw" and allowed
+        if mode == "rw" and volume.mode == "rw" and not allowed:
+            raise MountError(
+                f"'{volume.name}' is no longer approved for writing. Check Settings, Mount roots."
+            )
         read_only = mode == "ro" or not writable
         mounts.append(
             Mount(

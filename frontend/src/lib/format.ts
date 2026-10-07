@@ -59,3 +59,6 @@ export const slug = (name: string) =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 40) || 'property'
+
+/** how a shared folder's access reads: what cells may do there */
+export const accessLabel = (mode: 'ro' | 'rw') => (mode === 'ro' ? 'Read only' : 'Read and write')

@@ -1,16 +1,10 @@
-import { Marked, type Tokens } from 'marked'
+import { renderMarkdown, type RenderedDoc } from './markdown'
 
 /** The documentation lives in /docs at the repository root, so it reads well on GitHub and in the app. */
 const files = import.meta.glob('../../../docs/*.md', { query: '?raw', import: 'default', eager: true }) as Record<
   string,
   string
 >
-
-export interface Heading {
-  id: string
-  text: string
-  depth: 2 | 3
-}
 
 export interface DocPage {
   slug: string
@@ -20,11 +14,6 @@ export interface DocPage {
   markdown: string
 }
 
-export interface RenderedDoc {
-  html: string
-  headings: Heading[]
-}
-
 export interface SearchHit {
   slug: string
   page: string
@@ -32,16 +21,6 @@ export interface SearchHit {
   id: string | null
   snippet: string
 }
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-export const slugify = (text: string) =>
-  text
-    .toLowerCase()
-    .replace(/<[^>]+>/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
 
 function parseFrontmatter(source: string): { meta: Record<string, string>; body: string } {
   const match = source.match(/^---\n([\s\S]*?)\n---\n?/)
@@ -80,57 +59,6 @@ export const groups = [...new Set(pages.map((p) => p.group))].map((name) => ({
 }))
 
 export const findPage = (slug: string) => pages.find((p) => p.slug === slug)
-
-const ALERTS = { NOTE: 'Note', TIP: 'Tip', WARNING: 'Warning' } as const
-
-function renderMarkdown(markdown: string): RenderedDoc {
-  const headings: Heading[] = []
-  const used = new Map<string, number>()
-
-  const marked = new Marked({
-    gfm: true,
-    renderer: {
-      heading({ tokens, depth }) {
-        const html = this.parser.parseInline(tokens)
-        const text = tokens.map((t) => ('text' in t ? String(t.text) : '')).join('')
-        let id = slugify(text)
-        const n = used.get(id) ?? 0
-        used.set(id, n + 1)
-        if (n) id = `${id}-${n + 1}`
-        if (depth === 2 || depth === 3) headings.push({ id, text, depth })
-        return `<h${depth} id="${id}">${html}<a class="docs-anchor" href="#${id}" aria-label="Link to this section">#</a></h${depth}>\n`
-      },
-      code({ text, lang }: Tokens.Code) {
-        const label = lang && lang !== 'text' ? lang : 'text'
-        return (
-          `<div class="docs-code"><div class="docs-code-head"><span>${escapeHtml(label)}</span>` +
-          `<button type="button" data-copy>Copy</button></div>` +
-          `<pre><code>${escapeHtml(text)}</code></pre></div>\n`
-        )
-      },
-      blockquote({ tokens }) {
-        let body = this.parser.parse(tokens)
-        const m = body.match(/^<p>\[!(NOTE|TIP|WARNING)\]\s*/)
-        if (!m) return `<blockquote>${body}</blockquote>\n`
-        body = body.replace(m[0], '<p>')
-        const kind = m[1] as keyof typeof ALERTS
-        return `<aside class="docs-callout" data-kind="${kind.toLowerCase()}"><strong>${ALERTS[kind]}</strong>${body}</aside>\n`
-      },
-      link({ href, title, tokens }) {
-        const text = this.parser.parseInline(tokens)
-        const external = /^https?:\/\//.test(href) || href.startsWith('/api/')
-        const attrs = external ? ' target="_blank" rel="noopener"' : ''
-        return `<a href="${escapeHtml(href)}"${title ? ` title="${escapeHtml(title)}"` : ''}${attrs}>${text}</a>`
-      },
-    },
-  })
-
-  // wide tables scroll sideways instead of breaking the layout
-  const html = (marked.parse(markdown) as string)
-    .replaceAll('<table>', '<div class="docs-table"><table>')
-    .replaceAll('</table>', '</table></div>')
-  return { html, headings }
-}
 
 const cache = new Map<string, RenderedDoc>()
 export function render(page: DocPage): RenderedDoc {

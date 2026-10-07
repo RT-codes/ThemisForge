@@ -44,7 +44,13 @@ Docker Engine 24 or newer is required, with Linux containers (Themis checks this
 
 Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-**Windows: in progress.** Most of Themis already runs there, but the installer is Linux only for now, so there are no Windows instructions yet. **macOS** is on the list after that.
+**Windows 10 or 11 (new, please report problems).** In a normal PowerShell window (not "as administrator"):
+
+```powershell
+irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex
+```
+
+It needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers (the installer checks, and offers to install it with winget if it is missing), installs for your own account without administrator rights, and starts Themis whenever you log in. Windows support is new: it is tested automatically, but on far fewer real computers than Linux. **macOS** is on the list after that.
 
 ## Once it is running
 
@@ -58,7 +64,7 @@ Installing on a server you reach from elsewhere? By default Themis only answers 
 
 ## Coming soon
 
-Windows support, and more agent engines: Codex is the one supported today, with Claude and OpenRouter to follow. See the [roadmap](docs/11-roadmap.md). ThemisForge is under active development.
+More agent engines: Codex is the one supported today, with Claude and OpenRouter to follow. See the [roadmap](docs/11-roadmap.md). ThemisForge is under active development.
 
 Want to help build it? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security problem? Please read [SECURITY.md](SECURITY.md) before you report it.
 

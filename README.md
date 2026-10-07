@@ -44,11 +44,13 @@ Docker Engine 24 or newer is required, with Linux containers (Themis checks this
 
 Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-**Windows 10 or 11 (new, please report problems).** In a normal PowerShell window (not "as administrator"):
+**Windows 10 or 11 (new, please report problems).** Open **PowerShell** (Start menu, type "PowerShell"; not "as administrator") and run:
 
 ```powershell
 irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex
 ```
+
+(`irm` is a PowerShell command, so it does not work in Command Prompt. From Command Prompt use `powershell -NoProfile -Command "irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex"`.)
 
 It needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers (the installer checks, and offers to install it with winget if it is missing), installs for your own account without administrator rights, and starts Themis whenever you log in. Windows support is new: it is tested automatically, but on far fewer real computers than Linux. **macOS** is on the list after that.
 

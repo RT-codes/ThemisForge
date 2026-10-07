@@ -53,11 +53,15 @@ Pass options after `--`: `curl ... | sh -s -- --port 8080`.
 
 ## Installing on Windows
 
-On Windows 10 or 11, in a normal PowerShell window (**not** "as administrator"):
+On Windows 10 or 11, open **PowerShell** (Start menu, type "PowerShell"; **not** "as administrator") and run:
 
 ```powershell
 irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex
 ```
+
+`irm` is a PowerShell command, so it does not work in Command Prompt (cmd). From Command Prompt use
+`powershell -NoProfile -Command "irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex"`.
+You do not need to change PowerShell's script policy: the installer does not run script files.
 
 With options, which go to `themis install` (`-Port 8080`, `-Yes`, `-NoService`, `-Channel beta`, `-ThemisHome D:\Themis`):
 

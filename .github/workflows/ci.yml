@@ -163,3 +163,42 @@ jobs:
           } finally {
             Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
           }
+      - name: The README's exact command, in Windows PowerShell 5.1 (the one most people have), and the window must survive it
+        shell: pwsh
+        run: |
+          # what `irm .../install.ps1 | iex` does, against a local copy of what a release would publish
+          New-Item -ItemType Directory -Path site | Out-Null
+          Copy-Item install.ps1 site\install.ps1
+          Copy-Item scripts\themisctl.py site\themisctl.py
+          $server = Start-Process python -ArgumentList "-m", "http.server", "8711", "--directory", "site" -PassThru -WindowStyle Hidden
+          try {
+            # `| iex` takes no options, so they come as environment variables
+            $env:THEMIS_INSTALL_BASE = "http://127.0.0.1:8711"
+            $env:THEMIS_BUNDLE = (Get-ChildItem dist\themisforge-*.tar.gz).FullName
+            $env:THEMIS_PORT = "8003"
+            $env:THEMIS_HOME = "$env:RUNNER_TEMP\Themis3"
+            $env:THEMIS_NO_SERVICE = "1"; $env:THEMIS_SKIP_IMAGE = "1"; $env:THEMIS_YES = "1"
+            # the situation of a typical new Windows PC: scripts restricted by policy, and uv not installed yet (its installer
+            # refuses to run under the default policy and then calls `exit`, which used to close the person's window)
+            $savedPath = $env:Path; $savedProfile = $env:USERPROFILE
+            New-Item -ItemType Directory -Path "$env:RUNNER_TEMP\freshprofile" -Force | Out-Null
+            $env:USERPROFILE = "$env:RUNNER_TEMP\freshprofile"
+            $env:Path = (($env:Path -split ";") | Where-Object { $_ -and $_ -notmatch "uv" }) -join ";"
+            try {
+              if (Get-Command uv -ErrorAction SilentlyContinue) { throw "uv should not be visible in this test" }
+              $out = & powershell.exe -NoProfile -ExecutionPolicy Restricted -Command "irm http://127.0.0.1:8711/install.ps1 | iex; Write-Output 'WINDOW-STILL-OPEN'" 2>&1 | Out-String
+            } finally { $env:Path = $savedPath; $env:USERPROFILE = $savedProfile }
+            $out
+            if ($out -notmatch "WINDOW-STILL-OPEN") { throw "the installer closed the PowerShell window" }
+            if ($out -notmatch "Installing uv") { throw "uv was supposed to be installed by the installer in this test" }
+            if (-not (Test-Path "$env:RUNNER_TEMP\Themis3\bin\themis.cmd")) { throw "it did not install" }
+            # and a failure must be a message in the window, not a closed window
+            $env:THEMIS_BUNDLE = "$PWD\no-such-bundle.tar.gz"
+            $env:THEMIS_HOME = "$env:RUNNER_TEMP\Themis4"
+            $bad = & powershell.exe -NoProfile -Command "irm http://127.0.0.1:8711/install.ps1 | iex; Write-Output 'WINDOW-STILL-OPEN'" 2>&1 | Out-String
+            $bad
+            if ($bad -notmatch "WINDOW-STILL-OPEN") { throw "a failed install closed the PowerShell window" }
+            if ($bad -notmatch "could not be installed") { throw "a failed install did not say so" }
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }

@@ -13,16 +13,18 @@ Development (hot reload)
   First time only, if ./themis start fails: it installs dependencies itself, so just make sure
   uv and npm are installed.
 
-Server install (a VM that runs ThemisForge 24/7)
-  ./themis install               install Docker, uv and Node if missing, build, write backend/.env,
-                                 register the systemd service (starts on boot, restarts on crash)
-  ./themis install --help        options: --host, --port, --https, --skip-docker, --no-service, --dry-run
-  ./themis doctor                check Python, secret key, database, Docker and the build
-  ./themis service status        status of the systemd service
-  ./themis service logs          follow its log
-  ./themis service restart       also: start, stop
-
-  After an update (git pull), run ./themis install again: it rebuilds and restarts.
+Install on a computer or server (Linux; no need to clone this repository)
+  curl -fsSL https://github.com/RT-codes/ThemisForge/releases/latest/download/install.sh | sh
+                                 installs the newest release into ~/.local/share/themis, checks Docker, writes the
+                                 settings with a new secret key, registers a service and starts it
+  Then, wherever you are:
+  themis status                  what is installed and whether it is running
+  themis upgrade                 upgrade to the newest version (backup first, rolls back if it fails); --check looks only
+  themis doctor [--report]       check Python, Docker, the database; show how the last starts went
+  themis restart | stop | start | logs
+  themis backup                  save a copy of the database and settings
+  themis uninstall               remove it (your data stays unless --purge)
+  (`./themis` in this repository is only for development.)
 
 Checks
   cd backend && uv run pytest && uv run ruff check .

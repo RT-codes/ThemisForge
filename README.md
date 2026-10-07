@@ -25,25 +25,24 @@ The box is the safety fence, so agents work inside it without stopping to ask pe
 
 ## Install
 
-**Linux (Ubuntu or Debian).** You need a computer or virtual machine you control, with internet and a normal user account that has admin (`sudo`) rights. The installer adds what is missing, including Docker (Docker Engine 24 or newer is required, and Themis checks it every time it starts).
+**Linux.** You need a computer or virtual machine you control, with internet and a normal user account that has admin (`sudo`) rights. One command installs the newest release, checks that Docker works (and offers to install it if it is missing), and starts Themis as a service:
 
 ```bash
-git clone https://github.com/RT-codes/ThemisForge.git
-cd ThemisForge
-./themis install
+curl -fsSL https://github.com/RT-codes/ThemisForge/releases/latest/download/install.sh | sh
 ```
 
-Then open **http://127.0.0.1:8000** and create your account. Themis starts by itself whenever the machine does. To preview the installer first, add `--dry-run`; `./themis doctor` checks that everything works.
+Then open **http://127.0.0.1:8000** and create your account. Themis starts by itself whenever the machine does. `themis doctor` checks that everything works, and `themis upgrade` moves to a newer version (it backs up first and goes back by itself if something fails). More in the [install and operations guide](docs/08-operations.md).
 
-**To run agents** (using your ChatGPT account through Codex) you also need to:
+Docker Engine 24 or newer is required, with Linux containers (Themis checks this every time it starts).
 
-1. Install the [Codex command-line tool](https://github.com/openai/codex) on the same machine. The installer does not do this.
-2. Run `./themis build-images` once. It prepares the box agents work in (a few minutes, about 1 GB).
-3. In Themis, open **Settings** and press **Connect Codex**.
+**To run agents** (using your ChatGPT account through Codex):
+
+1. Open **Settings** in Themis and press **Connect Codex**. You sign in once; nothing else needs installing.
+2. Create an agent, give it a task, and run it.
 
 Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-**Windows: coming soon.** We have not tested Themis on Windows yet, so there are no instructions to give. Other systems, such as macOS, have not been tested either.
+**Windows: coming soon.** We have not tested Themis on Windows yet, so there are no instructions to give. **macOS** is on the list after that.
 
 ## Once it is running
 

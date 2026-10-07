@@ -56,7 +56,8 @@ jobs:
         run: |
           flags=""
           case "${GITHUB_REF_NAME}" in *-*) flags="--prerelease" ;; esac
-          gh release create "${GITHUB_REF_NAME}" dist/themisforge-*.tar.gz dist/SHA256SUMS \
+          # the bundle and its checksum, plus the two files `curl ... | sh` fetches: the one-line installer and the control file
+          gh release create "${GITHUB_REF_NAME}" dist/themisforge-*.tar.gz dist/SHA256SUMS install.sh scripts/themisctl.py \
             --title "Themis ${GITHUB_REF_NAME#v}" --generate-notes $flags
 
   cell-image:

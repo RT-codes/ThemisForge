@@ -40,6 +40,7 @@ INCLUDE = [
     "backend/pyproject.toml",
     "backend/uv.lock",
     "backend/.env.example",
+    "scripts/themisctl.py",
     "frontend/dist",
     "docker/cell-codex",
 ]

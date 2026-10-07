@@ -8,19 +8,17 @@ summary: From a fresh install to your first task running in a cell.
 
 ## 1. Install
 
-On a Debian or Ubuntu machine:
+On a Linux machine (a normal user with `sudo`), one command:
 
 ```bash
-git clone https://github.com/RT-codes/ThemisForge.git
-cd ThemisForge
-./themis install
+curl -fsSL https://github.com/RT-codes/ThemisForge/releases/latest/download/install.sh | sh
 ```
 
-This installs what is missing (Docker, uv, Node), builds the app, creates your configuration and starts Themis
-as a service. Details and options are in [Install and operations](/docs/operations).
+It downloads the newest release, checks that Docker works (and offers to install it if it is missing), creates your
+configuration and starts Themis as a service. Details and options are in [Install and operations](/docs/operations).
 
-Just trying it on your own computer? Run `./themis start` instead for a development setup with hot reload, then open
-`http://localhost:5173`.
+Just trying it on your own computer, or working on Themis itself? Clone the repository and run `./themis start` for a
+development setup with hot reload, then open `http://localhost:5173`.
 
 ## 2. Create the administrator account
 

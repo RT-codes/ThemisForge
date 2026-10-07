@@ -6,7 +6,8 @@ summary: Common problems and how to fix them.
 
 # Troubleshooting
 
-Start with `./themis doctor`. It checks the most common causes and tells you what to fix.
+Start with `themis doctor`. It checks the most common causes and tells you what to fix, and shows how the last starts went.
+To ask for help, `themis doctor --report` writes a file with the details (no keys or passwords) that you can attach.
 
 ## Docker says "permission denied"
 
@@ -15,7 +16,7 @@ service picks the group up automatically. If you changed this by hand:
 
 ```bash
 sudo usermod -aG docker $USER
-./themis service restart
+themis restart
 ```
 
 Your *shell* only sees a new group after you log out and in again. The service does not need that.
@@ -31,7 +32,7 @@ Check, in this order:
 
 1. **Is it due?** A task with a schedule waits for its time. The card shows when.
 2. **Are the cells full?** The header shows *n/m cells*. Raise the limit under Settings, or wait.
-3. **Is the scheduler on?** The header says *Scheduler on*. If it says off, check `./themis service logs`.
+3. **Is the scheduler on?** The header says *Scheduler on*. If it says off, check `themis logs`.
 4. **Is Docker healthy?** A task that fails the moment it starts usually has the reason in its **History** log.
 
 ## An attempt fails straight away
@@ -79,10 +80,11 @@ du -sh data/projects/*      # see which project uses the space
 
 ## Start over
 
-To wipe an installation completely (this deletes all data):
+To wipe an installation completely (this deletes all data, including the secret key):
 
 ```bash
-./themis service stop
-rm backend/themisforge.db* ; rm -rf data
-./themis service start
+themis uninstall --purge
 ```
+
+Then install again with the install command. To keep the installation and only empty it, run `themis stop`, delete
+`db/` and `data/` in the home folder (`~/.local/share/themis`), and `themis start`.

@@ -8,48 +8,66 @@ summary: Installing on a VM, the service, configuration, backups, updates and ex
 
 ## Installing on a server
 
-On a fresh Debian or Ubuntu machine, as a normal user with `sudo`:
+On a Linux machine you control, as a normal user (not root) with `sudo` rights, with an internet connection:
 
 ```bash
-git clone https://github.com/RT-codes/ThemisForge.git
-cd ThemisForge
-./themis install
+curl -fsSL https://github.com/RT-codes/ThemisForge/releases/latest/download/install.sh | sh
 ```
 
-The installer is safe to run again at any time. It:
+You do not need to clone anything, and nothing else has to be installed first (not Python, not Node). The script only
+makes sure [uv](https://docs.astral.sh/uv/) is there, downloads the installer, and runs it. The installer is safe to run
+again at any time. It:
 
-1. installs **Docker Engine** (with the official script) if it is missing, and adds your user to the `docker` group,
-2. installs **uv** (Python tooling) and **Node.js** (to build the web interface) if they are missing,
-3. builds the backend and the frontend,
-4. writes `backend/.env` with a freshly generated **secret key** (and never overwrites an existing one),
-5. registers a **systemd service** that starts on boot and restarts if it crashes,
-6. waits until Themis answers, then runs `./themis doctor`.
+1. downloads the newest **stable release**, checks it against its published checksum, and unpacks it,
+2. checks **Docker** (see below) and, with your yes, installs it or adds your user to the `docker` group,
+3. gets the agent image (a download of about 1 GB, or a build if the download is not possible),
+4. writes the settings with a freshly generated **secret key** (and never replaces an existing one),
+5. registers a **systemd service** that starts on boot and restarts if it crashes, and waits until it answers,
+6. runs `themis doctor`.
+
+Everything lives in one **home folder**, `~/.local/share/themis` (set another with `--home`):
+
+| In the home folder | What it is |
+| --- | --- |
+| `releases/<version>/` | The code of each release, with its own Python environment. |
+| `current` | A link to the release that runs. An upgrade swaps it, and a rollback swaps it back. |
+| `db/`, `data/`, `logs/` | The database, the projects' files, the logs. An upgrade never touches these. |
+| `backups/` | Database and settings copies taken before each upgrade. |
+| `config.env` | Settings, including the secret key. Private to your user. |
 
 ### Options
+
+Pass options after `--`: `curl ... | sh -s -- --port 8080`.
 
 | Option | Effect |
 | --- | --- |
 | `--host ADDRESS` | Address to listen on. Default `127.0.0.1` (this machine only). Use `0.0.0.0` for your network. |
 | `--port N` | Port to listen on. Default `8000`. |
 | `--https` | You serve Themis over HTTPS: enables secure session cookies. |
-| `--skip-docker` | Do not install Docker (you use an existing one, or a remote Docker host). |
-| `--no-service` | Build and configure only; do not create the systemd service. |
-| `--dry-run` | Print everything the installer would do without changing anything. |
-
-> [!TIP]
-> Not sure what the installer will do on your machine? Run `./themis install --dry-run` first.
+| `--no-service` | Do not register a service; start it yourself with `themis run`. |
+| `--channel beta` | Install the newest pre-release too, instead of the newest stable one. |
+| `--version X.Y.Z` | Install that version. |
+| `--yes` | Answer yes to every question (for scripts). |
+| `--skip-image` | Do not pull or build the agent image (offline, or you provide your own). |
+| `--home DIR` | Install somewhere else. |
 
 ## Day to day
 
+The installer puts a `themis` command in `~/.local/bin` (add that folder to your `PATH` if the installer says so).
+
 | Command | Does |
 | --- | --- |
-| `./themis service status` | Shows whether the service is running. |
-| `./themis service logs` | Follows the server log. |
-| `./themis service restart` | Restarts it (also `start` and `stop`). |
-| `./themis doctor` | Checks Python, the secret key, the data folder, the database, the build, Docker and the cell image, then lists how the last few starts went. |
-| `./themis doctor --report` | The same, and writes `themis-report-<time>.txt` to attach to a bug report. |
+| `themis status` | What is installed, whether the service runs, and whether it answers. |
+| `themis logs` | Follows the server log. |
+| `themis restart` | Restarts the service (also `start` and `stop`). |
+| `themis run` | Runs the server in the foreground (what the service runs). |
+| `themis upgrade` | Upgrades to the newest version; see below. |
+| `themis doctor` | Checks Python, the secret key, the data folder, the database, Docker and the cell image, then lists how the last few starts went. |
+| `themis doctor --report` | The same, and writes `themis-report-<time>.txt` to attach to a bug report. |
+| `themis backup` | Saves a copy of the database and settings in `backups/`. |
+| `themis uninstall` | Removes the service and the code. Your data stays unless you add `--purge`. |
 
-`./themis doctor` prints a tick, a warning or a cross for each check, with a hint for how to fix it, and exits with an
+`themis doctor` prints a tick, a warning or a cross for each check, with a hint for how to fix it, and exits with an
 error when something needs attention. It is the first thing to run when something seems off.
 
 ## Docker, and what happens when it is not working
@@ -89,47 +107,58 @@ the tests, publishes the release bundle with its checksum, and publishes the cel
 
 ## Configuration
 
-Operator settings live in `backend/.env`. The file is private to your user, and the installer creates it.
+Operator settings live in `config.env` in the home folder (`backend/.env` in a development checkout). The file is private to your user, and the installer creates it.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `THEMIS_SECRET_KEY` | generated | Signs sessions and encrypts stored keys. Keep it secret and stable. |
 | `THEMIS_COOKIE_SECURE` | `false` | Set to `true` when served over HTTPS. |
-| `THEMIS_DATABASE_URL` | `backend/themisforge.db` | SQLite database location. |
-| `THEMIS_DATA_DIR` | `data/` | Project workspaces and cell files. |
+| `THEMIS_HOME` | none | The install's home folder. When set, the database, data, logs and `config.env` live in it. The installer sets it. |
+| `THEMIS_HOST`, `THEMIS_PORT` | `127.0.0.1`, `8000` | What `themis run` listens on. |
+| `THEMIS_DATABASE_URL` | `<home>/db/themisforge.db` | SQLite database location. |
+| `THEMIS_DATA_DIR` | `<home>/data/` | Project workspaces and cell files. |
 | `THEMIS_ACCESS_TOKEN_MINUTES` | `10080` | Session lifetime (7 days). |
 | `THEMIS_SCHEDULER_ENABLED` | `true` | Turn the scheduler off, for example for a read-only copy. |
 | `THEMIS_SCHEDULER_INTERVAL_SECONDS` | `3` | How often the scheduler looks for due tasks. |
-| `THEMIS_LOG_DIR` | `logs/` | Where the run trail and the application log are written. |
+| `THEMIS_LOG_DIR` | `<home>/logs/` | Where the run trail and the application log are written. |
 | `THEMIS_CELL_BACKEND` | `docker` | `fake` simulates cells without Docker (development). |
 
-Changes take effect after `./themis service restart`. Everything else (Docker host, cell defaults, time zone, keys) is
+Changes take effect after `themis restart`. Everything else (Docker host, cell defaults, time zone, keys) is
 changed in the **Settings** page and needs no restart.
 
 ## What to back up
 
-Three things hold all state:
+Three things hold all state, all in the home folder:
 
-- `backend/themisforge.db` (and its `-wal` file while the server runs): projects, tasks, history, accounts, keys,
+- `db/themisforge.db` (and its `-wal` file while the server runs): projects, tasks, history, accounts, keys,
 - `data/`: project workspaces and per-attempt files,
-- `backend/.env`: **without the secret key, stored keys cannot be decrypted.**
+- `config.env`: **without the secret key, stored keys cannot be decrypted.**
 
-Before every upgrade that changes the database, Themis saves a copy in `backend/backups/` (the latest five are
-kept), so a migration can never be the only copy of your data.
+`themis backup` saves a consistent copy of the database and `config.env` in `backups/` while the server runs. It does not
+copy `data/`, which can be large: back that folder up the way you back up any folder. `themis upgrade` makes the same
+backup before it changes anything, and Themis also saves a copy of the database in `db/backups/` before every migration
+(the latest five are kept), so a migration can never be the only copy of your data.
 
-For a consistent copy of the database while the server runs, use `sqlite3 backend/themisforge.db ".backup backup.db"`,
-or stop the service first.
+To go back to a backup: `themis stop`, `themis restore ~/.local/share/themis/backups/<folder>`, `themis start`.
 
-## Updating
+## Upgrading
 
 ```bash
-cd ThemisForge
-git pull
-./themis install
+themis upgrade --check     # only say whether a newer version exists
+themis upgrade             # do it
 ```
 
-This rebuilds and restarts the service. Database migrations run automatically when the server starts, and databases
-from before migrations existed are upgraded in place.
+`themis upgrade` looks for the newest **stable** release (or `--channel beta`, or `--version X.Y.Z`), and then:
+
+1. downloads it, verifies its checksum and installs it next to the running one (the running Themis is not touched yet),
+2. checks that Docker is still fine and gets the new agent image,
+3. **backs up** the database and settings,
+4. stops the service, switches `current` to the new release, starts it, and waits until the new version answers,
+5. if it does not come up, **goes back by itself**: the previous release runs again and the database is restored from the
+   backup, so a failed upgrade leaves you where you were. The two newest releases are kept on disk for this; older ones are removed.
+
+Database migrations run when the new version starts. A Themis that finds a database from a **newer** version refuses to
+touch it and says so, instead of damaging what it does not understand.
 
 ## Exposing Themis safely
 

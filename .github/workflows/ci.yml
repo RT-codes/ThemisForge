@@ -76,13 +76,17 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
-      - name: Install and start the bundle
+      - name: Install the bundle with the real installer and start it
+        # the real installer code path (themisctl.py install --bundle): checks Docker, writes the settings, links the
+        # release, makes the `themis` command. Only the downloads, the agent image and the system service are left out.
         run: |
-          mkdir smoke && tar -xzf dist/themisforge-*.tar.gz -C smoke
-          cd smoke/themisforge-*/backend
-          uv sync --no-dev --frozen
-          THEMIS_CELL_BACKEND=fake THEMIS_DATABASE_URL="sqlite+aiosqlite:///$PWD/smoke.db" THEMIS_DATA_DIR="$PWD/data" \
-            .venv/bin/uvicorn app.main:app --port 8000 &
-          for i in $(seq 1 30); do curl -fsS localhost:8000/api/health && break; sleep 1; done
+          export HOME="$RUNNER_TEMP/home" THEMIS_HOME="$RUNNER_TEMP/themis"
+          mkdir -p "$HOME"
+          python3 scripts/themisctl.py install --bundle dist/themisforge-*.tar.gz --no-service --skip-image --yes --port 8000
+          "$HOME/.local/bin/themis" status
+          "$HOME/.local/bin/themis" run &
+          for i in $(seq 1 40); do curl -fsS localhost:8000/api/health && break; sleep 1; done
           curl -fsS localhost:8000/api/version
           curl -fsS localhost:8000/ | grep -qi "<html"
+          "$HOME/.local/bin/themis" doctor
+          "$HOME/.local/bin/themis" backup

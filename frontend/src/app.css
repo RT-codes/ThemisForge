@@ -170,6 +170,93 @@
 	100% { transform: translateX(-100%); opacity: 0; }
 }
 
+/* Selecting nodes in the workflow editor. Svelte Flow draws its own overlay over a box selection, which sits above the
+   nodes and catches every click, so they cannot be grabbed one by one; it is hidden, and SelectionBox draws the padded
+   box and the toolbar instead (for Shift and Ctrl selections too). The rubber band while dragging is themed here. */
+.svelte-flow__selection-wrapper {
+	display: none;
+}
+.svelte-flow {
+	--xy-selection-background-color: color-mix(in oklab, var(--primary) 8%, transparent);
+	--xy-selection-border: 1px dashed color-mix(in oklab, var(--primary) 70%, transparent);
+}
+.svelte-flow__selection {
+	border-radius: 12px;
+}
+.selection-box {
+	position: absolute;
+	top: 0;
+	left: 0;
+	border-radius: 16px;
+	pointer-events: none;
+	border: 1.5px dashed color-mix(in oklab, var(--primary) 65%, transparent);
+	background: color-mix(in oklab, var(--primary) 5%, transparent);
+	box-shadow: 0 0 24px -6px color-mix(in oklab, var(--primary) 25%, transparent);
+}
+
+/* A node that is playing in a test run: a 2px border with a bright arc that travels around it, in the primary colour.
+   It fades in and out (the `on` class), and the arc turns continuously while it is on. */
+@property --run-angle {
+	syntax: '<angle>';
+	inherits: false;
+	initial-value: 0deg;
+}
+.run-ring {
+	position: absolute;
+	inset: -1px;
+	border-radius: inherit;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 500ms ease;
+	box-shadow:
+		inset 0 0 0 2px color-mix(in oklab, var(--primary) 45%, transparent),
+		0 0 16px -2px color-mix(in oklab, var(--primary) 40%, transparent);
+}
+.run-ring.on {
+	opacity: 1;
+}
+.run-ring::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	padding: 2px;
+	background: conic-gradient(
+		from var(--run-angle),
+		transparent 0deg 210deg,
+		color-mix(in oklab, var(--primary) 35%, transparent) 270deg,
+		var(--primary) 345deg,
+		transparent 360deg
+	);
+	/* keep only the 2px ring of the gradient */
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#000 0 0) content-box exclude,
+		linear-gradient(#000 0 0);
+	animation: run-ring-spin 2.4s linear infinite;
+}
+@keyframes run-ring-spin {
+	to {
+		--run-angle: 360deg;
+	}
+}
+
+/* connections of a test run: the ones the run has gone along are thicker (they ease between widths), and a glow
+   travels along a connection when the run moves on (see WorkflowEdge) */
+.svelte-flow__edge-path {
+	transition: stroke-width 400ms ease;
+}
+.svelte-flow__edge-path.run-walked {
+	stroke-width: 2px;
+}
+.run-glow circle {
+	fill: var(--primary);
+	filter: drop-shadow(0 0 5px var(--primary)) drop-shadow(0 0 10px color-mix(in oklab, var(--primary) 60%, transparent));
+}
+
 /* ---------- documentation (/docs) ---------- */
 @plugin "@tailwindcss/typography";
 

@@ -38,6 +38,7 @@
 	let canvas = $state<{ flush: () => Promise<void>; graph: () => Graph }>()
 	let tab = $state<'editor' | 'runs'>('editor')
 	let selectedRun = $state<number | null>(null)
+	let testRun = $state<number | null>(null) // the test run being played on the canvas
 	let current: number | null | undefined // the workflow this page is showing (undefined: nothing loaded yet)
 	let creating: Promise<WorkflowDetail> | null = null
 	const now = $derived(Date.now())
@@ -70,6 +71,7 @@
 			}
 			renameError = ''
 			saveState = 'saved'
+			testRun = null
 			canvasKey++
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the workflow'
@@ -166,7 +168,7 @@
 		await canvas?.flush()
 		const started = await api.startWorkflowRun(created.id)
 		selectedRun = started.id
-		tab = 'runs'
+		testRun = started.id // the canvas plays it; the Runs tab has the details
 	}
 
 	const open = (id: number) => router.navigate(`/projects/${projectId}/workflows/${id}`)
@@ -250,7 +252,7 @@
 		{#if tab === 'editor'}
 			{#key canvasKey}
 				<SvelteFlowProvider>
-					<FlowCanvas bind:this={canvas} {projectId} {initialGraph} onsave={persist} ontest={test} bind:saveState draft={!workflow} />
+					<FlowCanvas bind:this={canvas} {projectId} {initialGraph} onsave={persist} ontest={test} bind:saveState draft={!workflow} runId={testRun} onviewrun={() => (tab = 'runs')} onrunended={() => (testRun = null)} />
 				</SvelteFlowProvider>
 			{/key}
 		{:else if workflow}

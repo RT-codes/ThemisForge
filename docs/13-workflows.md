@@ -23,6 +23,13 @@ automatically. The buttons left of the title:
 
 Whatever you were editing is saved before the next workflow opens.
 
+### Selecting several nodes
+
+Hold **Shift** and drag on the canvas to draw a box around nodes, or hold **Shift** or **Ctrl** and click nodes to add
+them to the selection one by one (click a selected node again to take it out). A dashed box with some room around it shows
+what is selected, and its toolbar offers **Deselect** and **Delete** for all of them at once. Drag any selected node to
+move them all together. **Esc** lets go of the selection.
+
 ## Nodes
 
 | Node | What it does |
@@ -69,6 +76,14 @@ dashed and teal and has no arrow, because it is not a step: it only says "this a
 - A node that fails stops its path. An agent can be told to **carry on** instead.
 - A node that more than one path leads to runs once.
 - Task and Agent nodes create real tasks in the project, so they also show up on the Tasks page.
+
+### Watching a test run
+
+A test run is played on the canvas, so you can see where it is. While it runs, the nodes still to come are dimmed, the
+ones that finished are nearly fully lit (and pulse once as they finish), and the one playing has a thicker border with a
+shine travelling around it. The lines the run has gone along are drawn thicker, and when the run moves to the next node
+a glow travels along the line first. When the run ends, everything fades back to normal. **Run details** opens the full
+log of the run on the Runs tab.
 
 ## Workflows and tasks play each other
 

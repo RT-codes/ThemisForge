@@ -3,6 +3,9 @@
 	import XIcon from '@lucide/svelte/icons/x'
 	import { MOUNT, defaultConfig, kindInfo, summary, type WorkflowNodeData } from '$lib/workflow'
 	import { nodeIcons } from '$lib/workflowIcons'
+	import { pulseWhen } from '$lib/pulse'
+	import { RUN_VIEW, type RunView } from '$lib/workflowRun.svelte'
+	import { getContext } from 'svelte'
 
 	let { id, data, selected }: NodeProps = $props()
 
@@ -11,13 +14,25 @@
 	const info = $derived(kindInfo(d.kind))
 	const Icon = $derived(nodeIcons[d.kind])
 	const line = $derived(summary(d.kind, d.config ?? defaultConfig(d.kind)))
+
+	// While a test run plays: nodes still to come are dimmed, finished ones are almost fully there, the one playing is
+	// fully there with a thicker, shining border. Outside a run none of this applies and everything fades back.
+	const run = getContext<RunView | undefined>(RUN_VIEW)
+	// (a Folder node is never a step of the run, so it keeps its normal look)
+	const phase = $derived(run?.active && !info.mountOut ? (run.shown[id] ?? 'waiting') : null)
+	const opacity = $derived(phase === 'waiting' ? 0.5 : phase === 'done' || phase === 'failed' ? 0.85 : 1)
 </script>
 
 <div
-	class="group relative flex w-52 items-center gap-3 rounded-lg border bg-card px-3 text-card-foreground shadow-sm transition-colors {info.mountOut ? 'border-dashed' : ''} {info.outputs ? 'py-4' : 'py-2.5'} {selected
+	style:opacity
+	class="group relative flex w-52 items-center gap-3 rounded-lg border bg-card px-3 text-card-foreground shadow-sm transition-[color,background-color,border-color,box-shadow,opacity] duration-500 {info.mountOut ? 'border-dashed' : ''} {info.outputs ? 'py-4' : 'py-2.5'} {selected
 		? 'border-primary ring-2 ring-primary/30'
 		: 'hover:border-primary/50'}"
 >
+	<!-- the pulse of a node that finished, and the shining border of the one playing; each in its own clipped layer so the
+	     handles and labels that stick out of the node are not cut off -->
+	<span use:pulseWhen={run?.nodePulses[id] ?? 0} class="pointer-events-none absolute -inset-px overflow-hidden rounded-lg" aria-hidden="true"></span>
+	<span class="run-ring" class:on={phase === 'playing'} aria-hidden="true"></span>
 	{#if info.hasInput}
 		<Handle type="target" position={Position.Left} class="workflow-handle" />
 	{/if}

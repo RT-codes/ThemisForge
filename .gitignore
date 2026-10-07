@@ -32,3 +32,7 @@ codex-home/
 .claude/
 .serena/
 CLAUDE.md
+
+# Release bundles (scripts/build_release.py) and the local run logs
+/dist/
+/logs/

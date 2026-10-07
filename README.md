@@ -60,3 +60,7 @@ Installing on a server you reach from elsewhere? By default Themis only answers 
 Windows support, and more agent engines: Codex is the one supported today, with Claude and OpenRouter to follow. See the [roadmap](docs/11-roadmap.md). ThemisForge is under active development.
 
 Want to help build it? See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+ThemisForge is open source under the [Apache License 2.0](LICENSE): free to use, change and share, including commercially.

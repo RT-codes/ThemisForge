@@ -1,0 +1,88 @@
+name: Release
+
+# Pushing a tag like v0.2.0 publishes that version: the bundle that `themis install` and `themis upgrade` download,
+# its checksum, and the cell image for Docker. A tag with a dash (v0.2.0-beta.1) is a pre-release, which nobody gets
+# unless they ask for that channel.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/themis-cell-codex
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: The tag must be the version in the repository
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "v$(cat VERSION)" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match VERSION ($(cat VERSION)). Bump the version, commit, and tag again." >&2
+            exit 1
+          fi
+      - run: cd backend && uv sync --locked && uv run pytest -q
+      - run: cd frontend && npm ci --no-audit --no-fund && npm run check && npm test
+
+  bundle:
+    name: Bundle and GitHub release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci --no-audit --no-fund && npm run build
+      - run: python3 scripts/build_release.py --out dist --expect-tag "${GITHUB_REF_NAME}"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "${GITHUB_REF_NAME}" in *-*) flags="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" dist/themisforge-*.tar.gz dist/SHA256SUMS \
+            --title "Themis ${GITHUB_REF_NAME#v}" --generate-notes $flags
+
+  cell-image:
+    name: Cell image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: tags
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tags="${IMAGE,,}:${version}"
+          # "latest" only follows stable releases
+          case "$version" in *-*) ;; *) tags="$tags,${IMAGE,,}:latest" ;; esac
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      # amd64 for most computers and servers, arm64 for Apple silicon, Windows on ARM and Raspberry Pi
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker/cell-codex
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

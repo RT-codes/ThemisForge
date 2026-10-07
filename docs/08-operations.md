@@ -51,6 +51,17 @@ The installer is safe to run again at any time. It:
 `./themis doctor` prints a tick, a warning or a cross for each check, and exits with an error when something needs
 attention. It is the first thing to run when something seems off.
 
+## Versions
+
+Themis uses [semantic versions](https://semver.org): `MAJOR.MINOR.PATCH`, with a dash for a pre-release (`0.2.0-beta.1`).
+The version is shown by `GET /api/version` (no sign-in needed), which also says whether this is a **release** or a **git
+checkout** (a checkout reports `0.1.0+dev.<commit>`), and by the health check.
+
+For maintainers: `scripts/bump_version.py 0.2.0` sets the version in every file that repeats it, then `uv lock` in
+`backend/`, commit, and push the tag `v0.2.0`. The release workflow checks that the tag matches the `VERSION` file, runs
+the tests, publishes the release bundle with its checksum, and publishes the cell image for Docker (amd64 and arm64).
+`scripts/build_release.py` builds the same bundle on your own machine.
+
 ## Configuration
 
 Operator settings live in `backend/.env`. The file is private to your user, and the installer creates it.

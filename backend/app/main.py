@@ -14,6 +14,7 @@ from .migrate import upgrade_database
 from .project_config import sync_all_configs
 from .routers import access, agents, auth, codex, projects, skills, system, tools, volumes, workflows
 from .scheduler import Scheduler
+from .version import build_info
 from .workflows import WorkflowRunner
 
 log = logging.getLogger("themis")
@@ -66,7 +67,14 @@ api.include_router(tools.router)
 
 @api.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": build_info().version}
+
+
+@api.get("/version")
+async def version() -> dict[str, str]:
+    """Which Themis this is (public, like /health): the release number, the commit it was built from and whether it is a
+    release bundle or a git checkout."""
+    return build_info().to_dict()
 
 
 app.include_router(api)

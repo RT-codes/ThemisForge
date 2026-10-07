@@ -382,3 +382,13 @@ def test_the_installed_files_include_this_control_file():
     spec.loader.exec_module(build)
     assert "scripts/themisctl.py" in build.INCLUDE
     assert json.loads(json.dumps(sorted(build.INCLUDE)))  # a plain list of paths
+
+
+def test_the_home_can_be_given_before_or_after_the_command():
+    """`install.sh --home X` hands its options to `themis install`, so --home must work after the command too."""
+    parse = ctl.build_parser().parse_args
+    assert parse(["--home", "/a", "install"]).home == "/a"
+    assert parse(["install", "--home", "/b", "--port", "8010"]).home == "/b"
+    assert parse(["upgrade", "--check", "--home", "/c"]).home == "/c"
+    assert parse(["--home", "/first", "status"]).home == "/first"  # not erased by the command's own default
+    assert getattr(parse(["status"]), "home", None) is None

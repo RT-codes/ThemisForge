@@ -173,12 +173,14 @@ def _log(line: str) -> None:
 
 
 def say(text: str) -> None:
-    print(f"\n==> {text}")
+    print(
+        f"\n==> {text}", flush=True
+    )  # flushed: output piped through `curl | sh` must keep its order with the programs it runs
     _log(f"== {text}")
 
 
 def info(text: str) -> None:
-    print(f"    {text}")
+    print(f"    {text}", flush=True)
     _log(f"   {text}")
 
 
@@ -942,6 +944,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="themis", description="Install, upgrade and look after Themis.")
     p.add_argument("--home", help=f"where Themis lives (default {default_home()})")
     sub = p.add_subparsers(dest="command", required=True)
+    # --home is accepted before the command (`themis --home X install`) and after it (`install.sh --home X`, which is how
+    # the one-line installer passes options on). SUPPRESS: when it is not given after the command, the first one stays.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--home", default=argparse.SUPPRESS, help="where Themis lives")
 
     def add_source(sp: argparse.ArgumentParser) -> None:
         sp.add_argument(
@@ -950,7 +956,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--version", help="a specific version, such as 0.2.0")
         sp.add_argument("--yes", "-y", action="store_true", help="answer yes to questions")
 
-    i = sub.add_parser("install", help="install Themis (safe to run again)")
+    i = sub.add_parser("install", parents=[common], help="install Themis (safe to run again)")
     add_source(i)
     i.add_argument(
         "--host",
@@ -967,22 +973,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not pull or build the agent image (offline, or you provide your own)",
     )
     u = sub.add_parser(
-        "upgrade", help="upgrade to the newest version, with a backup and a rollback if it fails"
+        "upgrade",
+        parents=[common],
+        help="upgrade to the newest version, with a backup and a rollback if it fails",
     )
     add_source(u)
     u.add_argument("--check", action="store_true", help="only say whether a newer version exists")
     u.add_argument("--skip-image", action="store_true", help="do not pull or build the agent image")
     for name in ("start", "stop", "restart", "logs"):
-        sub.add_parser(name, help=f"{name} the service")
-    sub.add_parser("status", help="what is installed and whether it is running")
-    sub.add_parser("run", help="run the server in the foreground")
+        sub.add_parser(name, parents=[common], help=f"{name} the service")
+    sub.add_parser("status", parents=[common], help="what is installed and whether it is running")
+    sub.add_parser("run", parents=[common], help="run the server in the foreground")
     d = sub.add_parser("doctor", help="check this machine and show how the last starts went", add_help=False)
     d.add_argument("rest", nargs=argparse.REMAINDER)
-    sub.add_parser("backup", help="save a copy of the database and settings")
-    r = sub.add_parser("restore", help="put a backup back (stop the service first)")
+    sub.add_parser("backup", parents=[common], help="save a copy of the database and settings")
+    r = sub.add_parser("restore", parents=[common], help="put a backup back (stop the service first)")
     r.add_argument("folder")
-    sub.add_parser("version", help="the installed version")
-    x = sub.add_parser("uninstall", help="remove Themis (your data is kept unless --purge)")
+    sub.add_parser("version", parents=[common], help="the installed version")
+    x = sub.add_parser("uninstall", parents=[common], help="remove Themis (your data is kept unless --purge)")
     x.add_argument("--purge", action="store_true")
     x.add_argument("--yes", "-y", action="store_true")
     return p

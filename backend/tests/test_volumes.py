@@ -406,9 +406,8 @@ def test_on_windows_a_path_cannot_use_names_that_mean_something_else_to_the_syst
             safe_path(tmp_path, bad, windows=True)
     for fine in ("notes.txt", "console.log", "dir/sub/file", "con-tent", "a b.txt"):
         assert safe_path(tmp_path, fine, windows=True).name == fine.split("/")[-1]
-    assert (
-        safe_path(tmp_path, "a\\b", windows=False).name == "a\\b"
-    )  # a backslash is an ordinary letter elsewhere
+    if os.name != "nt":  # on a real Windows a backslash always separates, whatever the flag says
+        assert safe_path(tmp_path, "a\\b", windows=False).name == "a\\b"  # an ordinary letter elsewhere
 
 
 def test_windows_folder_paths_are_approved_in_a_normal_form_and_a_whole_drive_is_not(monkeypatch):

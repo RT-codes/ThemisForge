@@ -631,3 +631,28 @@ def test_a_folder_added_to_the_users_path_is_quoted_for_powershell_and_only_once
     assert f"'{folder}'" in seen[0]  # an apostrophe in a name cannot end the quoted string
     monkeypatch.setattr(ctl, "powershell", lambda script, check=True: type("R", (), {"stdout": ""})())
     assert ctl.add_to_user_path(Path("C:/x")) is False  # it was already there
+
+
+def test_running_the_installer_again_reuses_the_release_that_is_there_even_if_it_cannot_be_replaced(
+    home, monkeypatch
+):
+    """On Windows a running Themis holds its files, so a repair run must not try to delete and unpack them again."""
+    bundle = make_bundle(home.root / "themisforge-1.2.3.tar.gz")
+    ran = []
+    monkeypatch.setattr(ctl, "find_uv", lambda: "uv")
+    monkeypatch.setattr(ctl, "run", lambda cmd, **k: (ran.append(cmd), (k["cwd"] / ".venv").mkdir())[0])
+    first = ctl.stage_release(home, bundle=bundle)
+    assert first == home.release_dir("1.2.3") and len(ran) == 1 and (first / "VERSION").is_file()
+    monkeypatch.setattr(
+        ctl.shutil, "rmtree", lambda *a, **k: pytest.fail("a release in use must not be deleted")
+    )
+    assert ctl.stage_release(home, bundle=bundle) == first and len(ran) == 1  # reused, nothing run
+
+
+def test_a_leftover_that_cannot_be_removed_says_to_stop_themis(home, monkeypatch):
+    bundle = make_bundle(home.root / "themisforge-2.0.0.tar.gz", version="2.0.0")
+    stuck = home.release_dir("2.0.0")
+    stuck.mkdir(parents=True)  # incomplete (no environment) and, as on Windows, impossible to delete
+    monkeypatch.setattr(ctl.shutil, "rmtree", lambda *a, **k: None)
+    with pytest.raises(ctl.CtlError, match="Stop Themis"):
+        ctl.stage_release(home, bundle=bundle)

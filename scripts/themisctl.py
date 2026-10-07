@@ -397,6 +397,11 @@ def safe_extract(bundle: Path, dest: Path) -> None:
                 target.chmod(m.mode & 0o777 or 0o644)
 
 
+def _is_complete(release_dir: Path) -> bool:
+    """A release that was fully unpacked and had its environment made (so it can be reused instead of replaced)."""
+    return (release_dir / "backend" / ".venv").is_dir() and (release_dir / "VERSION").is_file()
+
+
 def stage_release(
     home: Home, release: dict | None = None, *, bundle: Path | None = None, version: str | None = None
 ) -> Path:
@@ -408,7 +413,7 @@ def stage_release(
         version = release["version"]
         name = f"themisforge-{version}.tar.gz"
         target = home.release_dir(version)
-        if (target / "backend" / ".venv").is_dir() and (target / "VERSION").is_file():
+        if _is_complete(target):
             info(f"Themis {version} is already on this machine.")
             return target
         bundle = home.tmp / name
@@ -420,14 +425,23 @@ def stage_release(
     else:
         version = version or bundle.name.removeprefix("themisforge-").removesuffix(".tar.gz")
         target = home.release_dir(version)
+        if _is_complete(
+            target
+        ):  # running the installer again (a repair, or to restart) must not need the files replaced
+            info(f"Themis {version} is already on this machine.")
+            return target
     free_mb = shutil.disk_usage(home.root).free // 2**20
     if free_mb < MIN_FREE_MB:
         raise CtlError(
             f"Only {free_mb} MB are free here and Themis needs about {MIN_FREE_MB} MB. Free some space and run this again."
         )
     partial = target.with_name(target.name + ".partial")
-    for leftover in (partial, target):
+    for leftover in (partial, target):  # an interrupted earlier try
         shutil.rmtree(leftover, ignore_errors=True)
+        if (
+            leftover.exists()
+        ):  # Windows does not delete a program that is running: a running Themis holds its release
+            raise CtlError(f"{leftover} could not be removed. Stop Themis (themis stop) and run this again.")
     safe_extract(bundle, partial)
     info("installing its dependencies (this takes a minute the first time)")
     clean = {

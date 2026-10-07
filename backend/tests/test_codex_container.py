@@ -54,6 +54,17 @@ async def wait_for(client, status: str, timeout: float = 15) -> dict:
     return body
 
 
+async def removed(state: Path, count: int, timeout: float = 10) -> None:
+    """Waits until the stand-in docker has been asked to remove this many containers: that is the last thing a sign in
+    does, and it happens a moment after the status changes (a little longer on a slow system)."""
+    async with asyncio.timeout(timeout):
+        while (
+            not (state / "removed.txt").exists()
+            or (state / "removed.txt").read_text().count("themis-login-") < count
+        ):
+            await asyncio.sleep(0.05)
+
+
 def calls(state: Path) -> list[str]:
     return (state / "calls.log").read_text().splitlines()
 
@@ -74,10 +85,7 @@ async def test_the_one_time_sign_in_runs_in_a_container_and_stores_the_login_as_
     assert (
         done["connected"] and done["account"] == "ada@example.test"
     )  # the same encrypted login in the same place
-    # the container is removed just after the login is stored, so the last call may still be on its way (slower systems)
-    async with asyncio.timeout(10):
-        while not (fake_docker / "removed.txt").exists():
-            await asyncio.sleep(0.05)
+    await removed(fake_docker, 1)  # the container is removed just after the login is stored
     run, copy, remove = calls(fake_docker)[0], calls(fake_docker)[1], calls(fake_docker)[2]
     assert (
         run.startswith("run --name themis-login-")
@@ -99,11 +107,13 @@ async def test_the_container_is_removed_when_the_sign_in_is_cancelled_or_fails(
     await client.post("/api/codex/login")
     await client.delete("/api/codex/login")
     assert (await wait_for(client, "cancelled"))["login"]["status"] == "cancelled"
+    await removed(fake_docker, 1)
     assert (fake_docker / "removed.txt").read_text().startswith("themis-login-")
     monkeypatch.setenv("FAKE_CODEX_MODE", "fail")
     await client.post("/api/codex/login")
     failed = await wait_for(client, "failed")
     assert "did not finish" in failed["login"]["error"]
+    await removed(fake_docker, 2)
     assert (fake_docker / "removed.txt").read_text().count("themis-login-") == 2
 
 

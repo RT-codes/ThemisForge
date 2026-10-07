@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Where per-project workspaces and artifacts live (mounted into cells).
     data_dir: Path = BACKEND_DIR.parent / "data"
 
+    # Where the run trail (runs.jsonl: what happened at each start) and the rotating application log are written.
+    log_dir: Path = BACKEND_DIR.parent / "logs"
+
     # "docker" runs real containers, "fake" simulates a cell (development and tests).
     cell_backend: str = "docker"
     # The Codex CLI used for "Connect Codex". Set a full path if it is not on PATH (on Windows, e.g. codex.cmd).

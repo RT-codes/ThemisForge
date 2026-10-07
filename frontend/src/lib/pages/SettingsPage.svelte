@@ -61,6 +61,7 @@
 				host: host || 'local socket',
 				version: null,
 				os: null,
+				os_type: null,
 				cpus: null,
 				memory_mb: null,
 				error: e instanceof Error ? e.message : 'Check failed',
@@ -136,7 +137,7 @@
 	import SettingsSection from '$lib/components/SettingsSection.svelte'
 	import { fly } from 'svelte/transition'
 
-	const dockerSummary = $derived(docker ? (docker.ok ? `Connected, Docker ${docker.version}` : 'Not reachable') : 'Checking...')
+	const dockerSummary = $derived(docker ? (docker.ok ? `Connected, Docker ${docker.version}` : docker.version ? 'Needs attention' : 'Not reachable') : 'Checking...')
 	const cellSummary = $derived(form ? `${form.cell_image} · ${form.cell_cpus} CPU · ${form.cell_memory_mb} MB` : '')
 	const host = $derived(resources?.ok ? resources : null)
 	const fits = $derived(form ? cellsThatFit(form.budget, { cpus: form.cell_cpus, memory_mb: form.cell_memory_mb }) : 0)
@@ -231,7 +232,7 @@
 										{docker.host} · {docker.os} · {docker.cpus} CPUs · {gb(docker.memory_mb)} RAM
 									</p>
 								{:else}
-									<p class="font-medium">{docker.installed ? 'Docker is not reachable' : 'Docker is not installed'}</p>
+									<p class="font-medium">{docker.installed ? (docker.version ? 'Docker cannot be used' : 'Docker is not reachable') : 'Docker is not installed'}</p>
 									<p class="break-words text-muted-foreground">{docker.error}</p>
 									{#if docker.hint}<p class="mt-1">{docker.hint}</p>{/if}
 								{/if}
@@ -487,6 +488,10 @@
 					<Button type="submit" variant="secondary" class="justify-self-start sm:col-span-2">Add key</Button>
 				</form>
 				</SettingsSection>
+			{/if}
+			{#if system}
+				<!-- which build this is: what to quote in a bug report, and the doctor (themis doctor) prints the same -->
+				<p class="px-1 pt-1 text-xs text-muted-foreground">Themis {system.version}</p>
 			{/if}
 		</div>
 	{/if}

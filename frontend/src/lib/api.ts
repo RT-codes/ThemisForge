@@ -255,6 +255,7 @@ export interface DockerStatus {
   host: string
   version: string | null
   os: string | null
+  os_type: string | null // linux or windows: the kind of containers the engine runs
   cpus: number | null
   memory_mb: number | null
   error: string | null
@@ -286,6 +287,16 @@ export interface SystemStatus {
   pending_access_requests: number
   insecure_secret_key: boolean
   cell_backend: string
+  version: string
+  cells_ready: boolean // false while Docker cannot run cells: tasks wait instead of failing
+  problems: Problem[] // what the checks found; only filled in for administrators
+}
+
+export interface Problem {
+  id: string
+  level: 'ok' | 'warn' | 'fail'
+  message: string
+  hint: string
 }
 
 export interface AccessRequest {

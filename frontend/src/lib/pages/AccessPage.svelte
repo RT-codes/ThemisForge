@@ -7,7 +7,7 @@
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
 	import { dateTime, relative } from '$lib/format'
-	import { inbox } from '$lib/inbox.svelte'
+	import { system } from '$lib/system.svelte'
 	import CheckIcon from '@lucide/svelte/icons/check'
 	import CopyIcon from '@lucide/svelte/icons/copy'
 	import { onMount } from 'svelte'
@@ -34,7 +34,7 @@
 	async function load() {
 		try {
 			;[requests, invites] = await Promise.all([api.accessRequests(), api.invites()])
-			inbox.refresh()
+			system.refresh()
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load'

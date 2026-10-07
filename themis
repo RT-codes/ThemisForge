@@ -86,7 +86,8 @@ case "${1:-}" in
     exec "$ROOT/install.sh" "$@"
     ;;
   doctor)
-    cd "$ROOT/backend" && uv sync --quiet && exec uv run python -m app.doctor
+    shift
+    cd "$ROOT/backend" && uv sync --quiet && exec uv run python -m app.doctor "$@"
     ;;
   service)
     case "${2:-}" in

@@ -16,7 +16,7 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings'
 	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 	import UsersIcon from '@lucide/svelte/icons/users'
-	import { inbox } from '$lib/inbox.svelte'
+	import { system } from '$lib/system.svelte'
 	import { restartPulse } from '$lib/pulse'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
@@ -161,8 +161,8 @@
 							<a href="/access" {...props}><UsersIcon /><span>Access</span></a>
 						{/snippet}
 					</Sidebar.MenuButton>
-					{#if inbox.pendingAccess > 0}
-						<Sidebar.MenuBadge>{inbox.pendingAccess}</Sidebar.MenuBadge>
+					{#if system.pendingAccess > 0}
+						<Sidebar.MenuBadge>{system.pendingAccess}</Sidebar.MenuBadge>
 					{/if}
 				</Sidebar.MenuItem>
 			{/if}

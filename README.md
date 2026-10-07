@@ -25,7 +25,7 @@ The box is the safety fence, so agents work inside it without stopping to ask pe
 
 ## Install
 
-**Linux (Ubuntu or Debian).** You need a computer or virtual machine you control, with internet and a normal user account that has admin (`sudo`) rights. The installer adds what is missing, including Docker.
+**Linux (Ubuntu or Debian).** You need a computer or virtual machine you control, with internet and a normal user account that has admin (`sudo`) rights. The installer adds what is missing, including Docker (Docker Engine 24 or newer is required, and Themis checks it every time it starts).
 
 ```bash
 git clone https://github.com/RT-codes/ThemisForge.git

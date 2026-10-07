@@ -115,6 +115,7 @@ class Scheduler:
         self._wake = asyncio.Event()
         self._last_prune = float("-inf")
         self.workflows = None  # the WorkflowRunner, set by the app; plays the workflows of tasks that run one
+        self.cells_ready = True  # False while Docker cannot run cells: set by the app's preflight check
 
     # lifecycle
 
@@ -223,11 +224,18 @@ class Scheduler:
             )
             order = (Task.next_run_at.asc().nulls_first(), Task.id)
             budget = cfg.budget.as_cost()
-            waiting = (
-                await s.scalars(
-                    select(Task).where(*ready, Task.harness != "workflow").order_by(*order).limit(MAX_WAITING)
-                )
-            ).all()
+            waiting = []
+            if (
+                self.cells_ready
+            ):  # without Docker nothing can start, so tasks stay READY instead of failing (see preflight.py)
+                waiting = (
+                    await s.scalars(
+                        select(Task)
+                        .where(*ready, Task.harness != "workflow")
+                        .order_by(*order)
+                        .limit(MAX_WAITING)
+                    )
+                ).all()
             playing_workflows = []
             if playing < MAX_PLAYING:  # workflows only have a cap, since they wait on other tasks' cells
                 playing_workflows = (

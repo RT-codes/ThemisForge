@@ -17,6 +17,7 @@ from ..deps import AdminUser, CurrentUser, SessionDep
 from ..docker_check import check_docker
 from ..models import AccessRequest, Agent, McpServer, Secret
 from ..schemas import SecretIn, SecretOut
+from ..version import build_info
 
 router = APIRouter(tags=["system"])
 
@@ -56,11 +57,17 @@ class SystemStatus(BaseModel):
     pending_access_requests: int  # only filled in for administrators
     insecure_secret_key: bool
     cell_backend: str
+    version: str
+    cells_ready: bool  # False while Docker cannot run cells: tasks wait instead of failing
+    problems: list[
+        dict[str, str]
+    ]  # what the startup and background checks found; only filled in for administrators
 
 
 @router.get("/system/status", response_model=SystemStatus)
 async def system_status(request: Request, session: SessionDep, user: CurrentUser) -> SystemStatus:
     scheduler = request.app.state.scheduler
+    preflight = request.app.state.preflight
     cfg = await load_settings(session)
     pending = 0
     if user.is_admin:
@@ -83,6 +90,9 @@ async def system_status(request: Request, session: SessionDep, user: CurrentUser
         pending_access_requests=pending or 0,
         insecure_secret_key=boot_settings.secret_key == DEFAULT_SECRET_KEY,
         cell_backend=boot_settings.cell_backend,
+        version=build_info().version,
+        cells_ready=preflight.cells_ready,
+        problems=[c.to_dict() for c in preflight.problems] if user.is_admin else [],
     )
 
 
@@ -139,6 +149,7 @@ async def put_settings(body: AppSettings, request: Request, session: SessionDep,
             )
     saved = await save_settings(session, body)
     request.app.state.scheduler.wake()  # e.g. a raised budget applies immediately
+    request.app.state.preflight.wake()  # and a new Docker host is checked right away
     return saved
 
 

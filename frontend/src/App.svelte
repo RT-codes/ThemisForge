@@ -3,6 +3,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
 	import AppSidebar from '$lib/components/AppSidebar.svelte'
 	import InviteScreen from '$lib/components/InviteScreen.svelte'
+	import PausedBanner from '$lib/components/PausedBanner.svelte'
 	import LoginScreen from '$lib/components/LoginScreen.svelte'
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import { Separator } from '$lib/components/ui/separator/index.js'
@@ -14,7 +15,7 @@
 	import WorkflowResume from '$lib/pages/WorkflowResume.svelte'
 	import ProjectPage from '$lib/pages/ProjectPage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
-	import { inbox } from '$lib/inbox.svelte'
+	import { system } from '$lib/system.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { onMount } from 'svelte'
@@ -33,7 +34,7 @@
 		if (!auth.user) return
 		const tick = () => {
 			projects.refresh().catch(() => {})
-			if (auth.user?.is_admin) inbox.refresh()
+			system.refresh()
 		}
 		tick()
 		const timer = setInterval(() => !document.hidden && tick(), 10_000)
@@ -92,6 +93,7 @@
 					{/each}
 				</nav>
 			</header>
+			<PausedBanner />
 			<div class="forge-glow flex min-h-0 flex-1 flex-col">
 				{#key pageKey}
 				<div class="flex min-h-0 flex-1 flex-col" in:fade={{ duration: 350 }}>

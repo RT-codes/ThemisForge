@@ -46,10 +46,35 @@ The installer is safe to run again at any time. It:
 | `./themis service status` | Shows whether the service is running. |
 | `./themis service logs` | Follows the server log. |
 | `./themis service restart` | Restarts it (also `start` and `stop`). |
-| `./themis doctor` | Checks Python, the secret key, the data folder, the database, the build and Docker. |
+| `./themis doctor` | Checks Python, the secret key, the data folder, the database, the build, Docker and the cell image, then lists how the last few starts went. |
+| `./themis doctor --report` | The same, and writes `themis-report-<time>.txt` to attach to a bug report. |
 
-`./themis doctor` prints a tick, a warning or a cross for each check, and exits with an error when something needs
-attention. It is the first thing to run when something seems off.
+`./themis doctor` prints a tick, a warning or a cross for each check, with a hint for how to fix it, and exits with an
+error when something needs attention. It is the first thing to run when something seems off.
+
+## Docker, and what happens when it is not working
+
+Cells are Docker containers, so Themis needs **Docker Engine 24 or newer** (Docker Desktop on Windows) running **Linux
+containers**. The same checks run at every start and again in the background (every few minutes, and every few seconds
+while something is wrong), so nobody has to keep a machine the way it was at install time.
+
+A problem never stops Themis from starting. While Docker cannot run cells:
+
+- every page shows a banner, and administrators are told what is wrong and where to fix it (Settings, Docker),
+- **tasks wait instead of failing**: they stay Ready and start by themselves as soon as Docker works again,
+- everything else (browsing, editing, files) keeps working.
+
+## When something goes wrong
+
+Two files in the `logs/` folder next to the install (`THEMIS_LOG_DIR` moves it) keep a trail:
+
+- `logs/runs.jsonl`: one line per event for each of the last 20 starts: how it started, what the checks found, and how it
+  ended. A start with no "stopped" line ended without a clean shutdown (a crash, a kill or a power cut). `./themis doctor`
+  shows the last few in plain words, including the error of one that failed to start.
+- `logs/themis.log`: the application log, rotated (3 files of 2 MB).
+
+Nothing secret is written to either. `./themis doctor --report` bundles the checks, the last runs and the end of the log
+into one file for a bug report.
 
 ## Versions
 
@@ -75,6 +100,7 @@ Operator settings live in `backend/.env`. The file is private to your user, and 
 | `THEMIS_ACCESS_TOKEN_MINUTES` | `10080` | Session lifetime (7 days). |
 | `THEMIS_SCHEDULER_ENABLED` | `true` | Turn the scheduler off, for example for a read-only copy. |
 | `THEMIS_SCHEDULER_INTERVAL_SECONDS` | `3` | How often the scheduler looks for due tasks. |
+| `THEMIS_LOG_DIR` | `logs/` | Where the run trail and the application log are written. |
 | `THEMIS_CELL_BACKEND` | `docker` | `fake` simulates cells without Docker (development). |
 
 Changes take effect after `./themis service restart`. Everything else (Docker host, cell defaults, time zone, keys) is

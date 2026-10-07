@@ -1,8 +1,18 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 from dataclasses import asdict, dataclass
+
+# The oldest Docker Engine Themis is asked to work with: older ones are out of support upstream. Docker Desktop reports
+# the version of the engine inside it, so the same number applies there.
+MIN_DOCKER = (24, 0)
+MIN_DOCKER_TEXT = ".".join(str(n) for n in MIN_DOCKER)
+INSTALL_LINKS = (
+    "Docker Desktop (Windows): https://docs.docker.com/desktop/setup/install/windows-install/ - "
+    "Docker Engine (Linux): https://docs.docker.com/engine/install/"
+)
 
 
 @dataclass
@@ -12,6 +22,7 @@ class DockerStatus:
     host: str  # what we are pointed at ("local socket" when no override is set)
     version: str | None = None
     os: str | None = None
+    os_type: str | None = None  # "linux" or "windows": which kind of containers the engine runs
     cpus: int | None = None
     memory_mb: int | None = None
     error: str | None = None
@@ -41,12 +52,18 @@ async def run_command(args: list[str], env: dict[str, str], timeout: float) -> t
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
 
 
+def parse_version(text: str | None) -> tuple[int, ...] | None:
+    """(27, 1, 0) from "27.1.0", "24.0.7-ce" or "25.0.0-rc.1"; None when it does not start with numbers."""
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", (text or "").strip())
+    return tuple(int(n) for n in m.groups() if n is not None) if m else None
+
+
 def _hint(error: str) -> str | None:
     low = error.lower()
     if "permission denied" in low:
         return "The Themis user cannot use Docker. Add it to the 'docker' group and restart the service."
     if "cannot connect" in low or "is the docker daemon running" in low or "no such file" in low:
-        return "The Docker daemon is not reachable. Start it (systemctl start docker) or fix the Docker host."
+        return "The Docker daemon is not reachable. Start Docker (open Docker Desktop, or run: sudo systemctl start docker) or fix the Docker host."
     return None
 
 
@@ -58,7 +75,7 @@ async def check_docker(host: str = "") -> DockerStatus:
             installed=False,
             host=label,
             error="The docker CLI was not found on this machine.",
-            hint="Run ./themis install, or install Docker Engine and make sure 'docker' is on the PATH.",
+            hint=f"Install Docker and make sure 'docker' is on the PATH. {INSTALL_LINKS}",
         )
     code, out, err = await run_command(["docker", "info", "--format", "{{json .}}"], docker_env(host), 15)
     if code != 0:
@@ -69,12 +86,25 @@ async def check_docker(host: str = "") -> DockerStatus:
     except json.JSONDecodeError:
         return DockerStatus(ok=False, installed=True, host=label, error="Unexpected output from docker info")
     memory = info.get("MemTotal")
-    return DockerStatus(
+    status = DockerStatus(
         ok=True,
         installed=True,
         host=label,
         version=info.get("ServerVersion"),
         os=info.get("OperatingSystem"),
+        os_type=info.get("OSType"),
         cpus=info.get("NCPU"),
         memory_mb=int(memory / 1024 / 1024) if memory else None,
     )
+    # Reachable is not enough: the engine must run Linux containers (cells are Linux), and be recent enough.
+    if status.os_type and status.os_type != "linux":
+        status.ok = False
+        status.error = f"Docker is set to run {status.os_type} containers, and cells are Linux containers."
+        status.hint = "In Docker Desktop, right-click its tray icon and choose 'Switch to Linux containers'."
+    elif (found := parse_version(status.version)) is not None and found < MIN_DOCKER:
+        status.ok = False
+        status.error = (
+            f"Docker {status.version} is older than {MIN_DOCKER_TEXT}, the oldest version Themis supports."
+        )
+        status.hint = f"Update Docker. {INSTALL_LINKS}"
+    return status

@@ -52,7 +52,7 @@ irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1
 
 (`irm` is a PowerShell command, so it does not work in Command Prompt. From Command Prompt use `powershell -NoProfile -Command "irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex"`.)
 
-It needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers (the installer checks, and offers to install it with winget if it is missing), installs for your own account without administrator rights, and starts Themis whenever you log in. Windows support is new: it is tested automatically, but on far fewer real computers than Linux. **macOS** is on the list after that.
+It needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers (the installer checks, and offers to install it with winget if it is missing). Docker Desktop in turn needs **hardware virtualization** turned on in the computer's BIOS: most PCs have it on, and if yours does not, the installer tells you before it installs anything and shows how to switch it on (a one-time setting). Themis installs for your own account without administrator rights, and starts Themis whenever you log in. Windows support is new: it is tested automatically, but on far fewer real computers than Linux. **macOS** is on the list after that.
 
 ## Once it is running
 

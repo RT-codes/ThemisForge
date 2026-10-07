@@ -727,3 +727,60 @@ def test_a_docker_command_in_a_short_path_does_not_break_the_search_for_docker_d
     monkeypatch.delenv("ProgramFiles", raising=False)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     assert ctl.find_docker_desktop() is None  # no folder above it to look in, and no error
+
+
+def powershell_says(monkeypatch, text, *, fail=False):
+    def fake(script, check=True):
+        if fail:
+            raise ctl.CtlError("powershell failed")
+        return type("R", (), {"stdout": text})()
+
+    monkeypatch.setattr(ctl, "powershell", fake)
+
+
+def test_virtualization_that_is_off_stops_the_install_before_anything_is_installed(windows, monkeypatch):
+    powershell_says(monkeypatch, "False False\n")
+    assert ctl.windows_virtualization() is False
+    with pytest.raises(ctl.CtlError) as stop:
+        ctl.check_windows_virtualization()
+    message = str(stop.value)
+    assert "turned off in this computer's BIOS" in message and "SVM Mode" in message and "VT-x" in message
+    assert "nothing has been installed yet" in message and "Virtualization: Enabled" in message
+
+
+def test_virtualization_that_is_on_or_that_windows_already_runs_on_lets_the_install_go_on(
+    windows, monkeypatch
+):
+    for answer in (
+        "True False",
+        "False True",
+        "True True",
+    ):  # a running hypervisor counts even if the firmware flag reads False
+        powershell_says(monkeypatch, answer)
+        assert ctl.windows_virtualization() is True
+        ctl.check_windows_virtualization()
+
+
+def test_a_virtualization_check_that_cannot_be_answered_never_blocks_the_install(windows, monkeypatch):
+    for answer in ("", "garbage", "True", "Yes No"):
+        powershell_says(monkeypatch, answer)
+        assert ctl.windows_virtualization() is None
+        ctl.check_windows_virtualization()
+    powershell_says(monkeypatch, "", fail=True)
+    assert ctl.windows_virtualization() is None
+
+
+def test_the_install_checks_virtualization_first_on_windows(windows, monkeypatch):
+    order = []
+    monkeypatch.setattr(ctl, "check_platform", lambda: order.append("platform"))
+    monkeypatch.setattr(
+        ctl,
+        "check_windows_virtualization",
+        lambda: (order.append("virtualization"), (_ for _ in ()).throw(ctl.CtlError("stop")))[0],
+    )
+    monkeypatch.setattr(
+        ctl, "stage_release", lambda *a, **k: pytest.fail("nothing may be downloaded or installed first")
+    )
+    with pytest.raises(ctl.CtlError, match="stop"):
+        ctl.cmd_install(ctl.build_parser().parse_args(["install", "--yes"]), windows)
+    assert order == ["platform", "virtualization"]

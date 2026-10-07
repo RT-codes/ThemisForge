@@ -71,6 +71,9 @@ With options, which go to `themis install` (`-Port 8080`, `-Yes`, `-NoService`, 
 
 It works like the Linux installer (everything above), with these differences:
 
+- **Hardware virtualization** must be on in the computer's BIOS (UEFI), because Docker Desktop runs Linux containers inside a
+  small virtual machine. Most PCs have it on; some desktops ship with it off. The installer checks first and, if it is off,
+  stops before installing anything and says how to switch it on (see Troubleshooting).
 - **Docker Desktop** with **Linux containers** (its default) is required. If it is missing, the installer offers to install it
   with `winget`; Windows asks for permission, and Docker Desktop may need a restart and a first start of its own, so the
   installer then stops and you run it again. If Docker Desktop is installed but not running, the installer starts it and waits.

@@ -9,6 +9,20 @@ summary: Common problems and how to fix them.
 Start with `themis doctor`. It checks the most common causes and tells you what to fix, and shows how the last starts went.
 To ask for help, `themis doctor --report` writes a file with the details (no keys or passwords) that you can attach.
 
+## Windows: "Virtualization is disabled in firmware"
+
+Docker Desktop runs Linux containers inside a small virtual machine, which needs **hardware virtualization** turned on in
+the computer's BIOS (UEFI). It is a one-time setting. (It is not the same as "enabling WSL": Windows features can be added
+by the installer, but this one only the BIOS can switch.)
+
+1. Restart the computer and open the BIOS: press **Del** or **F2** (sometimes F10 or F12) while it starts.
+2. Find **Intel Virtualization Technology** (also called *VT-x*) on an Intel PC, or **SVM Mode** on an AMD PC. It is usually
+   under *Advanced*, *CPU Configuration* (or *Overclocking*). Set it to **Enabled**.
+3. Save and exit. To check afterwards: Task Manager, *Performance*, *CPU* says **Virtualization: Enabled**.
+4. Start Docker Desktop and run the Themis installer again.
+
+On a managed work computer, ask the IT administrator first: the BIOS may be locked.
+
 ## Windows: Docker Desktop is not ready
 
 Themis needs Docker Desktop **running** with **Linux containers**. If `themis doctor` or the banner in the app says Docker

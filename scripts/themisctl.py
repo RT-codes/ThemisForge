@@ -825,6 +825,42 @@ def in_docker_group() -> bool:
 
 DOCKER_DESKTOP_URL = "https://docs.docker.com/desktop/setup/install/windows-install/"
 
+VIRTUALIZATION_HELP = (
+    "Hardware virtualization is turned off in this computer's BIOS (UEFI), and Docker Desktop, which Themis needs to run\n"
+    "    agents, cannot work without it. It is a one-time setting, and nothing has been installed yet:\n"
+    "      1. Restart the computer and open its BIOS: press Del or F2 (sometimes F10 or F12) while it starts.\n"
+    "      2. Find 'Intel Virtualization Technology' (also called VT-x) on an Intel PC, or 'SVM Mode' on an AMD PC. It is usually\n"
+    "         under Advanced, CPU Configuration (or Overclocking). Set it to Enabled.\n"
+    "      3. Save and exit. To check it afterwards: Task Manager, Performance, CPU shows 'Virtualization: Enabled'.\n"
+    "    Then run this installer again. On a work computer, ask the IT administrator before changing the BIOS."
+)
+
+
+def windows_virtualization() -> bool | None:
+    """Is hardware virtualization available? True (on in the BIOS, or Windows already runs on a hypervisor), False (off:
+    Docker Desktop cannot start), or None when this could not be found out (then nothing is blocked)."""
+    try:
+        out = powershell(
+            "$p = Get-CimInstance Win32_Processor | Select-Object -First 1; $s = Get-CimInstance Win32_ComputerSystem; "
+            "'{0} {1}' -f $p.VirtualizationFirmwareEnabled, $s.HypervisorPresent",
+            check=False,
+        ).stdout.split()
+    except (OSError, CtlError):
+        return None
+    if len(out) != 2 or not all(v in ("True", "False") for v in out):
+        return None
+    firmware, hypervisor = (v == "True" for v in out)
+    return (
+        firmware or hypervisor
+    )  # a hypervisor that is running means virtualization works, whatever the firmware flag says
+
+
+def check_windows_virtualization() -> None:
+    """Stops before anything is installed when Docker Desktop could never run here: it is better to learn that now than after
+    installing Docker and restarting, which is when Docker Desktop itself would say it."""
+    if windows_virtualization() is False:
+        raise CtlError(VIRTUALIZATION_HELP)
+
 
 def install_docker_desktop(*, yes: bool) -> None:
     """Windows: Docker Desktop cannot be installed silently or quickly (it needs an administrator prompt, WSL 2, a first
@@ -1067,6 +1103,8 @@ def check_platform() -> None:
 
 def cmd_install(args: argparse.Namespace, home: Home) -> None:
     check_platform()
+    if WINDOWS:
+        check_windows_virtualization()
     home.make_dirs()
     port = args.port
     if port_in_use(port) and not (home.current_version() and health(port)):

@@ -85,6 +85,7 @@ def test_themisforges_own_data_and_configuration_can_never_be_mounted(tmp_path, 
             host_target(str(protected), everything + roots(tmp_path))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the Windows version of this rule is tested below")
 def test_approving_the_whole_disk_or_a_vague_path_is_refused():
     for bad in ("/", "relative", "/home/me:x"):
         with pytest.raises(ValueError):
@@ -97,8 +98,9 @@ async def test_only_real_folders_can_be_approved(client, notes):
     r = await client.put("/api/settings", json={"mount_roots": [{"path": str(notes / "nope")}]})
     assert r.status_code == 422 and "not a folder" in r.text
     await approve(client, notes)
+    # kept in a normal form: on Windows, with forward slashes (C:/Users/me/notes)
     assert (await client.get("/api/settings")).json()["mount_roots"] == [
-        {"path": str(notes), "allow_write": False}
+        {"path": str(notes).replace("\\", "/"), "allow_write": False}
     ]
 
 

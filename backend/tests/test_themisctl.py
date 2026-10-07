@@ -527,6 +527,9 @@ def test_the_installer_refuses_an_elevated_window_on_windows(windows, monkeypatc
     monkeypatch.setattr(ctl, "is_elevated", lambda: True)
     with pytest.raises(ctl.CtlError, match="not as administrator"):
         ctl.check_platform()
+    monkeypatch.setenv("THEMIS_ALLOW_ELEVATED", "1")  # the way around for CI runners and containers
+    ctl.check_platform()
+    monkeypatch.delenv("THEMIS_ALLOW_ELEVATED")
     monkeypatch.setattr(ctl, "is_elevated", lambda: False)
     ctl.check_platform()  # a normal window is fine
     monkeypatch.setattr(ctl.platform, "machine", lambda: "riscv64")
@@ -624,8 +627,7 @@ def test_a_folder_added_to_the_users_path_is_quoted_for_powershell_and_only_once
         lambda script, check=True: seen.append(script) or type("R", (), {"stdout": "added\n"})(),
     )
     assert ctl.add_to_user_path(Path("C:/Users/O'Brien/AppData/Local/Themis/bin")) is True
-    assert (
-        "'C:/Users/O''Brien/AppData/Local/Themis/bin'" in seen[0]
-    )  # an apostrophe in a name cannot end the quoted string
+    folder = str(Path("C:/Users/O'Brien/AppData/Local/Themis/bin")).replace("'", "''")
+    assert f"'{folder}'" in seen[0]  # an apostrophe in a name cannot end the quoted string
     monkeypatch.setattr(ctl, "powershell", lambda script, check=True: type("R", (), {"stdout": ""})())
     assert ctl.add_to_user_path(Path("C:/x")) is False  # it was already there

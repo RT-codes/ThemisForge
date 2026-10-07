@@ -100,6 +100,7 @@ jobs:
     env:
       # GitHub's Windows runners run Windows containers only, so cells are simulated here; everything else is the real thing
       THEMIS_CELL_BACKEND: fake
+      THEMIS_ALLOW_ELEVATED: "1" # a CI runner is an administrator; a real install must not be
       PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4

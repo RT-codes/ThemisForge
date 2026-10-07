@@ -74,6 +74,10 @@ async def test_the_one_time_sign_in_runs_in_a_container_and_stores_the_login_as_
     assert (
         done["connected"] and done["account"] == "ada@example.test"
     )  # the same encrypted login in the same place
+    # the container is removed just after the login is stored, so the last call may still be on its way (slower systems)
+    async with asyncio.timeout(10):
+        while not (fake_docker / "removed.txt").exists():
+            await asyncio.sleep(0.05)
     run, copy, remove = calls(fake_docker)[0], calls(fake_docker)[1], calls(fake_docker)[2]
     assert (
         run.startswith("run --name themis-login-")

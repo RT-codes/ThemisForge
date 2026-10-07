@@ -997,14 +997,17 @@ def check_platform() -> None:
         raise CtlError(
             f"The processor type {platform.machine()} is not supported (Intel/AMD or ARM 64-bit are)."
         )
+    allow = bool(
+        os.environ.get("THEMIS_ALLOW_ELEVATED")
+    )  # for CI runners and containers, where everything is administrator
     if WINDOWS:
-        if is_elevated():
+        if is_elevated() and not allow:
             raise CtlError(
                 "Run this in a normal PowerShell window, not as administrator: Themis installs for your own account, "
                 "and an elevated install would end up in the administrator's account."
             )
         return
-    if os.geteuid() == 0:
+    if os.geteuid() == 0 and not allow:
         raise CtlError(
             "Run this as your normal user, not root: the service runs as you, and sudo is used only where needed."
         )

@@ -73,7 +73,8 @@ It works like the Linux installer (everything above), with these differences:
 - It installs **for your own account, without administrator rights**, into `%LOCALAPPDATA%\Themis` (set another with
   `-ThemisHome`). There is no `sudo` and no docker group.
 - Instead of a system service it creates a **scheduled task** named `Themis` that starts Themis when **you log in** (in your
-  own session, where Docker Desktop also runs) and starts it again a minute after a crash. If Docker Desktop is not ready yet
+  own session, where Docker Desktop also runs) and starts it again a minute after a crash. It runs **without a window**:
+  there is nothing to keep open (and nothing to close by accident). Stop it with `themis stop`, start it with `themis start`. If Docker Desktop is not ready yet
   when Themis starts, Themis shows "runs are paused" and carries on by itself once it is.
 - The `themis` command is added to your `PATH`: open a new PowerShell window to use it. `themis logs` follows
   `logs\themis.log` in the home folder, and `logs\service.log` has the console output of the last start.
@@ -90,6 +91,7 @@ The installer puts a `themis` command in `~/.local/bin` (add that folder to your
 | Command | Does |
 | --- | --- |
 | `themis status` | What is installed, whether the service runs, and whether it answers. |
+| `themis open` | Opens Themis in your browser. |
 | `themis logs` | Follows the server log. |
 | `themis restart` | Restarts the service (also `start` and `stop`). |
 | `themis run` | Runs the server in the foreground (what the service runs). |

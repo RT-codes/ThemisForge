@@ -441,8 +441,8 @@ def test_the_command_runs_the_current_release_and_says_so_when_nothing_is_instal
 def test_the_scheduled_task_runs_for_this_user_at_logon_in_their_session_and_restarts_itself(windows):
     import xml.etree.ElementTree as ET
 
-    launcher = windows.root / "bin" / "themis-run.cmd"
-    xml = ctl.windows_task_xml(launcher, "PC\\Ro&wan <dev>")  # characters that must be escaped
+    runner = windows.root / "bin" / "themis-run.vbs"
+    xml = ctl.windows_task_xml(runner, "PC\\Ro&wan <dev>")  # characters that must be escaped
     ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
     root = ET.fromstring(xml.split("?>", 1)[1])  # well formed, once escaped
     assert root.find("t:Triggers/t:LogonTrigger/t:UserId", ns).text == "PC\\Ro&wan <dev>"
@@ -454,7 +454,19 @@ def test_the_scheduled_task_runs_for_this_user_at_logon_in_their_session_and_res
     )  # no administrator rights
     assert root.find("t:Settings/t:ExecutionTimeLimit", ns).text == "PT0S"  # a server has no time limit
     assert root.find("t:Settings/t:RestartOnFailure/t:Count", ns).text == "999"
-    assert root.find("t:Actions/t:Exec/t:Command", ns).text == str(launcher)
+    # no console window: Windows Script Host starts the hidden runner (a .cmd started by the task opens a visible window)
+    assert root.find("t:Actions/t:Exec/t:Command", ns).text == "wscript.exe"
+    assert root.find("t:Actions/t:Exec/t:Arguments", ns).text == f'//B //Nologo "{runner}"'
+
+
+def test_the_runner_starts_the_launcher_with_its_window_hidden_and_waits_for_it(windows):
+    launcher = windows.root / "bin" / "themis-run.cmd"
+    text = ctl.windows_hidden_runner(launcher)
+    assert text.count("\r\n") == 4 and "\n" not in text.replace("\r\n", "")  # real script line endings
+    assert (
+        f'shell.Run("""{launcher}""", 0, True)' in text
+    )  # style 0: hidden; True: wait, so the task stays "running" with Themis
+    assert text.rstrip().endswith("WScript.Quit code")  # the launcher's exit code reaches the task
 
 
 def test_the_current_release_on_windows_is_named_by_a_pointer_file(windows):
@@ -656,3 +668,62 @@ def test_a_leftover_that_cannot_be_removed_says_to_stop_themis(home, monkeypatch
     monkeypatch.setattr(ctl.shutil, "rmtree", lambda *a, **k: None)
     with pytest.raises(ctl.CtlError, match="Stop Themis"):
         ctl.stage_release(home, bundle=bundle)
+
+
+def test_the_installer_always_says_when_it_is_waiting_for_docker_desktop(windows, monkeypatch, capsys):
+    """A silent wait looked like a frozen installer: it must say what it waits for, start Docker Desktop when it can,
+    and report progress."""
+    clock = {"now": 0.0}
+    monkeypatch.setattr(ctl.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(ctl.time, "sleep", lambda s: clock.__setitem__("now", clock["now"] + s))
+    answers = iter(
+        [docker_report(installed=True, version=None)] * 6
+        + [docker_report(ok=True, installed=True, version="29.7.2")]
+    )
+    monkeypatch.setattr(ctl, "doctor_json", lambda *a, **k: next(answers))
+    started = []
+    exe = windows.root / "Docker Desktop.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    monkeypatch.setattr(ctl, "find_docker_desktop", lambda: exe)
+    monkeypatch.setattr(ctl.subprocess, "Popen", lambda cmd, **k: started.append(cmd))
+    report = ctl.wait_for_docker_desktop(windows, windows.root, seconds=120)
+    out = capsys.readouterr().out
+    assert ctl.docker_problem(report) is None and started == [[str(exe)]]
+    assert (
+        "installed, but it is not running" in out
+        and "starting it for you" in out
+        and "still waiting for Docker" in out
+    )
+    assert "Start Docker Desktop when you sign in" in out  # the tip that stops it happening after a restart
+
+
+def test_when_docker_desktop_cannot_be_found_the_person_is_told_to_start_it(windows, monkeypatch, capsys):
+    monkeypatch.setattr(ctl, "find_docker_desktop", lambda: None)
+    monkeypatch.setattr(
+        ctl, "doctor_json", lambda *a, **k: docker_report(ok=True, installed=True, version="29.7.2")
+    )
+    ctl.wait_for_docker_desktop(windows, windows.root)
+    assert "start it from the Start menu" in capsys.readouterr().out
+
+
+def test_docker_desktop_is_found_next_to_its_command_or_in_the_usual_folders(windows, monkeypatch, tmp_path):
+    install = tmp_path / "Docker" / "Docker"
+    (install / "resources" / "bin").mkdir(parents=True)
+    (install / "Docker Desktop.exe").write_text("")
+    (install / "resources" / "bin" / "docker.exe").write_text("")
+    monkeypatch.setattr(ctl.shutil, "which", lambda name: str(install / "resources" / "bin" / "docker.exe"))
+    assert ctl.find_docker_desktop() == install / "Docker Desktop.exe"
+    monkeypatch.setattr(ctl.shutil, "which", lambda name: None)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    assert ctl.find_docker_desktop() == install / "Docker Desktop.exe"
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "nowhere"))
+    assert ctl.find_docker_desktop() is None
+
+
+def test_a_docker_command_in_a_short_path_does_not_break_the_search_for_docker_desktop(monkeypatch):
+    monkeypatch.setattr(ctl.shutil, "which", lambda name: "docker.exe")
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    assert ctl.find_docker_desktop() is None  # no folder above it to look in, and no error

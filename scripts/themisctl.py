@@ -573,8 +573,21 @@ def windows_launcher(home: Home) -> str:
     )
 
 
-def windows_task_xml(launcher: Path, user: str) -> str:
-    """The task: at this user's logon, in their session, no time limit, restarted a minute after it fails."""
+def windows_hidden_runner(launcher: Path) -> str:
+    """themis-run.vbs: starts the launcher with no window at all. A scheduled task that runs a .cmd in the user's own session
+    opens a console window for it, and closing that window by accident would stop Themis. Windows Script Host can run a
+    program with its window hidden (style 0) and wait for it, so the task stays "running" while Themis does."""
+    return (
+        "' Written by `themis install`: runs themis-run.cmd without a window.\r\n"
+        'Set shell = CreateObject("WScript.Shell")\r\n'
+        f'code = shell.Run("""{launcher}""", 0, True)\r\n'
+        "WScript.Quit code\r\n"
+    )
+
+
+def windows_task_xml(runner: Path, user: str) -> str:
+    """The task: at this user's logon, in their session, no time limit, restarted a minute after it fails. It runs the
+    hidden runner (themis-run.vbs) through Windows Script Host."""
     from xml.sax.saxutils import escape
 
     return f"""<?xml version="1.0" encoding="UTF-16"?>
@@ -599,7 +612,7 @@ def windows_task_xml(launcher: Path, user: str) -> str:
     <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
   </Settings>
   <Actions Context="Author">
-    <Exec><Command>{escape(str(launcher))}</Command></Exec>
+    <Exec><Command>wscript.exe</Command><Arguments>//B //Nologo "{escape(str(runner))}"</Arguments></Exec>
   </Actions>
 </Task>
 """
@@ -709,9 +722,11 @@ def install_service(home: Home) -> None:
         launcher = home.root / "bin" / "themis-run.cmd"
         launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_bytes(windows_launcher(home).encode("utf-8"))
+        runner = launcher.with_suffix(".vbs")
+        runner.write_bytes(windows_hidden_runner(launcher).encode("utf-8"))
         user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}".strip("\\")
         xml = home.tmp / "themis-task.xml"
-        xml.write_bytes(windows_task_xml(launcher, user).encode("utf-16"))  # Task Scheduler wants UTF-16
+        xml.write_bytes(windows_task_xml(runner, user).encode("utf-16"))  # Task Scheduler wants UTF-16
         try:
             _schtasks("/Create", "/TN", TASK, "/XML", str(xml), "/F")
         finally:
@@ -838,19 +853,42 @@ def install_docker_desktop(*, yes: bool) -> None:
     raise CtlError(f"Install Docker Desktop ({DOCKER_DESKTOP_URL}), start it, and run this again.")
 
 
-def wait_for_docker_desktop(home: Home, release: Path, seconds: int = 180) -> dict:
-    """Windows: Docker Desktop is installed but not running. Starts it and waits for the engine to answer."""
-    exe = (
-        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Docker" / "Docker" / "Docker Desktop.exe"
-    )
-    if exe.is_file():
-        info("Docker Desktop is not running. Starting it and waiting for it (this can take a minute)")
+def find_docker_desktop() -> Path | None:
+    """Where Docker Desktop's program is: next to the docker command it installed, or in the usual folders."""
+    found = shutil.which("docker")
+    beside = Path(found).resolve().parents if found else []
+    candidates = (
+        [beside[2] / "Docker Desktop.exe"] if len(beside) > 2 else []
+    )  # ...\\Docker\\resources\\bin\\docker.exe
+    for var in ("ProgramFiles", "LOCALAPPDATA"):
+        if base := os.environ.get(var):
+            candidates.append(Path(base) / "Docker" / "Docker" / "Docker Desktop.exe")
+            candidates.append(Path(base) / "Programs" / "Docker" / "Docker" / "Docker Desktop.exe")
+    return next((c for c in candidates if c.is_file()), None)
+
+
+def wait_for_docker_desktop(home: Home, release: Path, seconds: int = 240) -> dict:
+    """Windows: Docker Desktop is installed but not running. Says so, starts it, and waits for the engine to answer, saying
+    how long it has been waiting (a silent wait looks like a frozen installer)."""
+    info("Docker Desktop is installed, but it is not running.")
+    exe = find_docker_desktop()
+    if exe is not None:
+        info("starting it for you; it can take a minute or two to be ready")
         subprocess.Popen([str(exe)], close_fds=True)
-    deadline = time.monotonic() + seconds
+    else:
+        info("start it from the Start menu: Themis waits here until it is running")
+    info(
+        "(tip: Docker Desktop, Settings, General, 'Start Docker Desktop when you sign in', so it is ready after a restart)"
+    )
+    started = time.monotonic()
     report = doctor_json(home, release)
-    while docker_problem(report) and time.monotonic() < deadline:
+    last_said = started
+    while docker_problem(report) and time.monotonic() - started < seconds:
         time.sleep(5)
         report = doctor_json(home, release)
+        if time.monotonic() - last_said >= 15:
+            last_said = time.monotonic()
+            info(f"still waiting for Docker ({int(last_said - started)}s of {seconds}s)...")
     return report
 
 
@@ -1087,7 +1125,11 @@ def cmd_install(args: argparse.Namespace, home: Home) -> None:
         info(
             "It only listens on this machine. To reach it from elsewhere, put a reverse proxy with HTTPS in front (see the operations guide)."
         )
-    info("Look after it with: themis status | logs | restart | upgrade | doctor")
+    if WINDOWS and not args.no_service:
+        info(
+            "Themis runs in the background (there is no window to keep open) and starts again when you log in."
+        )
+    info("Look after it with: themis status | open | logs | restart | upgrade | doctor")
 
 
 def cmd_upgrade(args: argparse.Namespace, home: Home) -> None:
@@ -1166,6 +1208,18 @@ def rollback(home: Home, previous: str, saved: Path, port: int) -> None:
     restart_service(home)
     if service_installed() and not wait_until_up(port, previous):
         info(f"Themis {previous} did not come back either. Run: themis doctor")
+
+
+def cmd_open(home: Home) -> None:
+    """Opens Themis in the browser (a window you may have closed, or one you never opened)."""
+    import webbrowser
+
+    need_installed(home)
+    url = f"http://127.0.0.1:{configured_port(home)}"
+    if health(configured_port(home)) is None:
+        info("Themis is not answering yet. Start it with: themis start")
+    print(url)
+    webbrowser.open(url)
 
 
 def cmd_status(args: argparse.Namespace, home: Home) -> None:
@@ -1340,6 +1394,7 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_parser(name, parents=[common], help=f"{name} the service")
     sub.add_parser("status", parents=[common], help="what is installed and whether it is running")
     sub.add_parser("run", parents=[common], help="run the server in the foreground")
+    sub.add_parser("open", parents=[common], help="open Themis in the browser")
     d = sub.add_parser("doctor", help="check this machine and show how the last starts went", add_help=False)
     d.add_argument("rest", nargs=argparse.REMAINDER)
     sub.add_parser("backup", parents=[common], help="save a copy of the database and settings")
@@ -1371,6 +1426,8 @@ def main(argv: list[str] | None = None) -> int:
                 cmd_service(args.command, home)
             case "run":
                 cmd_run(home)
+            case "open":
+                cmd_open(home)
             case "doctor":
                 cmd_doctor(args.rest, home)
             case "backup":

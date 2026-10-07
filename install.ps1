@@ -15,6 +15,7 @@ param(
     [string]$HostName = "127.0.0.1",
     [string]$Channel = "",
     [string]$Version = "",
+    [string]$Bundle = "",  # install from this bundle file instead of downloading (offline, testing)
     [string]$ThemisHome = "",  # not $Home: that is a read-only variable in PowerShell
     [switch]$Https,
     [switch]$NoService,
@@ -50,6 +51,7 @@ function Install-Themis {
         $ctlArgs = @("install", "--port", $Port, "--host", $HostName)
         if ($Channel) { $ctlArgs += @("--channel", $Channel) }
         if ($Version) { $ctlArgs += @("--version", $Version) }
+        if ($Bundle) { $ctlArgs += @("--bundle", $Bundle) }
         if ($ThemisHome) { $ctlArgs += @("--home", $ThemisHome) }
         if ($Https) { $ctlArgs += "--https" }
         if ($NoService) { $ctlArgs += "--no-service" }

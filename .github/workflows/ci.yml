@@ -144,3 +144,22 @@ jobs:
           & "$env:RUNNER_TEMP\Themis\bin\themis.cmd" status
           schtasks /Query /TN Themis /XML
           & "$env:RUNNER_TEMP\Themis\bin\themis.cmd" uninstall
+
+      - name: The one-line installer itself (install.ps1), from a local copy of what a release would publish
+        shell: pwsh
+        run: |
+          # the script must at least parse as PowerShell
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors; throw "install.ps1 does not parse" }
+          # it fetches themisctl.py from THEMIS_INSTALL_BASE: serve this repository's copy, as a release would
+          $server = Start-Process python -ArgumentList "-m", "http.server", "8710", "--directory", "scripts" -PassThru -WindowStyle Hidden
+          try {
+            $env:THEMIS_INSTALL_BASE = "http://127.0.0.1:8710"
+            $bundle = (Get-ChildItem dist\themisforge-*.tar.gz).FullName
+            & .\install.ps1 -Bundle $bundle -NoService -SkipImage -Yes -Port 8002 -ThemisHome "$env:RUNNER_TEMP\Themis2"
+            if (-not (Test-Path "$env:RUNNER_TEMP\Themis2\bin\themis.cmd")) { throw "install.ps1 did not install" }
+            & "$env:RUNNER_TEMP\Themis2\bin\themis.cmd" version
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+          }

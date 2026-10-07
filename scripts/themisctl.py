@@ -853,6 +853,10 @@ def cmd_upgrade(args: argparse.Namespace, home: Home) -> None:
     except (CtlError, OSError) as e:
         say(f"That went wrong ({e}). Going back to {previous}")
         rollback(home, previous, saved, port)
+        if target != previous:
+            shutil.rmtree(
+                new_dir, ignore_errors=True
+            )  # a release that did not work is not kept (the log says what happened)
         raise CtlError(
             f"The upgrade to {target} failed and Themis {previous} is running again, as before. Details: themis logs, or {home.logs / 'ctl.log'}"
         ) from None

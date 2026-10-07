@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # Where the run trail (runs.jsonl: what happened at each start) and the rotating application log are written.
     log_dir: Path = BACKEND_DIR.parent / "logs"
 
+    # Where Themis looks for newer releases (the same variable `themis upgrade` reads; tests and mirrors change it).
+    release_api: str = "https://api.github.com/repos/RT-codes/ThemisForge"
+
     # "docker" runs real containers, "fake" simulates a cell (development and tests).
     cell_backend: str = "docker"
     # Where "Connect Codex" signs in: "container" runs Codex's sign-in inside the cell image (nothing to install on this

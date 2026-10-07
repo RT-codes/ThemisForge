@@ -62,6 +62,9 @@ class SystemStatus(BaseModel):
     problems: list[
         dict[str, str]
     ]  # what the startup and background checks found; only filled in for administrators
+    update: (
+        dict | None
+    )  # is there a newer release (see app/updates.py); only for administrators, who can act on it
 
 
 @router.get("/system/status", response_model=SystemStatus)
@@ -93,7 +96,17 @@ async def system_status(request: Request, session: SessionDep, user: CurrentUser
         version=build_info().version,
         cells_ready=preflight.cells_ready,
         problems=[c.to_dict() for c in preflight.problems] if user.is_admin else [],
+        update=request.app.state.updates.info(cfg).to_dict() if user.is_admin else None,
     )
+
+
+@router.post("/system/update-check")
+async def check_for_updates(request: Request, session: SessionDep, _: AdminUser) -> dict:
+    """Look for a newer release now. Repeated presses within a few seconds reuse the last answer."""
+    cfg = await load_settings(session)
+    updates = request.app.state.updates
+    await updates.check(cfg)
+    return updates.info(cfg).to_dict()
 
 
 @router.get("/system/docker")
@@ -150,6 +163,7 @@ async def put_settings(body: AppSettings, request: Request, session: SessionDep,
     saved = await save_settings(session, body)
     request.app.state.scheduler.wake()  # e.g. a raised budget applies immediately
     request.app.state.preflight.wake()  # and a new Docker host is checked right away
+    request.app.state.updates.wake()  # and a switched on update check, or another channel, looks right away
     return saved
 
 

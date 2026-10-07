@@ -4,6 +4,7 @@
 	import AppSidebar from '$lib/components/AppSidebar.svelte'
 	import InviteScreen from '$lib/components/InviteScreen.svelte'
 	import PausedBanner from '$lib/components/PausedBanner.svelte'
+	import UpdateBanner from '$lib/components/UpdateBanner.svelte'
 	import LoginScreen from '$lib/components/LoginScreen.svelte'
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import { Separator } from '$lib/components/ui/separator/index.js'
@@ -94,6 +95,7 @@
 				</nav>
 			</header>
 			<PausedBanner />
+			<UpdateBanner />
 			<div class="forge-glow flex min-h-0 flex-1 flex-col">
 				{#key pageKey}
 				<div class="flex min-h-0 flex-1 flex-col" in:fade={{ duration: 350 }}>

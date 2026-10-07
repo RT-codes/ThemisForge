@@ -148,6 +148,8 @@ themis upgrade --check     # only say whether a newer version exists
 themis upgrade             # do it
 ```
 
+Administrators are told in the app when a newer release exists (see [Settings](/docs/settings#updates)); `themis upgrade --check` asks from the command line.
+
 `themis upgrade` looks for the newest **stable** release (or `--channel beta`, or `--version X.Y.Z`), and then:
 
 1. downloads it, verifies its checksum and installs it next to the running one (the running Themis is not touched yet),

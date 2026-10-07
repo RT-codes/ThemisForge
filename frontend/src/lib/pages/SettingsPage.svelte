@@ -134,8 +134,27 @@
 	const gb = (mb: number | null) => (mb === null ? '' : `${(mb / 1024).toFixed(1)} GB`)
 
 	import NumberField from '$lib/components/NumberField.svelte'
+	import { relative } from '$lib/format'
+	import ArrowUpCircleIcon from '@lucide/svelte/icons/circle-arrow-up'
 	import SettingsSection from '$lib/components/SettingsSection.svelte'
 	import { fly } from 'svelte/transition'
+
+	const update = $derived(system?.update ?? null)
+	const updateSummary = $derived(
+		update ? (update.available ? `${update.latest} available` : update.error ? 'Could not check' : update.enabled ? `Up to date, ${update.current}` : 'Checking is off') : ''
+	)
+	let checkingUpdates = $state(false)
+	async function checkUpdatesNow() {
+		checkingUpdates = true
+		try {
+			const found = await api.checkForUpdates()
+			if (system) system = { ...system, update: found }
+		} catch (e) {
+			if (system?.update) system = { ...system, update: { ...system.update, error: e instanceof Error ? e.message : 'Could not check for updates' } }
+		} finally {
+			checkingUpdates = false
+		}
+	}
 
 	const dockerSummary = $derived(docker ? (docker.ok ? `Connected, Docker ${docker.version}` : docker.version ? 'Needs attention' : 'Not reachable') : 'Checking...')
 	const cellSummary = $derived(form ? `${form.cell_image} · ${form.cell_cpus} CPU · ${form.cell_memory_mb} MB` : '')
@@ -423,6 +442,70 @@
 										{#each ['low', 'medium', 'high'] as e (e)}<Select.Item value={e} label={e} class="capitalize">{e}</Select.Item>{/each}
 									</Select.Content>
 								</Select.Root>
+							</div>
+						</div>
+					</SettingsSection>
+
+					<SettingsSection
+						id="updates"
+						title="Updates"
+						description="Whether a newer Themis exists, and how it is found."
+						summary={updateSummary}
+						forceOpen={!!update?.available}
+					>
+						<div class="grid gap-4">
+							{#if update}
+								<div class={cn('flex items-start gap-3 rounded-lg border p-3', update.available ? 'border-primary/40 bg-primary/5' : 'border-border')} role="status">
+									{#if update.available}
+										<ArrowUpCircleIcon class="mt-0.5 size-5 shrink-0 text-primary" />
+									{:else if update.error}
+										<CircleXIcon class="mt-0.5 size-5 shrink-0 text-yellow-300" />
+									{:else}
+										<CircleCheckIcon class="mt-0.5 size-5 shrink-0 text-emerald-400" />
+									{/if}
+									<div class="min-w-0 text-sm">
+										{#if update.available}
+											<p class="font-medium">Themis {update.latest} is available</p>
+											<p class="text-muted-foreground">You have {update.current}. On the server, run <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">themis upgrade</code>: it makes a backup first and goes back by itself if the new version does not start.</p>
+											{#if update.url}<a href={update.url} target="_blank" rel="noreferrer" class="text-primary underline underline-offset-2">What is new in {update.latest}</a>{/if}
+										{:else if update.kind === 'checkout'}
+											<p class="font-medium">This is a development checkout</p>
+											<p class="text-muted-foreground">It is run from the source code, so it is updated with <code>git pull</code>, not <code>themis upgrade</code>. The newest release is {update.latest || 'not known yet'}.</p>
+										{:else if update.error}
+											<p class="font-medium">Could not check for updates</p>
+											<p class="break-words text-muted-foreground">{update.error}</p>
+										{:else if !update.enabled}
+											<p class="font-medium">Checking is switched off</p>
+											<p class="text-muted-foreground">You have {update.current}. Look for new versions yourself with <code>themis upgrade --check</code>.</p>
+										{:else}
+											<p class="font-medium">You have the newest version, {update.current}</p>
+											<p class="text-muted-foreground">{update.checked_at ? `Checked ${relative(update.checked_at)}.` : 'Not checked yet: it is done a minute after Themis starts, then daily.'}</p>
+										{/if}
+									</div>
+									<Button type="button" variant="ghost" size="icon" class="ms-auto shrink-0" aria-label="Check now" disabled={checkingUpdates || !update.enabled} onclick={checkUpdatesNow}>
+										<RefreshCwIcon class={checkingUpdates ? 'animate-spin' : ''} />
+									</Button>
+								</div>
+							{/if}
+							<div class="flex items-start justify-between gap-4">
+								<div class="grid gap-1">
+									<Label for="check-updates">Look for new versions</Label>
+									<p class="text-xs text-muted-foreground">
+										Once a day Themis asks GitHub for the list of releases. That is all: nothing about you, your projects or this machine is sent. Nothing is installed by itself.
+									</p>
+								</div>
+								<Switch id="check-updates" bind:checked={form.check_for_updates} />
+							</div>
+							<div class="grid gap-2 sm:max-w-xs">
+								<Label for="update-channel">Which versions</Label>
+								<Select.Root type="single" bind:value={form.update_channel}>
+									<Select.Trigger id="update-channel" class="w-full" disabled={!form.check_for_updates}>{form.update_channel === 'beta' ? 'Stable and beta' : 'Stable only'}</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="stable" label="Stable only">Stable only</Select.Item>
+										<Select.Item value="beta" label="Stable and beta">Stable and beta</Select.Item>
+									</Select.Content>
+								</Select.Root>
+								<p class="text-xs text-muted-foreground">Beta versions are previews: they may have rough edges.</p>
 							</div>
 						</div>
 					</SettingsSection>

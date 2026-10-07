@@ -9,6 +9,7 @@ class System {
   // null until the first answer, so the banner never flashes while the page loads
   cellsReady = $derived(this.status === null ? true : this.status.cells_ready)
   problems = $derived(this.status?.problems ?? [])
+  update = $derived(this.status?.update ?? null)
 
   async refresh() {
     try {

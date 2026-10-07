@@ -246,6 +246,8 @@ export interface AppSettings {
   codex_image: string
   codex_model: string
   codex_reasoning_effort: 'low' | 'medium' | 'high'
+  check_for_updates: boolean // ask GitHub once a day whether a newer release exists
+  update_channel: 'stable' | 'beta'
   keep_workspaces_days: number
 }
 
@@ -290,6 +292,20 @@ export interface SystemStatus {
   version: string
   cells_ready: boolean // false while Docker cannot run cells: tasks wait instead of failing
   problems: Problem[] // what the checks found; only filled in for administrators
+  update: UpdateInfo | null // only for administrators
+}
+
+/** is there a newer Themis: what the server found the last time it looked (only administrators get it) */
+export interface UpdateInfo {
+  enabled: boolean
+  current: string
+  latest: string // "" until a check has worked
+  available: boolean
+  url: string // the release notes
+  checked_at: string // "" if never
+  error: string
+  channel: 'stable' | 'beta'
+  kind: 'release' | 'checkout'
 }
 
 export interface Problem {
@@ -494,6 +510,7 @@ export const api = {
     request<ScheduledRun[]>(`/projects/${projectId}/schedule?hours=${hours}`),
 
   systemStatus: () => request<SystemStatus>('/system/status'),
+  checkForUpdates: () => request<UpdateInfo>('/system/update-check', send('POST')),
   /** The shared folders; the Files page also asks for the config folder, which pickers must never offer. */
   volumes: (projectId: number, includeConfig = false) => request<Volume[]>(`/projects/${projectId}/volumes${includeConfig ? '?include_config=true' : ''}`),
   configFolder: (projectId: number) => request<Volume>(`/projects/${projectId}/config`),

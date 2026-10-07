@@ -17,6 +17,7 @@ from .project_config import sync_all_configs
 from .routers import access, agents, auth, codex, projects, skills, system, tools, volumes, workflows
 from .runlog import Trail, setup_file_logging
 from .scheduler import Scheduler
+from .updates import UpdateChecker
 from .version import build_info
 from .workflows import WorkflowRunner
 
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     run_id = trail.begin()
     log.info("Themis %s starting (run %s)", build_info().version, run_id)
     watcher: asyncio.Task | None = None
+    update_watcher: asyncio.Task | None = None
     try:
         if settings.secret_key == DEFAULT_SECRET_KEY:
             log.warning(
@@ -54,8 +56,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise
     trail.event("ready", cells_ready=preflight.cells_ready)
     yield
-    if watcher:
-        watcher.cancel()
+    for task in (watcher, update_watcher):
+        if task:
+            task.cancel()
     await app.state.workflows.shutdown()
     await scheduler.stop()
     await app.state.codex_logins.shutdown()
@@ -77,6 +80,7 @@ app.state.scheduler = Scheduler(
 
 app.state.trail = Trail(settings.log_dir)
 app.state.preflight = Preflight()
+app.state.updates = UpdateChecker()
 app.state.codex_logins = CodexLogins(SessionLocal)
 app.state.workflows = WorkflowRunner(SessionLocal, lambda: app.state.scheduler)
 app.state.scheduler.workflows = app.state.workflows

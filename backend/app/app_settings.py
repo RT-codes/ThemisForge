@@ -57,6 +57,10 @@ class AppSettings(BaseModel):
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
     codex_model: str = "gpt-6-luna"
     codex_reasoning_effort: Literal["low", "medium", "high"] = "high"
+    check_for_updates: bool = (
+        True  # ask GitHub once a day whether a newer release exists (see app/updates.py)
+    )
+    update_channel: Literal["stable", "beta"] = "stable"  # beta also offers pre-releases
     keep_workspaces_days: int = Field(
         default=7, ge=0, le=3650
     )  # attempt working folders; 0 = delete right away

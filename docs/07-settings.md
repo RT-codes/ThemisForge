@@ -76,6 +76,21 @@ if it is inside one approved here, and an approved folder is read only unless yo
 > Agents run unattended. A folder they may write to can have files changed or deleted, with no undo. Approve only what you
 > are fine with that for.
 
+## Updates
+
+The **Updates** section says whether a newer Themis exists. A minute after Themis starts, and then once a day, it asks
+GitHub for the list of releases (one plain request; nothing about you, your projects or this machine is sent, and
+nothing is ever installed by itself). When there is a newer one, administrators see a notice at the top of every page
+and in this section, with a link to what is new. Close the notice to hide that version until the next release.
+
+- **Look for new versions** switches the check off. You can still look yourself with `themis upgrade --check`.
+- **Which versions** chooses *Stable only* (the default) or *Stable and beta*, which also offers pre-releases.
+- The refresh button checks right now.
+
+The notice never upgrades anything: run `themis upgrade` on the server, which backs up first and goes back by itself if
+the new version does not start (see [Install and operations](/docs/operations#upgrading)). A development checkout is
+never told to upgrade, since it is updated with `git pull`.
+
 ## Schedules
 
 The **time zone** used to evaluate recurring schedules. Pick the zone where you want "every morning" to happen. The

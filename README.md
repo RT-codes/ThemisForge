@@ -44,7 +44,14 @@ Docker Engine 24 or newer is required, with Linux containers (Themis checks this
 
 Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-**Windows 10 or 11 (new, please report problems).** Open **PowerShell** (Start menu, type "PowerShell"; not "as administrator") and run:
+**Windows 10 or 11 (new, please report problems).**
+
+Before you start, check these two things:
+
+1. **Virtualization must be switched on in the computer's BIOS.** Themis runs agents in Docker, and Docker Desktop on Windows cannot start without it. The setting is called **Intel Virtualization Technology** (VT-x) on Intel PCs or **SVM Mode** on AMD PCs, and some PCs ship with it off. To check: open Task Manager, go to *Performance*, then *CPU*, and look for **Virtualization: Enabled**. If it says *Disabled*, switch it on first (restart, press Del or F2 while the PC starts, find the setting, set it to Enabled, save): [step by step](docs/09-troubleshooting.md#windows-virtualization-is-disabled-in-firmware). A work computer may have this locked: ask your IT administrator.
+2. **Docker Desktop** with Linux containers. The installer checks it and offers to install it with winget if it is missing (Windows may ask for permission and to restart), and it starts Docker Desktop for you if it is installed but not running.
+
+Then open **PowerShell** (Start menu, type "PowerShell"; not "as administrator") and run:
 
 ```powershell
 irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex
@@ -52,7 +59,7 @@ irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1
 
 (`irm` is a PowerShell command, so it does not work in Command Prompt. From Command Prompt use `powershell -NoProfile -Command "irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex"`.)
 
-It needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) with Linux containers (the installer checks, and offers to install it with winget if it is missing). Docker Desktop in turn needs **hardware virtualization** turned on in the computer's BIOS: most PCs have it on, and if yours does not, the installer tells you before it installs anything and shows how to switch it on (a one-time setting). Themis installs for your own account without administrator rights, and starts Themis whenever you log in. Windows support is new: it is tested automatically, but on far fewer real computers than Linux. **macOS** is on the list after that.
+Themis installs for your own account without administrator rights and starts whenever you log in. Windows support is new: it is tested automatically, but on far fewer real computers than Linux. **macOS** is on the list after that.
 
 ## Once it is running
 

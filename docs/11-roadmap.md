@@ -28,7 +28,7 @@ summary: What is built, what comes next and what is deliberately left for later.
   lines the run does not treat as steps.
 - **Cell profiles**: the cell size layered from Settings, to the project, to the agent, to a single workflow step.
 - **Invite only** access with requests, invite links and an administrator.
-- **Installer**, `doctor`, systemd service and migrations.
+- **Install and upgrade** with one command on Linux (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next
 
@@ -39,8 +39,9 @@ summary: What is built, what comes next and what is deliberately left for later.
 4. **Password reset.**
 5. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,
    week or month filter.
-6. **Windows.** The installer has only been tried on Debian and Ubuntu so far. Windows needs its own tested steps.
-7. **More agent engines.** Codex is the one supported today; Claude and OpenRouter are next.
+6. **Windows.** Most of Themis already passes its tests there. What is left is the folder and path handling for host folders, and an installer with a Windows service.
+7. **An update notice in the app.** Administrators are told when a newer release exists (`themis upgrade` installs it).
+8. **More agent engines.** Codex is the one supported today; Claude and OpenRouter are next.
 
 ## Later
 

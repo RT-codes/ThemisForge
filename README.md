@@ -8,7 +8,7 @@ ThemisForge is the project. The app you use is called **Themis**: a place to giv
 
 For example: *"Every morning, research the news in my field and write me a short summary."*
 
-> **Early development (version 0.x).** Themis works and is used daily, but it is young: things still change, and rough edges remain. Back up what matters (`themis backup`), and tell us what you run into in the [issues](https://github.com/RT-codes/ThemisForge/issues).
+> **Early development (version 0.x).** Themis works, but it is young: things still change, and rough edges remain. Back up what matters (`themis backup`), and tell us what you run into in the [issues](https://github.com/RT-codes/ThemisForge/issues).
 
 ## What you can do
 
@@ -44,7 +44,7 @@ Docker Engine 24 or newer is required, with Linux containers (Themis checks this
 
 Installing on a server you reach from elsewhere? By default Themis only answers on the machine itself. The [deployment guide](docs/08-operations.md) explains how to open it up safely.
 
-**Windows: coming soon.** We have not tested Themis on Windows yet, so there are no instructions to give. **macOS** is on the list after that.
+**Windows: in progress.** Most of Themis already runs there, but the installer is Linux only for now, so there are no Windows instructions yet. **macOS** is on the list after that.
 
 ## Once it is running
 

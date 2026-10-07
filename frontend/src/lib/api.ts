@@ -290,6 +290,7 @@ export interface SystemStatus {
   insecure_secret_key: boolean
   cell_backend: string
   version: string
+  platform: 'windows' | 'linux' | 'mac' // what a folder path looks like on the server
   cells_ready: boolean // false while Docker cannot run cells: tasks wait instead of failing
   problems: Problem[] // what the checks found; only filled in for administrators
   update: UpdateInfo | null // only for administrators

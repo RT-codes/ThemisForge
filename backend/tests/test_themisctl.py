@@ -3,6 +3,7 @@
 import importlib.util
 import io
 import json
+import os
 import sqlite3
 import tarfile
 from pathlib import Path
@@ -153,9 +154,13 @@ def test_a_bundle_that_writes_outside_its_folder_is_never_unpacked(tmp_path):
 # ----- the home, the link and the releases -----
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    monkeypatch.setattr(ctl, "WINDOWS", False)
+@pytest.fixture(params=["linux", "windows"])
+def home(request, tmp_path, monkeypatch):
+    """A home, run through both ways of keeping `current` (a link on Linux, a pointer file on Windows) on any system."""
+    windows = request.param == "windows"
+    if not windows and os.name == "nt":
+        pytest.skip("a link needs privileges that a normal Windows user does not have")
+    monkeypatch.setattr(ctl, "WINDOWS", windows)
     h = ctl.Home(tmp_path / "themis")
     h.make_dirs()
     return h
@@ -175,7 +180,10 @@ def test_the_current_link_is_swapped_in_one_step_and_names_the_running_release(h
     ctl.link_current(home, "1.0.0")
     assert home.current_version() == "1.0.0"
     ctl.link_current(home, "1.1.0")
-    assert home.current_version() == "1.1.0" and not (home.root / "current.new").exists()
+    assert home.current_version() == "1.1.0"
+    assert (
+        not (home.root / "current.new").exists() and not (home.root / "current.txt.new").exists()
+    )  # nothing half done
     with pytest.raises(ctl.CtlError, match="not on this machine"):
         ctl.link_current(home, "9.9.9")
 
@@ -204,7 +212,8 @@ def test_the_secret_key_is_made_once_and_never_replaced(home):
         and first["THEMIS_PORT"] == "8000"
         and "THEMIS_COOKIE_SECURE" not in first
     )
-    assert oct(home.config_env.stat().st_mode)[-3:] == "600"
+    if os.name != "nt":  # Windows has no such modes: the file is private to the user's own profile folder
+        assert oct(home.config_env.stat().st_mode)[-3:] == "600"
     assert ctl.write_config_env(home, host="0.0.0.0", port=9000, https=True) is False
     again = ctl.read_env_file(home.config_env)
     assert (
@@ -282,7 +291,9 @@ class Machine:
         monkeypatch.setattr(ctl_module, "list_releases", lambda: self.releases)
         monkeypatch.setattr(ctl_module, "service_installed", lambda: True)
         monkeypatch.setattr(ctl_module, "service_active", lambda: True)
-        monkeypatch.setattr(ctl_module, "systemctl", lambda *a, check=True: self.calls.append(a))
+        monkeypatch.setattr(
+            ctl_module, "service_action", lambda home, action, check=True: self.calls.append((action,))
+        )
         monkeypatch.setattr(ctl_module, "ensure_docker", lambda *a, **k: None)
         monkeypatch.setattr(ctl_module, "get_cell_image", lambda *a, **k: None)
         monkeypatch.setattr(
@@ -392,3 +403,229 @@ def test_the_home_can_be_given_before_or_after_the_command():
     assert parse(["upgrade", "--check", "--home", "/c"]).home == "/c"
     assert parse(["--home", "/first", "status"]).home == "/first"  # not erased by the command's own default
     assert getattr(parse(["status"]), "home", None) is None
+
+
+# ----- Windows: the pieces, checked from any system (the platform is a switch in the module) -----
+
+
+@pytest.fixture
+def windows(monkeypatch, tmp_path):
+    monkeypatch.setattr(ctl, "WINDOWS", True)
+    return ctl.Home(
+        tmp_path / "Themis Home (work)"
+    )  # a space and parentheses: normal in a Windows user's folders
+
+
+def test_the_launcher_reads_which_release_is_current_each_time_and_keeps_its_output(windows):
+    text = ctl.windows_launcher(windows)
+    root = str(windows.root)
+    assert (
+        text.startswith("@echo off\r\n") and "\r\n" in text and "\n" not in text.replace("\r\n", "")
+    )  # real batch line endings
+    assert (
+        f'set "THEMIS_HOME={root}"' in text and "set PYTHONUTF8=1" in text
+    )  # UTF-8 whatever the system's code page
+    assert f'set /p THEMIS_V=<"{root}\\current.txt"' in text  # an upgrade changes the file, not the task
+    assert '\\releases\\%THEMIS_V%\\backend\\.venv\\Scripts\\python.exe" -m app.run' in text
+    assert f'"{root}\\logs\\service.log" 2>&1' in text
+
+
+def test_the_command_runs_the_current_release_and_says_so_when_nothing_is_installed(windows):
+    text = ctl.windows_shim(windows)
+    assert "%*" in text and "themisctl.py" in text and "goto missing" in text and ":missing" in text
+    assert "if not exist" in text and "(" not in text.split("goto missing")[0].replace(
+        str(windows.root), ""
+    )  # no blocks to break on a ( in a path
+
+
+def test_the_scheduled_task_runs_for_this_user_at_logon_in_their_session_and_restarts_itself(windows):
+    import xml.etree.ElementTree as ET
+
+    launcher = windows.root / "bin" / "themis-run.cmd"
+    xml = ctl.windows_task_xml(launcher, "PC\\Ro&wan <dev>")  # characters that must be escaped
+    ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+    root = ET.fromstring(xml.split("?>", 1)[1])  # well formed, once escaped
+    assert root.find("t:Triggers/t:LogonTrigger/t:UserId", ns).text == "PC\\Ro&wan <dev>"
+    assert (
+        root.find("t:Principals/t:Principal/t:LogonType", ns).text == "InteractiveToken"
+    )  # Docker Desktop lives in the session
+    assert (
+        root.find("t:Principals/t:Principal/t:RunLevel", ns).text == "LeastPrivilege"
+    )  # no administrator rights
+    assert root.find("t:Settings/t:ExecutionTimeLimit", ns).text == "PT0S"  # a server has no time limit
+    assert root.find("t:Settings/t:RestartOnFailure/t:Count", ns).text == "999"
+    assert root.find("t:Actions/t:Exec/t:Command", ns).text == str(launcher)
+
+
+def test_the_current_release_on_windows_is_named_by_a_pointer_file(windows):
+    (windows.release_dir("1.2.3")).mkdir(parents=True)
+    assert windows.current_version() is None
+    with pytest.raises(ctl.CtlError, match="themis install"):
+        windows.current_path()
+    ctl.link_current(windows, "1.2.3")
+    assert windows.current_file.read_text() == "1.2.3\n" and windows.current_path() == windows.release_dir(
+        "1.2.3"
+    )
+    windows.current_file.write_text("1.9.9\n")  # names a release that is not there: nothing is installed
+    assert windows.current_version() is None
+    windows.current_file.write_text("not a version")
+    assert windows.current_version() is None
+    python = windows.python(windows.release_dir("1.2.3"))
+    assert (
+        python.name == "python.exe" and python.parent.name == "Scripts"
+    )  # the layout of a virtualenv on Windows
+
+
+def test_the_service_is_a_task_that_is_ended_then_the_server_stopped_by_its_process_id(windows, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        ctl,
+        "_schtasks",
+        lambda *a, check=True: (
+            calls.append(("schtasks", *a)) or type("R", (), {"stdout": "", "returncode": 0})()
+        ),
+    )
+    monkeypatch.setattr(
+        ctl,
+        "run",
+        lambda cmd, **k: calls.append(("run", *cmd)) or type("R", (), {"stdout": "", "returncode": 0})(),
+    )
+    monkeypatch.setattr(ctl, "port_in_use", lambda port: False)
+    windows.root.mkdir(parents=True)
+    windows.pid_file.write_text("4242\n")
+    ctl.service_action(windows, "restart")
+    assert [c[:3] for c in calls if c[0] == "schtasks"] == [
+        ("schtasks", "/End", "/TN"),
+        ("schtasks", "/Run", "/TN"),
+    ]
+    assert ("run", "taskkill", "/PID", "4242", "/T", "/F") in calls and not windows.pid_file.exists()
+    calls.clear()
+    ctl.service_action(windows, "start")
+    assert calls == [("schtasks", "/Run", "/TN", "Themis")]  # starting does not stop anything first
+
+
+def test_a_task_that_reports_running_is_active(windows, monkeypatch):
+    out = "Folder: \\\nTaskName: \\Themis\nStatus:     Running\n"
+    monkeypatch.setattr(
+        ctl, "_schtasks", lambda *a, check=True: type("R", (), {"stdout": out, "returncode": 0})()
+    )
+    assert ctl.service_installed() and ctl.service_active()
+    monkeypatch.setattr(
+        ctl,
+        "_schtasks",
+        lambda *a, check=True: type("R", (), {"stdout": out.replace("Running", "Ready"), "returncode": 0})(),
+    )
+    assert not ctl.service_active()
+    monkeypatch.setattr(
+        ctl, "_schtasks", lambda *a, check=True: type("R", (), {"stdout": "", "returncode": 1})()
+    )
+    assert not ctl.service_installed()
+
+
+def test_the_installer_refuses_an_elevated_window_on_windows(windows, monkeypatch):
+    monkeypatch.setattr(ctl.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(ctl, "is_elevated", lambda: True)
+    with pytest.raises(ctl.CtlError, match="not as administrator"):
+        ctl.check_platform()
+    monkeypatch.setattr(ctl, "is_elevated", lambda: False)
+    ctl.check_platform()  # a normal window is fine
+    monkeypatch.setattr(ctl.platform, "machine", lambda: "riscv64")
+    with pytest.raises(ctl.CtlError, match="not supported"):
+        ctl.check_platform()
+
+
+def docker_report(**docker):
+    ok = bool(docker.pop("ok", False))
+    return {
+        "checks": [] if ok else [{"id": "docker", "level": "fail", "message": "Docker: x", "hint": "do y"}],
+        "docker": docker,
+    }
+
+
+def test_without_docker_desktop_windows_offers_winget_and_then_stops_so_it_can_be_started(
+    windows, monkeypatch
+):
+    monkeypatch.setattr(ctl, "doctor_json", lambda *a, **k: docker_report(installed=False))
+    ran = []
+    monkeypatch.setattr(ctl, "run", lambda cmd, **k: ran.append(cmd))
+    monkeypatch.setattr(ctl.shutil, "which", lambda name: "C:\\winget.exe" if name == "winget" else None)
+    with pytest.raises(ctl.CtlError, match="Start it from the Start menu"):
+        ctl.ensure_docker(windows, windows.root, yes=True)
+    assert ran == [
+        [
+            "winget",
+            "install",
+            "-e",
+            "--id",
+            "Docker.DockerDesktop",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ]
+    ]
+    ran.clear()
+    with pytest.raises(ctl.CtlError, match="docs.docker.com/desktop"):  # declined: where to get it
+        ctl.ensure_docker(windows, windows.root, yes=False)
+    assert ran == []
+    monkeypatch.setattr(ctl.shutil, "which", lambda name: None)  # no winget either
+    with pytest.raises(ctl.CtlError, match="docs.docker.com/desktop"):
+        ctl.ensure_docker(windows, windows.root, yes=True)
+
+
+def test_docker_desktop_that_is_installed_but_not_running_is_started_and_waited_for(windows, monkeypatch):
+    monkeypatch.setattr(ctl, "doctor_json", lambda *a, **k: docker_report(installed=True, version=None))
+    monkeypatch.setattr(
+        ctl,
+        "wait_for_docker_desktop",
+        lambda *a, **k: docker_report(ok=True, installed=True, version="29.7.2"),
+    )
+    ctl.ensure_docker(windows, windows.root, yes=True)  # no error: it came up
+    monkeypatch.setattr(
+        ctl, "wait_for_docker_desktop", lambda *a, **k: docker_report(installed=True, version=None)
+    )
+    with pytest.raises(ctl.CtlError, match="Docker is not usable"):
+        ctl.ensure_docker(windows, windows.root, yes=True)
+
+
+def test_docker_desktop_in_windows_container_mode_is_explained_not_started(windows, monkeypatch):
+    monkeypatch.setattr(
+        ctl, "doctor_json", lambda *a, **k: docker_report(installed=True, version="29.7.2", os_type="windows")
+    )
+    monkeypatch.setattr(
+        ctl, "wait_for_docker_desktop", lambda *a, **k: pytest.fail("starting it would not help")
+    )
+    with pytest.raises(ctl.CtlError, match="Docker is not usable"):
+        ctl.ensure_docker(windows, windows.root, yes=True)
+
+
+def test_the_foreground_server_ends_with_its_exit_code_on_windows(windows, monkeypatch):
+    windows.release_dir("1.0.0").mkdir(parents=True)
+    ctl.link_current(windows, "1.0.0")
+    seen = {}
+
+    def fake_run(cmd, env, cwd, check):
+        seen.update(cmd=cmd, env=env, cwd=cwd)
+        return type("R", (), {"returncode": 3})()
+
+    monkeypatch.setattr(ctl.subprocess, "run", fake_run)
+    with pytest.raises(SystemExit) as stop:
+        ctl.run_app(windows, "app.run", [])
+    assert stop.value.code == 3 and seen["cmd"][1:] == ["-m", "app.run"] and seen["env"]["PYTHONUTF8"] == "1"
+    assert (
+        seen["env"]["THEMIS_HOME"] == str(windows.root)
+        and seen["cwd"] == windows.release_dir("1.0.0") / "backend"
+    )
+
+
+def test_a_folder_added_to_the_users_path_is_quoted_for_powershell_and_only_once(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        ctl,
+        "powershell",
+        lambda script, check=True: seen.append(script) or type("R", (), {"stdout": "added\n"})(),
+    )
+    assert ctl.add_to_user_path(Path("C:/Users/O'Brien/AppData/Local/Themis/bin")) is True
+    assert (
+        "'C:/Users/O''Brien/AppData/Local/Themis/bin'" in seen[0]
+    )  # an apostrophe in a name cannot end the quoted string
+    monkeypatch.setattr(ctl, "powershell", lambda script, check=True: type("R", (), {"stdout": ""})())
+    assert ctl.add_to_user_path(Path("C:/x")) is False  # it was already there

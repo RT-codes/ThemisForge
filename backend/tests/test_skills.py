@@ -177,7 +177,10 @@ def test_docker_mounts_the_staged_skills_read_only_where_codex_looks(tmp_path, m
         skills=["a"],
     )
     args = DockerCellManager().build_args(spec)
-    assert f"{spec.skills_dir}:/workspace/.agents/skills:ro" in args
+    from tests.test_volumes import bind_mounts
+
+    skills = next(m for m in bind_mounts(args) if m["target"] == "/workspace/.agents/skills")
+    assert skills["source"] == str(spec.skills_dir) and skills["readonly"] is True
     none = DockerCellManager().build_args(
         CellSpec(
             attempt_id=3,

@@ -90,3 +90,56 @@ jobs:
           curl -fsS localhost:8000/ | grep -qi "<html"
           "$HOME/.local/bin/themis" doctor
           "$HOME/.local/bin/themis" backup
+
+  windows-install:
+    name: Install on Windows
+    needs: frontend
+    runs-on: windows-latest
+    # Windows is new: its install is shown here, but a failure does not block a merge until it has been green for a while.
+    continue-on-error: true
+    env:
+      # GitHub's Windows runners run Windows containers only, so cells are simulated here; everything else is the real thing
+      THEMIS_CELL_BACKEND: fake
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: cd frontend; npm ci --no-audit --no-fund; npm run build
+      - run: python scripts/build_release.py --out dist
+      - name: Install the bundle with the real installer
+        shell: pwsh
+        run: |
+          $bundle = (Get-ChildItem dist\themisforge-*.tar.gz).FullName
+          python scripts/themisctl.py --home "$env:RUNNER_TEMP\Themis" install --bundle $bundle --no-service --skip-image --yes --port 8000
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+      - name: Start it, ask it, check it
+        shell: pwsh
+        run: |
+          $themis = "$env:RUNNER_TEMP\Themis\bin\themis.cmd"
+          & $themis status
+          Start-Process -FilePath cmd.exe -ArgumentList "/c", "`"$themis`" run" -WindowStyle Hidden
+          $up = $false
+          foreach ($i in 1..40) { try { $r = Invoke-RestMethod http://127.0.0.1:8000/api/health; $up = $true; break } catch { Start-Sleep 1 } }
+          if (-not $up) { throw "Themis did not answer" }
+          $r
+          Invoke-RestMethod http://127.0.0.1:8000/api/version
+          (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/).Content -match "<html"
+          & $themis doctor
+          & $themis backup
+      - name: Register the scheduled task (what the real service is; may not work on a CI runner)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          python scripts/themisctl.py --home "$env:RUNNER_TEMP\Themis" stop 2>$null
+          $bundle = (Get-ChildItem dist\themisforge-*.tar.gz).FullName
+          python scripts/themisctl.py --home "$env:RUNNER_TEMP\Themis" install --bundle $bundle --skip-image --yes --port 8001
+          & "$env:RUNNER_TEMP\Themis\bin\themis.cmd" status
+          schtasks /Query /TN Themis /XML
+          & "$env:RUNNER_TEMP\Themis\bin\themis.cmd" uninstall

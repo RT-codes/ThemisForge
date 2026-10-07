@@ -9,7 +9,15 @@ summary: Common problems and how to fix them.
 Start with `themis doctor`. It checks the most common causes and tells you what to fix, and shows how the last starts went.
 To ask for help, `themis doctor --report` writes a file with the details (no keys or passwords) that you can attach.
 
-## Docker says "permission denied"
+## Windows: Docker Desktop is not ready
+
+Themis needs Docker Desktop **running** with **Linux containers**. If `themis doctor` or the banner in the app says Docker
+cannot be reached: start Docker Desktop from the Start menu and wait until it says it is running (the first start can take a
+few minutes). If it says Docker is set to run *Windows* containers, right-click the Docker icon in the tray and choose
+**Switch to Linux containers**. Themis notices by itself within a minute and starts waiting tasks again. Themis starts at
+your login, so Docker Desktop should too (Docker Desktop, Settings, General, *Start Docker Desktop when you sign in*).
+
+## Docker says "permission denied" (Linux)
 
 The user that runs Themis is not allowed to talk to Docker. The installer adds it to the `docker` group and the
 service picks the group up automatically. If you changed this by hand:

@@ -103,7 +103,13 @@ class Home:
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root).expanduser().resolve()
         self.releases = self.root / "releases"
-        self.current = self.root / "current"
+        self.current = self.root / "current"  # Linux: a link to the running release
+        self.current_file = (
+            self.root / "current.txt"
+        )  # Windows: names the running release (links need privileges there)
+        self.pid_file = (
+            self.root / "run.pid"
+        )  # written by the running server, so it can be stopped when the service cannot
         self.backups = self.root / "backups"
         self.logs = self.root / "logs"
         self.tmp = self.root / "tmp"
@@ -114,12 +120,22 @@ class Home:
     def release_dir(self, version: str) -> Path:
         return self.releases / version
 
+    def current_path(self) -> Path:
+        """The folder of the running release: the `current` link on Linux (the service's unit names it, and an upgrade
+        swaps it), the release the pointer file names on Windows."""
+        if WINDOWS:
+            version = self.current_version()
+            if version is None:
+                raise CtlError(f"Nothing is installed in {self.root}. Run: themis install")
+            return self.release_dir(version)
+        return self.current
+
     def python(self, release: Path | None = None) -> Path:
-        venv = (release or self.current) / "backend" / ".venv"
+        venv = (release or self.current_path()) / "backend" / ".venv"
         return venv / ("Scripts/python.exe" if WINDOWS else "bin/python")
 
     def ctl(self, release: Path | None = None) -> Path:
-        return (release or self.current) / "scripts" / "themisctl.py"
+        return (release or self.current_path()) / "scripts" / "themisctl.py"
 
     def make_dirs(self) -> None:
         for d in (self.releases, self.backups, self.logs, self.tmp, self.db.parent, self.root / "data"):
@@ -142,8 +158,11 @@ class Home:
         self.state_file.write_text(json.dumps(state, indent=2) + "\n")
 
     def current_version(self) -> str | None:
-        """The release `current` points at, or None when nothing is installed."""
+        """The release that runs, or None when nothing is installed."""
         try:
+            if WINDOWS:
+                name = self.current_file.read_text(encoding="utf-8").strip()
+                return name if SEMVER.match(name) and self.release_dir(name).is_dir() else None
             return Path(os.path.realpath(self.current)).name if self.current.exists() else None
         except OSError:
             return None
@@ -428,12 +447,15 @@ def stage_release(
 
 
 def link_current(home: Home, version: str) -> None:
-    """Points `current` at a release in one step, so the service never sees it half changed."""
-    if WINDOWS:
-        raise CtlError("Windows support is not ready yet.")
+    """Makes a release the one that runs, in one step, so the service never sees it half changed."""
     target = home.release_dir(version)
     if not target.is_dir():
         raise CtlError(f"Release {version} is not on this machine.")
+    if WINDOWS:  # a file swapped into place (atomic), instead of a link, which a normal user may not make
+        pointer = home.root / "current.txt.new"
+        pointer.write_text(version + "\n", encoding="utf-8")
+        os.replace(pointer, home.current_file)
+        return
     staging = home.root / "current.new"
     with contextlib.suppress(FileNotFoundError):
         staging.unlink()
@@ -514,15 +536,173 @@ def systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return run([*sudo_prefix(), "systemctl", *args], check=check)
 
 
+# ----- the service (Windows: a scheduled task of the user, started at logon) -----
+#
+# A normal user can create a task that runs as themselves at logon, without administrator rights, which is what a
+# per-user install wants. It runs in the user's own session, which is also where Docker Desktop lives. If Docker is not up
+# yet when Themis starts, Themis shows "runs are paused" and carries on by itself once it is (see app/preflight.py).
+
+TASK = "Themis"
+
+
+def windows_launcher(home: Home) -> str:
+    """themis-run.cmd, what the task starts. It reads which release is current each time, so an upgrade needs no change
+    to the task, and it keeps the last start's console output in logs\\service.log (the app has its own rotating log)."""
+    root = str(home.root)
+    return (
+        "@echo off\r\n"
+        f'set "THEMIS_HOME={root}"\r\n'
+        "set PYTHONUTF8=1\r\n"
+        f'set /p THEMIS_V=<"{root}\\current.txt"\r\n'
+        f'cd /d "{root}\\releases\\%THEMIS_V%\\backend"\r\n'
+        f'"{root}\\releases\\%THEMIS_V%\\backend\\.venv\\Scripts\\python.exe" -m app.run > "{root}\\logs\\service.log" 2>&1\r\n'
+    )
+
+
+def windows_task_xml(launcher: Path, user: str) -> str:
+    """The task: at this user's logon, in their session, no time limit, restarted a minute after it fails."""
+    from xml.sax.saxutils import escape
+
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Themis: runs your AI agents (themis status, themis stop)</Description></RegistrationInfo>
+  <Triggers>
+    <LogonTrigger><Enabled>true</Enabled><UserId>{escape(user)}</UserId></LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author"><UserId>{escape(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>true</Hidden>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>999</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>{escape(str(launcher))}</Command></Exec>
+  </Actions>
+</Task>
+"""
+
+
+def windows_shim(home: Home) -> str:
+    """themis.cmd: runs the control file of whichever release is current."""
+    root = str(home.root)
+    return (
+        "@echo off\r\n"
+        f'set "THEMIS_HOME={root}"\r\n'
+        "set PYTHONUTF8=1\r\n"
+        f'if not exist "{root}\\current.txt" goto missing\r\n'
+        f'set /p THEMIS_V=<"{root}\\current.txt"\r\n'
+        f'"{root}\\releases\\%THEMIS_V%\\backend\\.venv\\Scripts\\python.exe" '
+        f'"{root}\\releases\\%THEMIS_V%\\scripts\\themisctl.py" %*\r\n'
+        "exit /b %ERRORLEVEL%\r\n"
+        ":missing\r\n"
+        f"echo Nothing is installed in {root}.\r\n"
+        "exit /b 1\r\n"
+    )
+
+
+def _schtasks(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return run(["schtasks", *args], check=check, capture=True)
+
+
+def powershell(script: str, *, check: bool = True) -> subprocess.CompletedProcess:
+    return run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        check=check,
+        capture=True,
+    )
+
+
+def _ps_quote(text: str) -> str:
+    return "'" + text.replace("'", "''") + "'"
+
+
+def add_to_user_path(directory: Path) -> bool:
+    """Puts a folder on this user's PATH (for new terminals). True when it was not there yet."""
+    d = _ps_quote(str(directory))
+    out = powershell(
+        f"$d={d}; $p=[Environment]::GetEnvironmentVariable('Path','User'); if(-not $p){{$p=''}}; "
+        "if(($p -split ';') -notcontains $d){ [Environment]::SetEnvironmentVariable('Path',(($p.TrimEnd(';')+';'+$d).TrimStart(';')),'User'); 'added' }"
+    )
+    return "added" in out.stdout
+
+
+def remove_from_user_path(directory: Path) -> None:
+    d = _ps_quote(str(directory))
+    powershell(
+        f"$d={d}; $p=[Environment]::GetEnvironmentVariable('Path','User'); if($p){{ "
+        "[Environment]::SetEnvironmentVariable('Path',((($p -split ';') | Where-Object { $_ -and $_ -ne $d }) -join ';'),'User') }",
+        check=False,
+    )
+
+
 def service_installed() -> bool:
+    if WINDOWS:
+        return _schtasks("/Query", "/TN", TASK, check=False).returncode == 0
     return Path(UNIT_PATH).exists()
 
 
 def service_active() -> bool:
+    if WINDOWS:
+        out = _schtasks("/Query", "/TN", TASK, "/FO", "LIST", check=False).stdout
+        return any(
+            line.strip().lower().startswith("status:") and "running" in line.lower()
+            for line in out.splitlines()
+        )
     return run(["systemctl", "is-active", "--quiet", UNIT], check=False).returncode == 0
 
 
+def _kill_by_pid_file(home: Home) -> None:
+    """The scheduled task may leave the server behind when it is ended: the server writes its process id to run.pid, and
+    that process (with anything it started) is stopped by id."""
+    try:
+        pid = int(home.pid_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+    run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, capture=True)
+    with contextlib.suppress(OSError):
+        home.pid_file.unlink()
+
+
+def service_action(home: Home, action: str, *, check: bool = True) -> None:
+    """start | stop | restart the service, whichever kind this system has."""
+    if not WINDOWS:
+        systemctl(action, UNIT, check=check)
+        return
+    if action in ("stop", "restart"):
+        _schtasks("/End", "/TN", TASK, check=False)
+        _kill_by_pid_file(home)
+        port = configured_port(home)
+        deadline = time.monotonic() + 15
+        while (
+            port_in_use(port) and time.monotonic() < deadline
+        ):  # until the old server has let go of its port
+            time.sleep(0.5)
+    if action in ("start", "restart"):
+        _schtasks("/Run", "/TN", TASK, check=check)
+
+
 def install_service(home: Home) -> None:
+    if WINDOWS:
+        launcher = home.root / "bin" / "themis-run.cmd"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_bytes(windows_launcher(home).encode("utf-8"))
+        user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}".strip("\\")
+        xml = home.tmp / "themis-task.xml"
+        xml.write_bytes(windows_task_xml(launcher, user).encode("utf-16"))  # Task Scheduler wants UTF-16
+        try:
+            _schtasks("/Create", "/TN", TASK, "/XML", str(xml), "/F")
+        finally:
+            xml.unlink(missing_ok=True)
+        return
     user = os.environ.get("USER") or Path.home().name
     groups = (
         ["docker"]
@@ -538,6 +718,16 @@ def install_service(home: Home) -> None:
         os.unlink(f.name)
     systemctl("daemon-reload")
     systemctl("enable", UNIT)
+
+
+def remove_service(home: Home) -> None:
+    if WINDOWS:
+        service_action(home, "stop", check=False)
+        _schtasks("/Delete", "/TN", TASK, "/F", check=False)
+        return
+    systemctl("disable", "--now", UNIT, check=False)
+    run([*sudo_prefix(), "rm", "-f", UNIT_PATH])
+    systemctl("daemon-reload", check=False)
 
 
 # ----- the app answering -----
@@ -585,7 +775,7 @@ def doctor_json(home: Home, release: Path | None = None) -> dict:
         check=False,
         capture=True,
         env=home.env(),
-        cwd=(release or home.current) / "backend",
+        cwd=(release or home.current_path()) / "backend",
     )
     try:
         return json.loads(done.stdout)
@@ -604,9 +794,56 @@ def in_docker_group() -> bool:
     return run(["id", "-nG"], check=False, capture=True).stdout.split().count("docker") > 0
 
 
+DOCKER_DESKTOP_URL = "https://docs.docker.com/desktop/setup/install/windows-install/"
+
+
+def install_docker_desktop(*, yes: bool) -> None:
+    """Windows: Docker Desktop cannot be installed silently or quickly (it needs an administrator prompt, WSL 2, a first
+    start-up and sometimes a restart), so this installs it with the person's yes and then stops: running the installer
+    again continues where this left off."""
+    info("Docker is not installed. Themis needs Docker Desktop: agents run inside Docker containers.")
+    if shutil.which("winget") and ask(
+        "Install Docker Desktop now, with winget? Windows will ask for your permission (an administrator prompt).",
+        yes=yes,
+    ):
+        run(
+            [
+                "winget",
+                "install",
+                "-e",
+                "--id",
+                "Docker.DockerDesktop",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+            ]
+        )
+        raise CtlError(
+            "Docker Desktop is installed. Start it from the Start menu, accept its terms and let it finish starting "
+            "(it may ask to restart if Windows had to enable WSL 2), wait until it says it is running, and run this installer again."
+        )
+    raise CtlError(f"Install Docker Desktop ({DOCKER_DESKTOP_URL}), start it, and run this again.")
+
+
+def wait_for_docker_desktop(home: Home, release: Path, seconds: int = 180) -> dict:
+    """Windows: Docker Desktop is installed but not running. Starts it and waits for the engine to answer."""
+    exe = (
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Docker" / "Docker" / "Docker Desktop.exe"
+    )
+    if exe.is_file():
+        info("Docker Desktop is not running. Starting it and waiting for it (this can take a minute)")
+        subprocess.Popen([str(exe)], close_fds=True)
+    deadline = time.monotonic() + seconds
+    report = doctor_json(home, release)
+    while docker_problem(report) and time.monotonic() < deadline:
+        time.sleep(5)
+        report = doctor_json(home, release)
+    return report
+
+
 def ensure_docker(home: Home, release: Path, *, yes: bool) -> None:
     """Docker is not optional: Themis runs agents in containers. This checks it, and with the person's yes fixes what it can
-    (install it, add them to the docker group); anything else is explained, with where to read more, and stops here."""
+    (install it, add them to the docker group, start Docker Desktop); anything else is explained, with where to read more,
+    and stops here."""
     report = doctor_json(home, release)
     problem = docker_problem(report)
     docker = report.get("docker") or {}
@@ -614,6 +851,8 @@ def ensure_docker(home: Home, release: Path, *, yes: bool) -> None:
         info(f"Docker {docker.get('version', '')} is ready")
         return
     if not docker.get("installed", True):
+        if WINDOWS:
+            install_docker_desktop(yes=yes)
         info("Docker is not installed. Themis needs it: agents run inside Docker containers.")
         if not ask(
             "Install Docker Engine now, with Docker's official script (https://get.docker.com)? It uses sudo.",
@@ -624,7 +863,14 @@ def ensure_docker(home: Home, release: Path, *, yes: bool) -> None:
         run([*sudo_prefix(), "systemctl", "enable", "--now", "docker"], check=False)
         report = doctor_json(home, release)
         problem = docker_problem(report)
-    if problem and "permission denied" in (problem.get("message", "") + problem.get("hint", "")).lower():
+    elif WINDOWS and not docker.get("version") and docker.get("os_type") != "windows":
+        report = wait_for_docker_desktop(home, release)  # installed, just not running
+        problem = docker_problem(report)
+    if (
+        not WINDOWS
+        and problem
+        and "permission denied" in (problem.get("message", "") + problem.get("hint", "")).lower()
+    ):
         info("Docker is installed, but this user cannot use it yet.")
         if not in_docker_group():
             if not ask(
@@ -645,7 +891,7 @@ def ensure_docker(home: Home, release: Path, *, yes: bool) -> None:
 def docker_run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     """`docker ...`, from inside the docker group when this terminal does not have it yet."""
     plain = run(["docker", *args], check=False, capture=True)
-    if plain.returncode == 0 or "permission denied" not in (plain.stderr or "").lower():
+    if WINDOWS or plain.returncode == 0 or "permission denied" not in (plain.stderr or "").lower():
         if check and plain.returncode != 0:
             raise CtlError(f"docker {args[0]} failed: {(plain.stderr or '').strip().splitlines()[-1:]}")
         return plain
@@ -709,7 +955,7 @@ def need_installed(home: Home) -> str:
 
 def restart_service(home: Home) -> None:
     if service_installed():
-        systemctl("restart", UNIT)
+        service_action(home, "restart")
     else:
         info("There is no service, so start it yourself with: themis run")
 
@@ -717,7 +963,11 @@ def restart_service(home: Home) -> None:
 def make_shim(home: Home) -> Path:
     """The `themis` command: runs the control file of the current release, whichever that is after an upgrade."""
     if WINDOWS:
-        raise CtlError("Windows support is not ready yet.")
+        bin_dir = home.root / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        shim = bin_dir / "themis.cmd"
+        shim.write_bytes(windows_shim(home).encode("utf-8"))
+        return shim
     bin_dir = Path.home() / ".local" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     shim = bin_dir / "themis"
@@ -730,19 +980,30 @@ exec "{home.current}/backend/.venv/bin/python" "{home.current}/scripts/themisctl
     return shim
 
 
+def is_elevated() -> bool:
+    """Windows: running as an administrator (an elevated window)?"""
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        return False
+
+
 def check_platform() -> None:
-    if WINDOWS:
-        raise CtlError(
-            "Windows support is on its way and is not ready yet. See the README for where it stands."
-        )
-    if sys.platform != "linux":
-        raise CtlError(
-            f"{platform.system()} is not supported yet: Themis runs on Linux today, and Windows is next."
-        )
+    if not WINDOWS and sys.platform != "linux":
+        raise CtlError(f"{platform.system()} is not supported yet: Themis runs on Linux and Windows.")
     if platform.machine().lower() not in ("x86_64", "amd64", "aarch64", "arm64"):
         raise CtlError(
             f"The processor type {platform.machine()} is not supported (Intel/AMD or ARM 64-bit are)."
         )
+    if WINDOWS:
+        if is_elevated():
+            raise CtlError(
+                "Run this in a normal PowerShell window, not as administrator: Themis installs for your own account, "
+                "and an elevated install would end up in the administrator's account."
+            )
+        return
     if os.geteuid() == 0:
         raise CtlError(
             "Run this as your normal user, not root: the service runs as you, and sudo is used only where needed."
@@ -779,7 +1040,10 @@ def cmd_install(args: argparse.Namespace, home: Home) -> None:
         source=API,
     )
     shim = make_shim(home)
-    if str(shim.parent) not in os.environ.get("PATH", "").split(os.pathsep):
+    if WINDOWS:
+        if add_to_user_path(shim.parent):
+            info("added the `themis` command to your PATH: open a new PowerShell window to use it")
+    elif str(shim.parent) not in os.environ.get("PATH", "").split(os.pathsep):
         info(f"add {shim.parent} to your PATH to use the `themis` command (or run {shim} directly)")
     if args.no_service:
         say("Service skipped (--no-service)")
@@ -787,12 +1051,18 @@ def cmd_install(args: argparse.Namespace, home: Home) -> None:
     else:
         say("Service")
         install_service(home)
-        systemctl("restart", UNIT)
+        service_action(home, "restart")
         info("waiting for Themis to come up")
         if not wait_until_up(port, version):
-            raise CtlError(f"Themis did not start. See: journalctl -u {UNIT} -n 50   or   themis doctor")
+            where = "logs\\service.log in the Themis folder" if WINDOWS else f"journalctl -u {UNIT} -n 50"
+            raise CtlError(f"Themis did not start. See: {where}   or   themis doctor")
     say("Checking the installation")
-    run([str(home.python()), "-m", "app.doctor"], check=False, env=home.env(), cwd=home.current / "backend")
+    run(
+        [str(home.python()), "-m", "app.doctor"],
+        check=False,
+        env=home.env(),
+        cwd=home.current_path() / "backend",
+    )
     say("Done")
     shown = "127.0.0.1" if args.host == "127.0.0.1" else args.host
     info(f"Open http://{shown}:{port} and create your account. The first account is the administrator.")
@@ -845,7 +1115,7 @@ def cmd_upgrade(args: argparse.Namespace, home: Home) -> None:
         if not args.skip_image:
             get_cell_image(home, new_dir, target)
         if service_installed():
-            systemctl("stop", UNIT)
+            service_action(home, "stop")
         link_current(home, target)
         restart_service(home)
         if service_installed() and not wait_until_up(port, target):
@@ -873,7 +1143,7 @@ def cmd_upgrade(args: argparse.Namespace, home: Home) -> None:
 def rollback(home: Home, previous: str, saved: Path, port: int) -> None:
     """Back to the release that worked, with the database as it was: the new one may have changed it."""
     if service_installed():
-        systemctl("stop", UNIT, check=False)
+        service_action(home, "stop", check=False)
     link_current(home, previous)
     restore(home, saved)
     restart_service(home)
@@ -897,51 +1167,116 @@ def cmd_status(args: argparse.Namespace, home: Home) -> None:
         print(f"  also on disk (for a rollback): {', '.join(others)}")
 
 
+def follow_file(path: Path) -> None:
+    """Prints the end of a file and then what is added to it (Ctrl+C to leave): `tail -f`, for where there is none."""
+    if not path.is_file():
+        raise CtlError(f"There is no log yet: {path}")
+    with path.open(encoding="utf-8", errors="replace") as f:
+        for line in f.readlines()[-50:]:
+            print(line, end="")
+        while True:
+            line = f.readline()
+            if line:
+                print(line, end="", flush=True)
+            else:
+                time.sleep(0.5)
+
+
 def cmd_service(action: str, home: Home) -> None:
     need_installed(home)
     if not service_installed():
         raise CtlError("There is no service. Run it in the foreground with: themis run")
     if action == "logs":
+        if WINDOWS:
+            follow_file(home.logs / "themis.log")
         os.execvp("journalctl", ["journalctl", "-u", UNIT, "-f", "-n", "50"])
-    systemctl(action)
+    service_action(home, action)
+
+
+def run_app(home: Home, module: str, rest: list[str]) -> None:
+    """Runs a module of the current release in the foreground and ends with its exit code (on Linux by becoming it)."""
+    need_installed(home)
+    release = home.current_path()
+    cmd = [str(home.python()), "-m", module, *rest]
+    if WINDOWS:  # there is no exec on Windows: this process waits for the child and passes its exit code on
+        sys.exit(
+            subprocess.run(
+                cmd, env={**home.env(), "PYTHONUTF8": "1"}, cwd=release / "backend", check=False
+            ).returncode
+        )
+    os.chdir(release / "backend")
+    os.execve(cmd[0], cmd, home.env())
 
 
 def cmd_run(home: Home) -> None:
-    need_installed(home)
-    os.chdir(home.current / "backend")
-    os.execve(str(home.python()), [str(home.python()), "-m", "app.run"], home.env())
+    run_app(home, "app.run", [])
 
 
 def cmd_doctor(rest: list[str], home: Home) -> None:
-    need_installed(home)
-    os.chdir(home.current / "backend")
-    os.execve(str(home.python()), [str(home.python()), "-m", "app.doctor", *rest], home.env())
+    run_app(home, "app.doctor", rest)
+
+
+def delete_home_later(home: Home) -> None:
+    """Windows cannot delete the python.exe that is running this very command, so the folder is deleted a few seconds after
+    it exits, by a separate process."""
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen(
+        ["cmd", "/c", f'ping -n 4 127.0.0.1 >nul & rmdir /s /q "{home.root}"'],
+        creationflags=flags,
+        close_fds=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def cmd_uninstall(args: argparse.Namespace, home: Home) -> None:
     if service_installed():
-        systemctl("disable", "--now", UNIT, check=False)
-        run([*sudo_prefix(), "rm", "-f", UNIT_PATH])
-        systemctl("daemon-reload", check=False)
-    shim = Path.home() / ".local" / "bin" / "themis"
-    with contextlib.suppress(FileNotFoundError):
-        shim.unlink()
+        remove_service(home)
+    if WINDOWS:
+        remove_from_user_path(home.root / "bin")
+    else:
+        shim = Path.home() / ".local" / "bin" / "themis"
+        with contextlib.suppress(FileNotFoundError):
+            shim.unlink()
     if args.purge:
         if not ask(
             f"Delete EVERYTHING in {home.root}: the database, all projects' files and the secret key? This cannot be undone.",
             yes=args.yes,
         ):
             return
+        if WINDOWS:
+            delete_home_later(home)
+            print("Themis and all its data are being deleted.")
+            return
         shutil.rmtree(home.root, ignore_errors=True)
         print("Themis and all its data are gone.")
     else:
-        for name in ("current",):
-            with contextlib.suppress(OSError):
-                (home.root / name).unlink()
-        shutil.rmtree(home.releases, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            home.current.unlink()
+        with contextlib.suppress(OSError):
+            home.current_file.unlink()
+        if WINDOWS:  # the releases include the python running this: they go once this has exited
+            delete_releases_later(home)
+        else:
+            shutil.rmtree(home.releases, ignore_errors=True)
         print(
             f"Themis is removed. Your data is kept in {home.root} (db/, data/, backups/, config.env); delete that folder to remove it too."
         )
+
+
+def delete_releases_later(home: Home) -> None:
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen(
+        [
+            "cmd",
+            "/c",
+            f'ping -n 4 127.0.0.1 >nul & rmdir /s /q "{home.releases}" & rmdir /s /q "{home.root / "bin"}"',
+        ],
+        creationflags=flags,
+        close_fds=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

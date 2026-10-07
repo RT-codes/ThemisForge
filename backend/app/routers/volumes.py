@@ -361,7 +361,7 @@ async def _check_config(session, volume: Volume, rel: str, file: Path, user) -> 
     """A file in the config folder is checked before it is saved: one that could not work is refused with a reason."""
     if volume.kind == "config" and project_config.is_validated(rel):
         try:
-            text = file.read_text(errors="replace")
+            text = file.read_text(encoding="utf-8", errors="replace")
             await project_config.validate_write(session, volume.project_id, rel, text, user)
         except project_config.ConfigError as e:
             raise _bad(str(e)) from None

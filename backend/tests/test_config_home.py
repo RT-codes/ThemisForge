@@ -34,7 +34,7 @@ def test_without_a_home_a_checkout_keeps_its_state_beside_the_code():
         and s.data_dir == config.BACKEND_DIR.parent / "data"
         and s.log_dir == config.BACKEND_DIR.parent / "logs"
     )
-    assert s.database_url.endswith("backend/themisforge.db")
+    assert Path(s.database_url.removeprefix("sqlite+aiosqlite:///")) == config.BACKEND_DIR / "themisforge.db"
 
 
 def test_the_install_reads_its_settings_from_config_env_in_the_home(monkeypatch, tmp_path):

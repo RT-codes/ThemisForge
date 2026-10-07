@@ -1,4 +1,5 @@
 import shutil
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -58,6 +59,7 @@ class SystemStatus(BaseModel):
     insecure_secret_key: bool
     cell_backend: str
     version: str
+    platform: str  # "windows" | "linux" | "mac": what a folder path looks like here
     cells_ready: bool  # False while Docker cannot run cells: tasks wait instead of failing
     problems: list[
         dict[str, str]
@@ -94,6 +96,7 @@ async def system_status(request: Request, session: SessionDep, user: CurrentUser
         insecure_secret_key=boot_settings.secret_key == DEFAULT_SECRET_KEY,
         cell_backend=boot_settings.cell_backend,
         version=build_info().version,
+        platform={"win32": "windows", "darwin": "mac"}.get(sys.platform, "linux"),
         cells_ready=preflight.cells_ready,
         problems=[c.to_dict() for c in preflight.problems] if user.is_admin else [],
         update=request.app.state.updates.info(cfg).to_dict() if user.is_admin else None,

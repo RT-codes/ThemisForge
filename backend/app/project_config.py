@@ -78,7 +78,7 @@ def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(f".{path.name}.{uuid.uuid4().hex}.part")
     try:
-        partial.write_text(text)
+        partial.write_text(text, encoding="utf-8", newline="\n")
         os.replace(partial, path)
     finally:
         partial.unlink(missing_ok=True)
@@ -557,7 +557,9 @@ async def _sync(session: AsyncSession, project_id: int) -> None:
         seen.add(path)
         row = by_path.get(path)
         try:
-            fields = mcp_fields(name, parse_mcp(file.read_text(errors="replace")), refs, None, row)
+            fields = mcp_fields(
+                name, parse_mcp(file.read_text(encoding="utf-8", errors="replace")), refs, None, row
+            )
         except ConfigError as e:
             if row is not None:
                 row.config_error = str(e)
@@ -585,7 +587,7 @@ async def _sync(session: AsyncSession, project_id: int) -> None:
         seen.add(path)
         row = by_path.get(path)
         try:
-            af = parse_agent(file.read_text(errors="replace"))
+            af = parse_agent(file.read_text(encoding="utf-8", errors="replace"))
             fields = agent_fields(af, refs, None, row)
         except ConfigError as e:
             if row is not None:

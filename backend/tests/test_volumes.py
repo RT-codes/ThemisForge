@@ -51,7 +51,10 @@ def test_a_folder_outside_every_approved_one_is_refused(tmp_path, notes):
 def test_a_symlink_cannot_lead_out_of_an_approved_folder(tmp_path, notes):
     secret = tmp_path / "secret"
     secret.mkdir()
-    (notes / "link").symlink_to(secret)
+    try:
+        (notes / "link").symlink_to(secret)
+    except OSError:  # Windows without the privilege to make links
+        pytest.skip("cannot create symbolic links here")
     with pytest.raises(MountError, match="not inside an approved folder"):
         host_target(str(notes / "link"), roots(notes))
 
@@ -202,13 +205,54 @@ def spec(tmp_path, **kw) -> CellSpec:
     return CellSpec(**{**base, **kw})
 
 
-def test_docker_gets_one_volume_flag_per_mount_and_read_only_ones_say_so(tmp_path, monkeypatch):
+def bind_mounts(args: list[str]) -> list[dict]:
+    """The --mount flags of a docker command, read the way Docker reads them (comma separated, CSV quoting)."""
+    import csv
+
+    out = []
+    for i, a in enumerate(args):
+        if a == "--mount":
+            fields = next(csv.reader([args[i + 1]]))
+            out.append(
+                {k: v for k, _, v in (f.partition("=") for f in fields)} | {"readonly": "readonly" in fields}
+            )
+    return out
+
+
+def test_docker_gets_one_mount_flag_per_folder_and_read_only_ones_say_so(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_dir", tmp_path)
     mounts = [Mount("docs", tmp_path / "d", True, 2), Mount("shared", tmp_path / "s", False, 1)]
     args = DockerCellManager().build_args(spec(tmp_path, mounts=mounts))
-    flags = [args[i + 1] for i, a in enumerate(args) if a == "-v"]
-    assert f"{tmp_path / 'd'}:/workspace/docs:ro" in flags and f"{tmp_path / 's'}:/workspace/shared" in flags
-    assert not any(f.endswith("shared:ro") for f in flags)
+    assert "-v" not in args  # -v cannot tell a Windows drive letter from its own separator
+    found = {m["target"]: m for m in bind_mounts(args)}
+    assert (
+        found["/workspace/docs"]["source"] == str(tmp_path / "d")
+        and found["/workspace/docs"]["readonly"] is True
+    )
+    assert (
+        found["/workspace/shared"]["source"] == str(tmp_path / "s")
+        and found["/workspace/shared"]["readonly"] is False
+    )
+    assert {"/workspace", "/cell"} <= set(found) and all(m["type"] == "bind" for m in found.values())
+
+
+def test_a_comma_or_quote_in_a_folder_name_cannot_start_another_mount_field():
+    from app.cells import mount_arg
+
+    for source in (
+        "/home/me/a,b",
+        '/home/me/say "hi"',
+        "C:\\Users\\me\\notes, 2026",
+        "/home/me/x,readonly,source=/etc",
+    ):
+        (flag, value) = mount_arg(source, "/workspace/x", read_only=False)
+        (found,) = bind_mounts(["--mount", value])
+        assert (
+            flag == "--mount"
+            and found["source"] == source
+            and found["target"] == "/workspace/x"
+            and found["readonly"] is False
+        )
 
 
 async def test_every_cell_mounts_the_projects_shared_folder_and_the_mountpoints_are_ours(
@@ -223,7 +267,8 @@ async def test_every_cell_mounts_the_projects_shared_folder_and_the_mountpoints_
     assert [(m.name, m.read_only) for m in mounts] == [("shared", False)]
     assert mounts[0].source == settings.data_dir / "projects" / str(pid) / "volumes" / "shared"
     assert (cells.specs[0].workspace_dir / "shared").is_dir()
-    assert os.stat(cells.specs[0].workspace_dir / "shared").st_uid == os.getuid()
+    if hasattr(os, "getuid"):  # the mountpoint belongs to the user running Themis (Windows has no such ids)
+        assert os.stat(cells.specs[0].workspace_dir / "shared").st_uid == os.getuid()
 
 
 async def test_a_run_fails_with_the_reason_when_its_host_folder_is_no_longer_approved(
@@ -322,3 +367,63 @@ async def test_the_id_of_a_removed_agent_is_never_given_to_a_new_one(client):
     gone = await make_agent(client, pid, name="Gone")
     await client.delete(f"/api/agents/{gone['id']}")
     assert (await make_agent(client, pid, name="Fresh"))["id"] != gone["id"]
+
+
+# ----- Windows rules, checked from any system (the code takes the platform as a parameter) -----
+
+
+def test_on_windows_the_drive_letters_colon_is_fine_and_every_other_colon_is_not():
+    from app.volumes import has_bad_colon
+
+    assert not has_bad_colon("C:\\Users\\me\\notes", windows=True) and not has_bad_colon(
+        "d:/data", windows=True
+    )
+    assert has_bad_colon("C:\\Users\\me\\notes:ro", windows=True) and has_bad_colon(
+        "C:\\a\\file:stream", windows=True
+    )
+    assert has_bad_colon("/home/me/notes:ro", windows=False) and has_bad_colon("C:/notes", windows=False)
+
+
+def test_on_windows_a_path_cannot_use_names_that_mean_something_else_to_the_system(tmp_path):
+    from app.volumes import FileError, safe_path
+
+    for bad in (
+        "a\\b",
+        "..\\..\\secret",
+        "notes:stream",
+        "x.",
+        "x ",
+        "q?",
+        "CON",
+        "nul.txt",
+        "com1",
+        "LPT9.log",
+        "dir/AUX",
+    ):
+        with pytest.raises(FileError):
+            safe_path(tmp_path, bad, windows=True)
+    for fine in ("notes.txt", "console.log", "dir/sub/file", "con-tent", "a b.txt"):
+        assert safe_path(tmp_path, fine, windows=True).name == fine.split("/")[-1]
+    assert (
+        safe_path(tmp_path, "a\\b", windows=False).name == "a\\b"
+    )  # a backslash is an ordinary letter elsewhere
+
+
+def test_windows_folder_paths_are_approved_in_a_normal_form_and_a_whole_drive_is_not(monkeypatch):
+    import types
+
+    from app import app_settings
+
+    monkeypatch.setattr(app_settings, "os", types.SimpleNamespace(name="nt"))
+    ok = lambda p: app_settings.MountRoot(path=p).path
+    assert ok("C:\\Users\\me\\notes") == "C:/Users/me/notes" and ok("d:/data/") == "d:/data"
+    for bad, why in (
+        ("C:\\", "whole drive"),
+        ("C:", "whole drive"),
+        ("\\\\server\\share\\x", "network share"),
+        ("relative\\notes", "absolute"),
+        ("C:\\notes:ro", "colon"),
+        ("/home/me", "absolute"),
+    ):
+        with pytest.raises(ValueError, match=why):
+            app_settings.MountRoot(path=bad)

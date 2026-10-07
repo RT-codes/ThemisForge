@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { system } from '$lib/system.svelte'
 	import { api, ApiError, type Volume } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -52,7 +53,7 @@
 	{#if kind === 'host'}
 		<div class="grid gap-1.5" transition:slide={{ duration: 160 }}>
 			<Label for="folder-path">Folder</Label>
-			<Input id="folder-path" bind:value={hostPath} required placeholder="/home/you/notes" class="font-mono" />
+			<Input id="folder-path" bind:value={hostPath} required placeholder={system.status?.platform === 'windows' ? 'C:\\Users\\you\\notes' : '/home/you/notes'} class="font-mono" />
 			<p class="text-xs text-muted-foreground">It must be inside a folder an administrator approved under Settings, Mount roots.</p>
 		</div>
 	{/if}

@@ -411,7 +411,7 @@
 						<div class="flex gap-2">
 							<Input
 								bind:value={newRoot}
-								placeholder="/home/you/notes"
+								placeholder={system?.platform === 'windows' ? 'C:\\Users\\you\\notes' : '/home/you/notes'}
 								class="font-mono"
 								aria-label="Folder to approve"
 								onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addRoot())}

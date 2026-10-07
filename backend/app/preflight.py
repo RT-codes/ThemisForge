@@ -80,7 +80,7 @@ def check_data_dir() -> Check:
     try:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
         probe = settings.data_dir / ".doctor"
-        probe.write_text("ok")
+        probe.write_text("ok", encoding="utf-8")
         probe.unlink()
     except OSError as e:
         return Check(

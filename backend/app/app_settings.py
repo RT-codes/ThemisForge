@@ -1,3 +1,5 @@
+import os
+import re
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -22,7 +24,24 @@ class MountRoot(BaseModel):
     @field_validator("path")
     @classmethod
     def absolute(cls, v: str) -> str:
-        v = v.strip().rstrip("/") or "/"
+        v = v.strip()
+        if os.name == "nt":
+            # Windows: C:\Users\you\notes or C:/Users/you/notes, kept with forward slashes. The only colon is the drive's.
+            v = v.replace("\\", "/")
+            if v.startswith("//"):
+                raise ValueError(
+                    "A network share (\\\\server\\share) cannot be approved. Use a folder on a drive."
+                )
+            drive = re.match(r"^[A-Za-z]:(/.*)?$", v)
+            if not drive:
+                raise ValueError("The folder must be an absolute path, like C:\\Users\\you\\notes")
+            v = v.rstrip("/") if len(v) > 3 else v
+            if ":" in v[2:] or "\0" in v:
+                raise ValueError("A colon in the folder path is not supported")
+            if len(v) <= 3:
+                raise ValueError("Approving a whole drive is not allowed. Pick a folder.")
+            return v
+        v = v.rstrip("/") or "/"
         if not v.startswith("/"):
             raise ValueError("The folder must be an absolute path, like /home/you/notes")
         if ":" in v or "\0" in v:

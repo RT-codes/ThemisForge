@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .app_settings import load_settings
 from .config import DEFAULT_SECRET_KEY, settings
 from .crypto import decrypt, encrypt
-from .docker_check import docker_env
+from .docker_check import docker_bin, docker_env
 from .models import CodexConnection, utcnow
 
 log = logging.getLogger("themis.codex")
@@ -226,7 +226,7 @@ class _ContainerLogin(_Launch):
         self._env = docker_env(docker_host)
         self.env = self._env
         self.argv = [
-            "docker",
+            docker_bin(),
             "run",
             "--name",
             self._name,
@@ -252,7 +252,11 @@ class _ContainerLogin(_Launch):
 
     async def _docker(self, *args: str) -> tuple[int, bytes]:
         proc = await asyncio.create_subprocess_exec(
-            "docker", *args, env=self._env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+            docker_bin(),
+            *args,
+            env=self._env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), 30)

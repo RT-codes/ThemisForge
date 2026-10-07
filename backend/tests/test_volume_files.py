@@ -1,6 +1,7 @@
 """The Files page: browsing and managing what is inside a project's folders."""
 
 import asyncio
+import os
 
 import pytest
 
@@ -75,6 +76,7 @@ async def test_upload_read_move_and_delete(client, files):
     assert (await client.delete(f"/api/volumes/{vid}/file", params={"path": "reports"})).status_code == 404
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no executable bit")
 async def test_overwriting_a_file_keeps_its_permissions(client, files):
     vid, disk = files
     script = disk / "run.sh"
@@ -114,8 +116,11 @@ async def test_a_symlink_cannot_be_used_to_read_or_write_outside(client, files, 
     secret = tmp_path / "secret"
     secret.mkdir()
     (secret / "key.txt").write_text("secret")
-    (disk / "link").symlink_to(secret)
-    (disk / "filelink").symlink_to(secret / "key.txt")
+    try:
+        (disk / "link").symlink_to(secret)
+        (disk / "filelink").symlink_to(secret / "key.txt")
+    except OSError:  # Windows without the privilege to make links
+        pytest.skip("cannot create symbolic links here")
     assert (await client.get(f"/api/volumes/{vid}/files", params={"path": "link"})).status_code == 422
     assert (await client.get(f"/api/volumes/{vid}/file", params={"path": "link/key.txt"})).status_code == 422
     assert (await client.get(f"/api/volumes/{vid}/file", params={"path": "filelink"})).status_code == 422

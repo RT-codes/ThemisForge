@@ -51,6 +51,38 @@ Pass options after `--`: `curl ... | sh -s -- --port 8080`.
 | `--skip-image` | Do not pull or build the agent image (offline, or you provide your own). |
 | `--home DIR` | Install somewhere else. |
 
+## Installing on Windows
+
+On Windows 10 or 11, in a normal PowerShell window (**not** "as administrator"):
+
+```powershell
+irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex
+```
+
+With options, which go to `themis install` (`-Port 8080`, `-Yes`, `-NoService`, `-Channel beta`, `-ThemisHome D:\Themis`):
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1))) -Port 8080
+```
+
+It works like the Linux installer (everything above), with these differences:
+
+- **Docker Desktop** with **Linux containers** (its default) is required. If it is missing, the installer offers to install it
+  with `winget`; Windows asks for permission, and Docker Desktop may need a restart and a first start of its own, so the
+  installer then stops and you run it again. If Docker Desktop is installed but not running, the installer starts it and waits.
+- It installs **for your own account, without administrator rights**, into `%LOCALAPPDATA%\Themis` (set another with
+  `-ThemisHome`). There is no `sudo` and no docker group.
+- Instead of a system service it creates a **scheduled task** named `Themis` that starts Themis when **you log in** (in your
+  own session, where Docker Desktop also runs) and starts it again a minute after a crash. If Docker Desktop is not ready yet
+  when Themis starts, Themis shows "runs are paused" and carries on by itself once it is.
+- The `themis` command is added to your `PATH`: open a new PowerShell window to use it. `themis logs` follows
+  `logs\themis.log` in the home folder, and `logs\service.log` has the console output of the last start.
+- **Folders on a drive** can be shared with agents (`C:\Users\you\notes`) under Settings, Mount roots. A whole drive, a
+  network share (`\\server\share`) and any other colon are refused. Docker Desktop must be allowed to share the drive
+  (its default for your user folder).
+
+Everything else on this page (upgrading with a backup and a rollback, backups, the doctor) works the same.
+
 ## Day to day
 
 The installer puts a `themis` command in `~/.local/bin` (add that folder to your `PATH` if the installer says so).

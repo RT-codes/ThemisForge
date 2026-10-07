@@ -61,6 +61,10 @@ may hold the folder for writing; a task that needs it waits for its turn without
 and other tasks go ahead. It is off for `shared` and on by default for host folders that cells may write to. Runs that
 only read are never held up.
 
+On Windows a host folder is a folder on a drive, such as `C:\Users\you\notes`; a whole drive, a network share
+(`\\server\share`) and a colon anywhere but after the drive letter are refused. Docker Desktop must be allowed to share
+the drive.
+
 A folder can be **renamed** from the gear on its tab on the Files page, except `shared`, which keeps its name because every
 cell expects it. Agents, workflows and runs keep pointing at the folder, and a managed folder is moved on disk with it. The
 new name applies to the next run: a folder cannot be renamed while a run is using it, and instructions, skills or scripts

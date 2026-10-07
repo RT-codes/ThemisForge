@@ -39,7 +39,15 @@ def docker_env(host: str = "") -> dict[str, str]:
     return env
 
 
+def docker_bin() -> str:
+    """The docker program as the system finds it (PATH and PATHEXT), so docker.exe and a docker.cmd both work on Windows,
+    where a bare "docker" only ever finds an .exe."""
+    return shutil.which("docker") or "docker"
+
+
 async def run_command(args: list[str], env: dict[str, str], timeout: float) -> tuple[int, str, str]:
+    if args and args[0] == "docker":
+        args = [docker_bin(), *args[1:]]
     proc = await asyncio.create_subprocess_exec(
         *args, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )

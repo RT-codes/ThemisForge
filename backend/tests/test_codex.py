@@ -228,6 +228,6 @@ def test_docker_args_never_contain_the_secret():
 
 def test_docker_args_work_without_unix_user_ids(monkeypatch):
     """Windows has no os.getuid: cells must still start (as the image's default user)."""
-    monkeypatch.delattr(os, "getuid")
+    monkeypatch.delattr(os, "getuid", raising=False)  # already missing on Windows
     args = DockerCellManager().build_args(spec(secret_files={f"{SECRETS_DIR}/codex/auth.json": "x"}))
     assert "--user" not in args and not any("uid=" in a for a in args)

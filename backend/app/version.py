@@ -54,13 +54,13 @@ def _git_commit() -> str:
 @functools.cache
 def build_info() -> BuildInfo:
     try:
-        release = VERSION_FILE.read_text().strip()
+        release = VERSION_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         release = UNKNOWN
     if not SEMVER.match(release):
         release = UNKNOWN
     try:
-        build = json.loads(BUILD_FILE.read_text())
+        build = json.loads(BUILD_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         build = None
     if isinstance(build, dict):
@@ -102,4 +102,4 @@ def is_newer(candidate: str, current: str) -> bool:
 
 
 def read_release_file(path: Path = VERSION_FILE) -> str:
-    return path.read_text().strip()
+    return path.read_text(encoding="utf-8").strip()

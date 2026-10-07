@@ -16,6 +16,7 @@ import asyncio
 import base64
 import codecs
 import contextlib
+import csv
 import io
 import json
 import os
@@ -28,7 +29,7 @@ from typing import Protocol
 
 from . import skills as skill_store
 from .config import settings
-from .docker_check import docker_env
+from .docker_check import docker_bin, docker_env
 
 LogSink = Callable[[str], Awaitable[None]]
 
@@ -136,7 +137,7 @@ def prepare_dirs(spec: CellSpec) -> None:
         # made here, as us: if Docker had to create the mountpoint it would belong to root
         (spec.workspace_dir / mount.name).mkdir(exist_ok=True)
     if spec.prompt:
-        (spec.cell_dir / "prompt.md").write_text(spec.prompt)
+        (spec.cell_dir / "prompt.md").write_text(spec.prompt, encoding="utf-8", newline="\n")
     (spec.cell_dir / "input.json").write_text(
         json.dumps(
             {
@@ -146,7 +147,9 @@ def prepare_dirs(spec: CellSpec) -> None:
                 "properties": spec.properties,
             },
             indent=2,
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -166,7 +169,7 @@ def secrets_archive(files: dict[str, str], uid: int = 0, gid: int = 0) -> bytes:
 
 def read_result(spec: CellSpec) -> str:
     path = spec.cell_dir / "result.md"
-    return path.read_text(errors="replace")[:100_000] if path.is_file() else ""
+    return path.read_text(encoding="utf-8", errors="replace")[:100_000] if path.is_file() else ""
 
 
 WRITEBACK_BEGIN = "@@THEMIS-WRITEBACK-BEGIN "
@@ -244,7 +247,9 @@ class FakeCellManager:
         if "fail" in spec.title.lower():
             await on_log("[fake cell] simulated failure\n")
             return CellResult(exit_code=1)
-        (spec.cell_dir / "result.md").write_text(f"Task {spec.task_id} ({spec.title}) finished.\n")
+        (spec.cell_dir / "result.md").write_text(
+            f"Task {spec.task_id} ({spec.title}) finished.\n", encoding="utf-8", newline="\n"
+        )
         await on_log("[fake cell] finished\n")
         wb = {p: c for p, c in self.writeback.items() if p in spec.writeback}
         return CellResult(exit_code=0, result=read_result(spec), writeback=wb)
@@ -254,6 +259,17 @@ class FakeCellManager:
 
     async def cleanup_orphans(self, docker_host: str) -> int:
         return 0
+
+
+def mount_arg(source: Path | str, target: str, *, read_only: bool = False) -> list[str]:
+    """A bind mount as `--mount type=bind,source=...,target=...`. Not `-v source:target`: its colon cannot tell a Windows
+    drive (C:\\notes) from the separator. The fields are quoted the way Docker reads them (as CSV), so a comma or a quote
+    in a folder name cannot start a new field and mount something else. A folder that does not exist is an error with
+    --mount (where -v made it), so prepare_dirs makes every one first."""
+    fields = ["type=bind", f"source={source}", f"target={target}", *(["readonly"] if read_only else [])]
+    out = io.StringIO()
+    csv.writer(out, lineterminator="").writerow(fields)
+    return ["--mount", out.getvalue()]
 
 
 class DockerCellManager:
@@ -279,17 +295,17 @@ class DockerCellManager:
             extra += ["-i", "--tmpfs", f"{SECRETS_DIR}:rw,noexec,nosuid,nodev,size=32m,mode=0700{owner_opts}"]
             script = f"tar -xf - -C / || exit 1\n{script}"
         return [
-            "docker", "run", "--rm",
+            docker_bin(), "run", "--rm",
             "--name", self._name(spec),
             "--label", "themis.cell=1",
             "--label", f"themis.attempt={spec.attempt_id}",
             "--cpus", str(spec.cpus),
             "--memory", f"{spec.memory_mb}m",
             *extra,
-            "-v", f"{spec.workspace_dir}:/workspace",
-            *[a for m in spec.mounts for a in ("-v", f"{m.source}:/workspace/{m.name}{':ro' if m.read_only else ''}")],
-            *(["-v", f"{spec.skills_dir}:{skill_store.MOUNT_AT}:ro"] if spec.skills else []),
-            "-v", f"{spec.cell_dir}:/cell",
+            *mount_arg(spec.workspace_dir, "/workspace"),
+            *[a for m in spec.mounts for a in mount_arg(m.source, f"/workspace/{m.name}", read_only=m.read_only)],
+            *(mount_arg(spec.skills_dir, skill_store.MOUNT_AT, read_only=True) if spec.skills else []),
+            *mount_arg(spec.cell_dir, "/cell"),
             "-e", f"THEMIS_TASK_ID={spec.task_id}",
             "-e", f"THEMIS_TASK_TITLE={spec.title}",
             *[a for k, v in spec.env.items() for a in ("-e", f"{k}={v}")],
@@ -343,7 +359,7 @@ class DockerCellManager:
 
     async def kill(self, spec: CellSpec) -> None:
         proc = await asyncio.create_subprocess_exec(
-            "docker", "rm", "-f", self._name(spec),
+            docker_bin(), "rm", "-f", self._name(spec),
             env=docker_env(spec.docker_host),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
@@ -355,14 +371,14 @@ class DockerCellManager:
         env = docker_env(docker_host)
         try:
             proc = await asyncio.create_subprocess_exec(
-                "docker", "ps", "-aq", "--filter", "label=themis.cell=1",
+                docker_bin(), "ps", "-aq", "--filter", "label=themis.cell=1",
                 env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             )  # fmt: skip
             out, _ = await proc.communicate()
             ids = out.decode().split()
             if proc.returncode == 0 and ids:
                 rm = await asyncio.create_subprocess_exec(
-                    "docker", "rm", "-f", *ids,
+                    docker_bin(), "rm", "-f", *ids,
                     env=env, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
                 )  # fmt: skip
                 await rm.wait()

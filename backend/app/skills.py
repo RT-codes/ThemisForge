@@ -97,7 +97,9 @@ def list_skills(project_id: int) -> list[SkillInfo]:
         if not folder.is_dir() or not NAME.match(folder.name) or not path.is_file():
             continue
         try:
-            description = parse_frontmatter(path.read_text(errors="replace")).get("description", "")
+            description = parse_frontmatter(path.read_text(encoding="utf-8", errors="replace")).get(
+                "description", ""
+            )
         except SkillError:
             description = ""  # a broken file is still listed, so it can be opened and fixed
         out.append(SkillInfo(folder.name, description, sum(1 for f in folder.rglob("*") if f.is_file())))
@@ -108,14 +110,14 @@ def read_skill(project_id: int, name: str) -> str:
     path = skill_dir(project_id, name) / SKILL_FILE
     if not path.is_file():
         raise SkillError("That skill does not exist")
-    return path.read_text(errors="replace")
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def write_skill(project_id: int, name: str, content: str) -> str:
     description = validate(name, content)
     folder = skill_dir(project_id, name)
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / SKILL_FILE).write_text(content)
+    (folder / SKILL_FILE).write_text(content, encoding="utf-8", newline="\n")
     return description
 
 

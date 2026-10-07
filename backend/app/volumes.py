@@ -30,6 +30,9 @@ from .config import BACKEND_DIR, settings
 from .models import Volume
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+_WINDOWS_BAD = re.compile(r'[\\:*?"<>|]')
+# names Windows treats as devices, whatever the extension: opening "nul.txt" does not open a file
+_WINDOWS_RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$", re.IGNORECASE)
 DEFAULT_NAME = "shared"
 # not a valid folder name (names start with a letter or digit), so a person can never make a folder that clashes with it
 CONFIG_NAME = "_config"
@@ -73,6 +76,11 @@ def _overlaps(a: Path, b: Path) -> bool:
     return a == b or b in a.parents or a in b.parents
 
 
+def has_bad_colon(path: str, windows: bool = os.name == "nt") -> bool:
+    """A colon is only fine as the drive letter's on Windows (C:\\notes); anywhere else it is refused."""
+    return ":" in (path[2:] if windows and re.match(r"^[A-Za-z]:", path) else path)
+
+
 def host_target(path: str, roots: list[MountRoot]) -> tuple[Path, bool]:
     """The real folder behind a host path and whether cells may write to it.
 
@@ -80,7 +88,7 @@ def host_target(path: str, roots: list[MountRoot]) -> tuple[Path, bool]:
     raw = Path(path)
     if not raw.is_absolute():
         raise MountError("The folder must be an absolute path, like /home/you/notes")
-    if ":" in path:
+    if has_bad_colon(path):
         raise MountError("A colon in the folder path is not supported")
     try:
         real = raw.resolve(strict=True)
@@ -110,7 +118,7 @@ def resolve_volume(volume: Volume, cfg: AppSettings) -> tuple[Path, bool]:
     return managed_dir(volume.project_id, volume.name), True
 
 
-def safe_path(root: Path, rel: str, *, follow_leaf: bool = True) -> Path:
+def safe_path(root: Path, rel: str, *, follow_leaf: bool = True, windows: bool = os.name == "nt") -> Path:
     """The real path of `rel` (a slash separated path relative to a volume's root), refusing anything outside it.
 
     This is the one gate between the Files page and the disk: every read or change goes through it. The folder
@@ -118,6 +126,12 @@ def safe_path(root: Path, rel: str, *, follow_leaf: bool = True) -> Path:
     `follow_leaf` is False, which lets a symlink itself be renamed or removed without touching its target."""
     parts = [p for p in rel.split("/") if p]
     if any(p in (".", "..") or "\0" in p for p in parts):
+        raise FileError("That path is not valid")
+    if windows and any(
+        _WINDOWS_BAD.search(p) or p.rstrip(". ") != p or _WINDOWS_RESERVED.match(p) for p in parts
+    ):
+        # on Windows a backslash is a separator, a colon names a hidden stream, a trailing dot or space is dropped, and
+        # some names are devices: none of them can be taken at face value
         raise FileError("That path is not valid")
     root = root.resolve()
     target = root.joinpath(*parts)

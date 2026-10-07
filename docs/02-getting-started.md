@@ -14,6 +14,8 @@ On a Linux machine (a normal user with `sudo`), one command:
 curl -fsSL https://github.com/RT-codes/ThemisForge/releases/latest/download/install.sh | sh
 ```
 
+(On Windows 10 or 11, in a normal PowerShell window: `irm https://github.com/RT-codes/ThemisForge/releases/latest/download/install.ps1 | iex`.)
+
 It downloads the newest release, checks that Docker works (and offers to install it if it is missing), creates your
 configuration and starts Themis as a service. Details and options are in [Install and operations](/docs/operations).
 

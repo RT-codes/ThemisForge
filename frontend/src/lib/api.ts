@@ -114,7 +114,7 @@ export interface Volume {
   id: number
   project_id: number
   name: string
-  kind: 'managed' | 'host'
+  kind: 'managed' | 'host' | 'config' // config: the project's own agents, skills and tools, never mounted
   host_path: string
   mode: 'ro' | 'rw'
   exclusive_write: boolean
@@ -166,6 +166,8 @@ export interface Agent {
   skills: string[]
   mcp_servers: number[]
   secrets: number[]
+  path: string // the agent's file in the project's config folder
+  config_error: string // why that file cannot be used right now, "" when it is fine
   created_at: string
   updated_at: string
 }
@@ -184,6 +186,7 @@ export interface McpServer {
   id: number
   project_id: number
   name: string
+  description: string
   kind: 'stdio' | 'http'
   command: string
   args: string[]
@@ -191,10 +194,21 @@ export interface McpServer {
   env: Record<string, string>
   secret_env: Record<string, number>
   bearer_secret_id: number | null
+  path: string // the tool's file in the project's config folder
+  config_error: string
+  last_test: McpTest | null
   created_at: string
 }
 
-export type McpInput = Omit<McpServer, 'id' | 'project_id' | 'created_at'>
+/** the outcome of trying a tool: a web tool is connected to, a command is looked up in the image */
+export interface McpTest {
+  ok: boolean
+  message: string
+  tools: string[]
+  at: string
+}
+
+export type McpInput = Omit<McpServer, 'id' | 'project_id' | 'created_at' | 'path' | 'config_error' | 'last_test'>
 
 /** a stored key as an agent sees it: never its value, only the variable it is available as */
 export interface KeyInfo {
@@ -209,7 +223,7 @@ export interface AgentCheck {
   warnings: string[]
 }
 
-export type AgentInput = Omit<Agent, 'id' | 'project_id' | 'created_at' | 'updated_at'>
+export type AgentInput = Omit<Agent, 'id' | 'project_id' | 'created_at' | 'updated_at' | 'path' | 'config_error'>
 
 export interface HarnessInfo {
   id: string
@@ -468,7 +482,9 @@ export const api = {
     request<ScheduledRun[]>(`/projects/${projectId}/schedule?hours=${hours}`),
 
   systemStatus: () => request<SystemStatus>('/system/status'),
-  volumes: (projectId: number) => request<Volume[]>(`/projects/${projectId}/volumes`),
+  /** The shared folders; the Files page also asks for the config folder, which pickers must never offer. */
+  volumes: (projectId: number, includeConfig = false) => request<Volume[]>(`/projects/${projectId}/volumes${includeConfig ? '?include_config=true' : ''}`),
+  configFolder: (projectId: number) => request<Volume>(`/projects/${projectId}/config`),
   createVolume: (projectId: number, body: VolumeInput) => request<Volume>(`/projects/${projectId}/volumes`, send('POST', body)),
   updateVolume: (id: number, patch: { name?: string; mode?: 'ro' | 'rw'; exclusive_write?: boolean }) => request<Volume>(`/volumes/${id}`, send('PATCH', patch)),
   deleteVolume: (id: number) => request<void>(`/volumes/${id}`, send('DELETE')),
@@ -507,6 +523,7 @@ export const api = {
   createMcpServer: (projectId: number, body: McpInput) => request<McpServer>(`/projects/${projectId}/mcp-servers`, send('POST', body)),
   updateMcpServer: (id: number, body: McpInput) => request<McpServer>(`/mcp-servers/${id}`, send('PUT', body)),
   deleteMcpServer: (id: number) => request<void>(`/mcp-servers/${id}`, send('DELETE')),
+  testMcpServer: (id: number) => request<McpTest>(`/mcp-servers/${id}/test`, send('POST')),
   keys: () => request<KeyInfo[]>('/keys'),
   checkAgent: (projectId: number, body: { harness: string; cell_profile: ProfileOverrides | null; mcp_servers: number[] }) =>
     request<AgentCheck>(`/projects/${projectId}/agents/check`, send('POST', body)),

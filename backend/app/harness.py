@@ -44,6 +44,15 @@ CATALOG = (
     ),
 )
 
+
+def clean_model_name(v: str) -> str:
+    """A model name ends up on a command line, so nothing a shell would treat specially gets through."""
+    v = v.strip()
+    if v and (v.startswith("-") or any(c.isspace() or c in "'\"$`\\;&|<>" for c in v)):
+        raise ValueError("Invalid model name")
+    return v
+
+
 CODEX_HOME = f"{SECRETS_DIR}/codex"
 CODEX_AUTH = f"{CODEX_HOME}/auth.json"
 

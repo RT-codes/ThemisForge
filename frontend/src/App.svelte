@@ -7,7 +7,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import { Separator } from '$lib/components/ui/separator/index.js'
 	import AccessPage from '$lib/pages/AccessPage.svelte'
-	import AgentEditorPage from '$lib/pages/AgentEditorPage.svelte'
+	import AgentsPage from '$lib/pages/AgentsPage.svelte'
 	import FilesPage from '$lib/pages/FilesPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
@@ -118,7 +118,7 @@
 						{/if}
 					{/key}
 				{:else if route.name === 'agents'}
-					<AgentEditorPage projectId={route.id} agentId={route.agentId} isNew={route.isNew} />
+					<AgentsPage projectId={route.id} agentId={route.agentId} isNew={route.isNew} editing={route.editing} />
 				{:else if route.name === 'settings'}
 					<SettingsPage />
 				{:else if route.name === 'access'}

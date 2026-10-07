@@ -33,6 +33,7 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
 	import DownloadIcon from '@lucide/svelte/icons/download'
 	import FileIcon from '@lucide/svelte/icons/file'
+	import FolderCogIcon from '@lucide/svelte/icons/folder-cog'
 	import FolderIcon from '@lucide/svelte/icons/folder'
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open'
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus'
@@ -162,6 +163,7 @@
 				volumeId = v[0]?.id ?? null // `shared` always comes first
 				return refresh()
 			})
+			.then(openLinked)
 			.catch((e) => (error = message(e, 'Could not load the folders')))
 			.finally(() => {
 				loaded = true
@@ -181,7 +183,7 @@
 
 	async function reloadVolumes() {
 		try {
-			volumes = await api.volumes(id)
+			volumes = await api.volumes(id, true)
 		} catch (e) {
 			error = message(e, 'Could not load the folders')
 		}
@@ -230,6 +232,29 @@
 	}
 
 	const open = (v: Volume) => guarded(() => show(v))
+
+	// "config" is how the config folder is shown: its stored name is not one a person could give a folder
+	const label = (v: Volume) => (v.kind === 'config' ? 'config' : v.name)
+
+	// A link from the agent pages, /files#config/agents/scout/agent.md, opens that file in the config folder
+	async function openLinked() {
+		const m = router.hash.match(/^config(?:\/(.+))?$/)
+		const config = volumes.find((v) => v.kind === 'config')
+		if (!m || !config) return
+		show(config)
+		await refresh()
+		const parts = (m[1] ?? '').split('/').filter(Boolean)
+		for (let i = 1; i <= parts.length; i++) {
+			const dir = parts.slice(0, i).join('/')
+			const entry = tree[parts.slice(0, i - 1).join('/')]?.entries.find((e) => e.name === parts[i - 1])
+			if (!entry) return
+			if (entry.is_dir) {
+				expanded = [...expanded, dir]
+				current = dir
+				await loadFolder(config.id, dir)
+			} else selectedPath = dir
+		}
+	}
 
 	function show(v: Volume) {
 		volumeId = v.id
@@ -562,7 +587,7 @@
 <div class="flex min-h-0 flex-1 flex-col px-6 pt-8 pb-6 lg:h-[calc(100svh-3.5rem)] lg:flex-none">
 	<h2 class="text-2xl font-semibold tracking-tight">Files</h2>
 	<p class="text-sm text-muted-foreground">
-		What agents leave in this project's folders. <span class="font-mono">shared</span> is in every cell; the others are mounted by the agents that ask for them.
+		What agents leave in this project's folders. <span class="font-mono">shared</span> is in every cell; the others are mounted by the agents that ask for them. <span class="font-mono">config</span> holds the agents, skills and tools themselves.
 	</p>
 
 	{#if !loaded}
@@ -581,12 +606,12 @@
 						class={v.id === volumeId ? 'rounded-e-none' : ''}
 						onclick={() => open(v)}
 					>
-						{#if v.kind === 'host'}<HardDriveIcon />{:else}<FolderIcon />{/if}
-						<span class="font-mono">{v.name}</span>
+						{#if v.kind === 'host'}<HardDriveIcon />{:else if v.kind === 'config'}<FolderCogIcon />{:else}<FolderIcon />{/if}
+						<span class="font-mono">{label(v)}</span>
 						{#if v.id === volumeId && locked}<LockKeyholeIcon class="size-3.5 text-muted-foreground" />{/if}
 						{#if v.mode === 'ro' || (v.kind === 'host' && !v.can_write)}<span class="text-xs text-muted-foreground">read only</span>{/if}
 					</Button>
-					{#if v.id === volumeId}
+					{#if v.id === volumeId && v.kind !== 'config'}
 						<Button variant="secondary" size="icon-sm" class="h-8 rounded-s-none text-muted-foreground hover:text-foreground" aria-label="Settings of {v.name}" title="Folder settings" onclick={() => (configuring = true)}>
 							<SettingsIcon />
 						</Button>
@@ -602,7 +627,7 @@
 					<div class="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
 						<span class="text-xs text-muted-foreground">New items go in</span>
 						<nav aria-label="Folder for new items" class="flex min-w-0 flex-1 flex-wrap items-center gap-1 font-mono text-sm">
-							<button class="rounded px-1 hover:bg-accent" onclick={() => (current = '')}>{volume.name}</button>
+							<button class="rounded px-1 hover:bg-accent" onclick={() => (current = '')}>{label(volume)}</button>
 							{#each pieces as piece (piece.path)}
 								<span class="text-muted-foreground/60">/</span>
 								<button class="rounded px-1 hover:bg-accent" onclick={() => (current = piece.path)}>{piece.name}</button>
@@ -670,6 +695,11 @@
 				{:else if root && !root.writable}
 					<p class="px-4 pt-3 text-xs text-muted-foreground">This folder is read only. You can browse and download, not change.</p>
 				{/if}
+				{#if volume.kind === 'config'}
+					<p class="mx-4 mt-3 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+						Where this project's agents, skills and tools are kept. A file here is checked before it is saved, and agents never see this folder.
+					</p>
+				{/if}
 				{#if error}<p class="px-4 pt-3 text-sm text-destructive" role="alert">{error}</p>{/if}
 				{#if notice}<p class="px-4 pt-3 text-sm text-yellow-300">{notice}</p>{/if}
 
@@ -681,8 +711,8 @@
 						     its icon sits where a chevron would, which is exactly where the branch line runs -->
 
 						<button class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-start transition-colors hover:bg-accent/40" onclick={() => (current = '')}>
-							{#if volume.kind === 'host'}<HardDriveIcon class="size-4 shrink-0 text-primary" />{:else}<FolderOpenIcon class="size-4 shrink-0 text-primary" />{/if}
-							<span class={cn('truncate font-mono text-sm', current === '' && 'text-primary')}>{volume.name}</span>
+							{#if volume.kind === 'host'}<HardDriveIcon class="size-4 shrink-0 text-primary" />{:else if volume.kind === 'config'}<FolderCogIcon class="size-4 shrink-0 text-primary" />{:else}<FolderOpenIcon class="size-4 shrink-0 text-primary" />{/if}
+							<span class={cn('truncate font-mono text-sm', current === '' && 'text-primary')}>{label(volume)}</span>
 							{#if locked}
 								<span class="ms-auto flex items-center gap-1 text-xs text-muted-foreground" title="In use by {lockedBy}: it cannot be changed right now">
 									<LockKeyholeIcon class="size-3.5" /><LoaderCircleIcon class="size-3 animate-spin" /> in use
@@ -749,7 +779,7 @@
 			<Dialog.Header>
 				<Dialog.Title>{naming?.kind === 'rename' ? 'Rename' : 'New folder'}</Dialog.Title>
 				{#if naming?.kind === 'folder'}
-					<Dialog.Description>It is made in <span class="font-mono">{[volume?.name, ...pieces.map((p) => p.name)].join('/')}</span>.</Dialog.Description>
+					<Dialog.Description>It is made in <span class="font-mono">{[volume ? label(volume) : '', ...pieces.map((p) => p.name)].join('/')}</span>.</Dialog.Description>
 				{/if}
 			</Dialog.Header>
 			<Input bind:value={nameInput} required maxlength={255} aria-label="Name" placeholder="Name" />

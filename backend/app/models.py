@@ -355,6 +355,14 @@ class Agent(Base):
     secrets: Mapped[list[int]] = mapped_column(
         JSON, default=list, server_default="[]"
     )  # Secret ids, see app/keys.py
+    # The agent's file in the project's config folder is the source of truth (see app/project_config.py); this row is
+    # its identity (tasks and workflows point at the id) and a parsed copy for fast lists and for planning runs.
+    path: Mapped[str] = mapped_column(
+        String(300), default="", server_default=""
+    )  # relative to the config folder
+    config_error: Mapped[str] = mapped_column(
+        Text, default="", server_default=""
+    )  # why the file cannot be read
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
 
@@ -384,4 +392,11 @@ class McpServer(Base):
     bearer_secret_id: Mapped[int | None] = mapped_column(
         Integer, default=None
     )  # http: the key sent as a bearer token
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")  # for people
+    # like Agent.path: the file in the config folder is the truth, this row is its identity and a parsed copy
+    path: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    config_error: Mapped[str] = mapped_column(Text, default="", server_default="")
+    last_test: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, default=None
+    )  # the latest connection test: {"ok", "message", "tools", "at"}
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)

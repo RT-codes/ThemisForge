@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from .. import project_config
 from ..app_settings import AppSettings, Budget, load_settings, save_settings
 from ..budget import Cost, cells_that_fit, recommend_budget
 from ..config import DEFAULT_SECRET_KEY
@@ -169,12 +170,22 @@ async def delete_secret(secret_id: int, session: SessionDep, _: AdminUser) -> No
     if secret is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Secret not found")
     # agents and tools that used the key stop referring to it; a run never starts with a key that is gone
-    for agent in await session.scalars(select(Agent)):
-        if secret.id in agent.secrets:
-            agent.secrets = [i for i in agent.secrets if i != secret.id]
-    for server in await session.scalars(select(McpServer)):
-        server.secret_env = {k: i for k, i in server.secret_env.items() if i != secret.id}
-        if server.bearer_secret_id == secret.id:
-            server.bearer_secret_id = None
-    await session.delete(secret)
-    await session.commit()
+    async with project_config.lock:
+        agents, servers = [], []
+        for agent in await session.scalars(select(Agent)):
+            if secret.id in agent.secrets:
+                agent.secrets = [i for i in agent.secrets if i != secret.id]
+                agents.append(agent)
+        for server in await session.scalars(select(McpServer)):
+            if secret.id in server.secret_env.values() or server.bearer_secret_id == secret.id:
+                server.secret_env = {k: i for k, i in server.secret_env.items() if i != secret.id}
+                if server.bearer_secret_id == secret.id:
+                    server.bearer_secret_id = None
+                servers.append(server)
+        await session.delete(secret)
+        await session.flush()
+        for server in servers:  # their files name keys, so they are written again without this one
+            if not server.config_error:
+                await project_config.write_mcp(session, server)
+        await project_config.rewrite_agents(session, agents)
+        await session.commit()

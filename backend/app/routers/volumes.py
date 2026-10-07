@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from .. import project_config
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import Agent, Project, Volume
@@ -23,6 +24,7 @@ from ..volumes import (
     NAME,
     FileError,
     MountError,
+    ensure_config_volume,
     ensure_default_volume,
     host_target,
     is_default,
@@ -101,13 +103,33 @@ async def _volume(session, volume_id: int, user) -> tuple[Volume, Project]:
 
 
 @router.get("/projects/{project_id}/volumes", response_model=list[VolumeOut])
-async def list_volumes(project_id: int, session: SessionDep, user: CurrentUser) -> list[VolumeOut]:
+async def list_volumes(
+    project_id: int, session: SessionDep, user: CurrentUser, include_config: bool = False
+) -> list[VolumeOut]:
+    """The project's shared folders. Its config folder is not one (it can never be mounted), so only the Files page,
+    which shows it too, asks for it."""
     await _project(session, project_id, user)
     await ensure_default_volume(session, project_id)
-    volumes = (await session.scalars(select(Volume).where(Volume.project_id == project_id))).all()
+    if include_config:
+        await ensure_config_volume(session, project_id)
+    volumes = (
+        await session.scalars(
+            select(Volume).where(Volume.project_id == project_id, Volume.kind != "config")
+            if not include_config
+            else select(Volume).where(Volume.project_id == project_id)
+        )
+    ).all()
     cfg = await load_settings(session)
     out = [await _out(v, cfg) for v in volumes]
-    return sorted(out, key=lambda v: (not v.is_default, v.name))
+    return sorted(out, key=lambda v: (v.kind == "config", not v.is_default, v.name))
+
+
+@router.get("/projects/{project_id}/config", response_model=VolumeOut)
+async def get_config_folder(project_id: int, session: SessionDep, user: CurrentUser) -> VolumeOut:
+    """The folder where the project's agents, skills and tools are kept (see app/project_config.py)."""
+    await _project(session, project_id, user)
+    project_config.ensure_layout(project_id)
+    return await _out(await ensure_config_volume(session, project_id), await load_settings(session))
 
 
 @router.post("/projects/{project_id}/volumes", response_model=VolumeOut, status_code=status.HTTP_201_CREATED)
@@ -166,6 +188,8 @@ async def update_volume(
     volume_id: int, body: VolumePatch, request: Request, session: SessionDep, user: CurrentUser
 ) -> VolumeOut:
     volume, _ = await _volume(session, volume_id, user)
+    if volume.kind == "config":
+        raise HTTPException(status.HTTP_409_CONFLICT, "The config folder keeps its settings")
     cfg = await load_settings(session)
     if body.mode is not None and body.mode != volume.mode:
         if body.mode == "rw" and volume.kind == "host":
@@ -228,14 +252,19 @@ async def update_volume(
 async def delete_volume(volume_id: int, session: SessionDep, user: CurrentUser) -> None:
     """Removes the folder from the project. Its files stay on disk; nothing is deleted."""
     volume, project = await _volume(session, volume_id, user)
-    if is_default(volume):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Every project keeps its shared folder")
-    for agent in await session.scalars(select(Agent).where(Agent.project_id == project.id)):
-        kept = [m for m in agent.mounts if m.get("volume_id") != volume.id]
-        if len(kept) != len(agent.mounts):
-            agent.mounts = kept
-    await session.delete(volume)
-    await session.commit()
+    if is_default(volume) or volume.kind == "config":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Every project keeps its shared and config folders")
+    async with project_config.lock:
+        changed = []
+        for agent in await session.scalars(select(Agent).where(Agent.project_id == project.id)):
+            kept = [m for m in agent.mounts if m.get("volume_id") != volume.id]
+            if len(kept) != len(agent.mounts):
+                agent.mounts = kept
+                changed.append(agent)
+        await session.delete(volume)
+        await session.flush()
+        await project_config.rewrite_agents(session, changed)  # their files name the folders they mount
+        await session.commit()
 
 
 # ----- the files inside a folder (the project's Files page) -----
@@ -310,14 +339,38 @@ async def _root(request: Request, session, volume_id: int, user, *, write: bool 
         root.mkdir(
             parents=True, exist_ok=True
         )  # `shared` exists in the database before any cell made its folder
-    runs = request.app.state.scheduler.runs_using(volume.id)
+    if volume.kind == "config":
+        project_config.ensure_layout(volume.project_id)
+    runs = request.app.state.scheduler.runs_using(
+        volume.id
+    )  # never any for the config folder: it is not mounted
     writable = volume.mode == "rw" and allowed
     if write:
         if not writable:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This folder is read only")
         if runs:
             raise HTTPException(status.HTTP_409_CONFLICT, _in_use(runs, "Changes wait"))
-    return root, writable, runs
+    return root, writable, runs, volume
+
+
+def _rel(root: Path, target: Path) -> str:
+    return target.relative_to(root.resolve()).as_posix()
+
+
+async def _check_config(session, volume: Volume, rel: str, file: Path, user) -> None:
+    """A file in the config folder is checked before it is saved: one that could not work is refused with a reason."""
+    if volume.kind == "config" and project_config.is_validated(rel):
+        try:
+            text = file.read_text(errors="replace")
+            await project_config.validate_write(session, volume.project_id, rel, text, user)
+        except project_config.ConfigError as e:
+            raise _bad(str(e)) from None
+
+
+async def _config_changed(session, volume: Volume) -> None:
+    """After a change in the config folder the agent and tool rows follow their files."""
+    if volume.kind == "config":
+        await project_config.sync_project(session, volume.project_id)
 
 
 def _safe(root: Path, rel: str, *, follow_leaf: bool = True) -> Path:
@@ -338,7 +391,7 @@ async def list_files(
 ):
     """A folder's contents. The page asks again every few seconds while it is open, so the answer carries an ETag and
     an unchanged folder costs a bodyless 304 (the listing is the cheap part; sending it again is not needed)."""
-    root, writable, runs = await _root(request, session, volume_id, user)
+    root, writable, runs, _ = await _root(request, session, volume_id, user)
     folder = _safe(root, path)
     if not folder.is_dir():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Folder not found")
@@ -365,7 +418,7 @@ async def read_file(
     path: str,
     download: bool = False,
 ) -> FileResponse:
-    root, _, _ = await _root(request, session, volume_id, user)
+    root, *_ = await _root(request, session, volume_id, user)
     target = _safe(root, path)
     if not target.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
@@ -397,7 +450,7 @@ async def upload_file(
 
     `base` is the modified time the editor saw when it opened the file: if the file has changed since, the save is
     refused (412) instead of silently replacing someone else's version."""
-    root, _, _ = await _root(request, session, volume_id, user, write=True)
+    root, _, _, volume = await _root(request, session, volume_id, user, write=True)
     target = _safe(root, path, follow_leaf=False)
     if target == root or target.is_dir():
         raise _bad("Choose a file name")
@@ -419,24 +472,27 @@ async def upload_file(
                 if size > MAX_UPLOAD:
                     raise _bad(f"Files up to {MAX_UPLOAD // 2**20} MB can be uploaded")
                 f.write(chunk)
+        await _check_config(session, volume, _rel(root, target), partial, user)
         if target.is_file():
             shutil.copymode(target, partial)  # editing a script must not take its executable bit away
         os.replace(partial, target)
     finally:
         partial.unlink(missing_ok=True)
+    await _config_changed(session, volume)
 
 
 @router.post("/volumes/{volume_id}/folder", status_code=status.HTTP_201_CREATED)
 async def create_folder(
     volume_id: int, body: FolderIn, request: Request, session: SessionDep, user: CurrentUser
 ) -> None:
-    root, _, _ = await _root(request, session, volume_id, user, write=True)
+    root, _, _, volume = await _root(request, session, volume_id, user, write=True)
     target = _safe(root, body.path, follow_leaf=False)
     if target.exists():
         raise HTTPException(status.HTTP_409_CONFLICT, "Something with that name already exists")
     if not target.parent.is_dir():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Folder not found")
     target.mkdir()
+    await _config_changed(session, volume)
 
 
 @router.post("/volumes/{volume_id}/move", status_code=status.HTTP_204_NO_CONTENT)
@@ -444,7 +500,7 @@ async def move_file(
     volume_id: int, body: MoveIn, request: Request, session: SessionDep, user: CurrentUser
 ) -> None:
     """Renames or moves a file or folder within the same volume."""
-    root, _, _ = await _root(request, session, volume_id, user, write=True)
+    root, _, _, volume = await _root(request, session, volume_id, user, write=True)
     source = _safe(root, body.source, follow_leaf=False)
     destination = _safe(root, body.destination, follow_leaf=False)
     if source == root or not os.path.lexists(source):
@@ -455,7 +511,13 @@ async def move_file(
         raise _bad("A folder cannot be moved into itself")
     if not destination.parent.is_dir():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Folder not found")
+    if volume.kind == "config" and (
+        project_config.is_layout_folder(_rel(root, source))
+        or project_config.is_layout_folder(_rel(root, destination))
+    ):
+        raise _bad("agents, skills and mcp are Themis's own folders: they keep their names")
     os.rename(source, destination)
+    await _config_changed(session, volume)
 
 
 @router.delete("/volumes/{volume_id}/file", status_code=status.HTTP_204_NO_CONTENT)
@@ -463,13 +525,16 @@ async def delete_file(
     volume_id: int, request: Request, session: SessionDep, user: CurrentUser, path: str
 ) -> None:
     """Deletes a file, or a folder with everything in it. There is no undo."""
-    root, _, _ = await _root(request, session, volume_id, user, write=True)
+    root, _, _, volume = await _root(request, session, volume_id, user, write=True)
     target = _safe(root, path, follow_leaf=False)
     if target == root:
         raise _bad("The folder itself cannot be deleted here")
     if not os.path.lexists(target):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found")
+    if volume.kind == "config" and project_config.is_layout_folder(_rel(root, target)):
+        raise _bad("agents, skills and mcp are Themis's own folders: they cannot be deleted")
     if target.is_dir() and not target.is_symlink():
         await asyncio.to_thread(shutil.rmtree, target)
     else:
         target.unlink()
+    await _config_changed(session, volume)

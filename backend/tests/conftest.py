@@ -17,6 +17,19 @@ def default_secret_key(monkeypatch):
     monkeypatch.setattr(settings, "secret_key", DEFAULT_SECRET_KEY)
 
 
+@pytest.fixture(autouse=True)
+def fresh_codex_locks():
+    """A lock that was contended in one test is bound to that test's event loop, so the next test must not reuse it."""
+    import asyncio
+
+    from app import codex, project_config
+
+    codex._locks.clear()
+    project_config.lock = asyncio.Lock()
+    yield
+    codex._locks.clear()
+
+
 @pytest.fixture
 async def maker(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_dir", tmp_path / "data")

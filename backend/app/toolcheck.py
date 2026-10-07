@@ -5,8 +5,23 @@ carries on without the tool, which is hard to notice. So when an agent is saved,
 and anything missing is reported.
 """
 
+from typing import Any
+
+from .app_settings import AppSettings
 from .config import settings
 from .docker_check import docker_env, run_command
+from .harness import plan_for
+from .models import Project
+
+
+def image_for(project: Project, cfg: AppSettings, harness: str, cell_profile: dict[str, Any] | None) -> str:
+    """The image an agent of this harness would run in: its own cell, else the project's, else the harness's."""
+    hp = plan_for(harness, cfg)
+    return (
+        (cell_profile or {}).get("image")
+        or (project.cell_profile or {}).get("image")
+        or (hp.image if hp else cfg.cell_image)
+    )
 
 
 async def missing_commands(image: str, commands: dict[str, str], docker_host: str = "") -> list[str]:

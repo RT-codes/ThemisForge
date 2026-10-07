@@ -31,5 +31,9 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_interval_seconds: float = 3.0
 
+    def project_dir(self, project_id: int) -> Path:
+        """Everything on disk that belongs to one project: its folders, and its config (see app/project_config.py)."""
+        return self.data_dir / "projects" / str(project_id)
+
 
 settings = Settings()

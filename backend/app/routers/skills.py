@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from .. import project_config
 from .. import skills as store
 from ..deps import CurrentUser, SessionDep
 from ..models import Agent
@@ -29,6 +30,7 @@ class SkillIn(BaseModel):
 @router.get("/projects/{project_id}/skills", response_model=list[SkillOut])
 async def list_skills(project_id: int, session: SessionDep, user: CurrentUser) -> list[SkillOut]:
     await _project(session, project_id, user)
+    project_config.ensure_layout(project_id)  # also moves skills made before the config folder existed
     return [
         SkillOut(name=s.name, description=s.description, files=s.files) for s in store.list_skills(project_id)
     ]
@@ -63,11 +65,15 @@ async def save_skill(
 async def delete_skill(project_id: int, name: str, session: SessionDep, user: CurrentUser) -> None:
     """Removes the skill's folder, and the skill from the agents that had it."""
     await _project(session, project_id, user)
-    try:
-        store.delete_skill(project_id, name)
-    except store.SkillError as e:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from None
-    for agent in await session.scalars(select(Agent).where(Agent.project_id == project_id)):
-        if name in agent.skills:
-            agent.skills = [n for n in agent.skills if n != name]
-    await session.commit()
+    async with project_config.lock:
+        try:
+            store.delete_skill(project_id, name)
+        except store.SkillError as e:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from None
+        changed = []
+        for agent in await session.scalars(select(Agent).where(Agent.project_id == project_id)):
+            if name in agent.skills:
+                agent.skills = [n for n in agent.skills if n != name]
+                changed.append(agent)
+        await project_config.rewrite_agents(session, changed)  # their files list skills by name
+        await session.commit()

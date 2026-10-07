@@ -1,6 +1,7 @@
 """Skills: folders with a SKILL.md that an agent can be given.
 
-A skill lives at data/projects/<project id>/skills/<name>/SKILL.md. The folder may also hold scripts or reference files
+A skill lives at data/projects/<project id>/config/skills/<name>/SKILL.md (in the project's config folder, which the
+Files page shows). The folder may also hold scripts or reference files
 (put there on disk); the app edits SKILL.md and carries the rest along. Each run copies the agent's skills into a
 folder of their own that is mounted read only at /workspace/.agents/skills, where Codex looks for them, so an agent
 only sees the skills it was given and cannot change them.
@@ -33,7 +34,7 @@ class SkillInfo:
 
 
 def skills_dir(project_id: int) -> Path:
-    return settings.data_dir / "projects" / str(project_id) / "skills"
+    return settings.project_dir(project_id) / "config" / "skills"
 
 
 def skill_dir(project_id: int, name: str) -> Path:

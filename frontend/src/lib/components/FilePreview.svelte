@@ -2,7 +2,7 @@
 	import { api, ApiError, type FileEntry } from '$lib/api'
 	import ImagePreview from '$lib/components/ImagePreview.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
-	import { isDirty, isMarkdown, parentPath, previewKind, resolveRelative, type Draft } from '$lib/files'
+	import { isDirty, isMarkdown, parentPath, previewKind, resolveRelative, splitFrontmatter, type Draft } from '$lib/files'
 	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
 	import DownloadIcon from '@lucide/svelte/icons/download'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
@@ -55,9 +55,10 @@
 
 	// Rich text from a file an agent wrote: raw HTML is shown as text and links and pictures are restricted (see
 	// markdown.ts), which is what makes it safe to insert as HTML. A picture next to the file is loaded from its folder.
+	const parts = $derived(splitFrontmatter(text))
 	const rich = $derived(
 		kind === 'text' && markdown && !loading && !error
-			? renderMarkdown(text, {
+			? renderMarkdown(parts.body, {
 					untrusted: true,
 					image: (src) => {
 						const target = resolveRelative(parentPath(path), src)
@@ -158,6 +159,7 @@
 			<!-- trusted: renderMarkdown ran in untrusted mode, so nothing in the file can be markup of its own -->
 			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 			<div class="docs-prose prose prose-invert slim-scrollbar max-w-none min-h-0 flex-1 overflow-auto rounded-md border bg-background/40 p-4 text-sm" onclick={onCodeCopyClick}>
+				{#if parts.meta}<pre class="not-prose mb-4 overflow-auto rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground">{parts.meta}</pre>{/if}
 				{@html rich}
 			</div>
 		{:else}

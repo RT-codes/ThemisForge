@@ -8,7 +8,7 @@
 	import { onMount, tick } from 'svelte'
 	import { slide } from 'svelte/transition'
 
-	// The agents of a project at a glance. A row opens that agent on the Agents page, ready to edit.
+	// The agents of a project at a glance. A row opens that agent on the Agents page.
 	let { projectId }: { projectId: number } = $props()
 
 	let agents = $state<Agent[]>([])
@@ -48,7 +48,7 @@
 	<div class="flex items-center gap-3 p-5 pb-3">
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold tracking-tight">Agents</h3>
-			<p class="text-sm text-muted-foreground">Who does the work in this project. Open one to see and change how it works.</p>
+			<p class="text-sm text-muted-foreground">Who does the work in this project. Open one to see how it works, and edit it there.</p>
 		</div>
 		<Button size="sm" onclick={() => router.navigate(`/projects/${projectId}/agents/new`)}><PlusIcon /> New agent</Button>
 	</div>

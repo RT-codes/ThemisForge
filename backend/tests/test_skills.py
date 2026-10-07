@@ -64,7 +64,9 @@ async def test_skills_are_made_listed_read_changed_and_removed(client):
         "description": "Use when a task involves PDF files",
         "files": 1,
     }
-    assert (settings.data_dir / "projects" / str(pid) / "skills" / "pdf-tips" / "SKILL.md").is_file()
+    assert (
+        settings.data_dir / "projects" / str(pid) / "config" / "skills" / "pdf-tips" / "SKILL.md"
+    ).is_file()
     detail = (await client.get(f"/api/projects/{pid}/skills/pdf-tips")).json()
     assert detail["content"] == skill_md() and detail["description"].startswith("Use when")
     await client.put(
@@ -94,7 +96,7 @@ async def test_extra_files_in_a_skill_folder_are_kept_and_counted(client):
     await register(client)
     pid = (await make_project(client))["id"]
     await client.put(f"/api/projects/{pid}/skills/pdf-tips", json={"content": skill_md()})
-    folder = settings.data_dir / "projects" / str(pid) / "skills" / "pdf-tips"
+    folder = settings.data_dir / "projects" / str(pid) / "config" / "skills" / "pdf-tips"
     (folder / "scripts").mkdir()
     (folder / "scripts" / "extract.py").write_text("print('hi')")
     assert (await client.get(f"/api/projects/{pid}/skills")).json()[0]["files"] == 2
@@ -143,7 +145,9 @@ async def test_only_the_agents_skills_are_copied_into_its_cell_and_mounted_read_
     pid = (await make_project(client))["id"]
     for name in ("pdf-tips", "web"):
         await client.put(f"/api/projects/{pid}/skills/{name}", json={"content": skill_md(name)})
-    (settings.data_dir / "projects" / str(pid) / "skills" / "pdf-tips" / "notes.txt").write_text("extra")
+    (settings.data_dir / "projects" / str(pid) / "config" / "skills" / "pdf-tips" / "notes.txt").write_text(
+        "extra"
+    )
     agent = await make_agent(client, pid, skills=["pdf-tips"])
     await make_task(client, pid, status="ready", agent_id=agent["id"])
     await scheduler.tick()
@@ -199,9 +203,9 @@ async def test_a_run_fails_with_the_reason_when_a_skill_was_removed_from_disk(cl
     agent = await make_agent(client, pid, skills=["pdf-tips"])
     import shutil
 
-    shutil.rmtree(settings.data_dir / "projects" / str(pid) / "skills" / "pdf-tips")
+    shutil.rmtree(settings.data_dir / "projects" / str(pid) / "config" / "skills" / "pdf-tips")
     task = await make_task(client, pid, status="ready", agent_id=agent["id"])
     assert await scheduler.tick() == 0
     assert (await client.get(f"/api/tasks/{task['id']}")).json()["status"] == "failed"
     attempt = (await client.get(f"/api/tasks/{task['id']}/attempts")).json()[0]
-    assert "no longer exists" in (await client.get(f"/api/attempts/{attempt['id']}")).json()["log"]
+    assert "does not exist" in (await client.get(f"/api/attempts/{attempt['id']}")).json()["log"]

@@ -75,7 +75,9 @@ The project's **Files** page (under Tasks in the sidebar) shows what is inside e
 the others. This is where agents leave what they deliver. You can open folders, preview text and images, download files,
 and, when the folder allows writing, upload files, make folders, rename and delete.
 
-- Each shared folder is a tab. The gear on the open tab changes its access and whether writers take turns.
+- Each shared folder is a tab. The gear on the open tab changes its access and whether writers take turns. The last tab,
+  **config**, is not a shared folder: it holds the project's agents, skills and tools as files (see [Agents](/docs/agents#the-config-folder)),
+  is checked when you save, and is never mounted into a cell.
 - Folders open in place, like a tree. **New items go in** the folder you clicked last, shown above the list.
 - **Search**, **order** (name, newest, oldest, largest, smallest) and a **type** filter (text, images, other) narrow the
   files. Folders always stay first so you can still open them; the gallery steps through the files as listed.

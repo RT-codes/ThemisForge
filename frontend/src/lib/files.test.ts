@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ZOOM_MAX, arrange, clampPan, clampScale, crumbs, emptyFileView, fileKind, formatSize, isMarkdown, isValidFolderName, isValidName, joinPath, parentPath, previewKind, resolveRelative, scaleToSlider, sliderToScale, zoomAt } from './files.ts'
+import { ZOOM_MAX, arrange, clampPan, clampScale, crumbs, emptyFileView, fileKind, formatSize, isMarkdown, isValidFolderName, isValidName, joinPath, parentPath, previewKind, resolveRelative, scaleToSlider, sliderToScale, splitFrontmatter, zoomAt } from './files.ts'
 
 test('paths join and split relative to the root', () => {
   assert.equal(joinPath('', 'a.txt'), 'a.txt')
@@ -108,4 +108,13 @@ test('a picture in a markdown file is read from its own folder, and only from th
 test('a shared folder name follows the server rule, ignoring case and outer spaces', () => {
   for (const ok of ['reports', ' Reports ', 'a', '2024-q1']) assert.equal(isValidFolderName(ok), true, ok)
   for (const bad of ['', '-x', 'has space', 'a/b', '..', 'x'.repeat(41)]) assert.equal(isValidFolderName(bad), false, bad)
+})
+
+test('the settings at the top of a markdown file are split from its text', () => {
+  assert.deepEqual(splitFrontmatter('---\nname: a\ndescription: b\n---\n\n# Title\n'), { meta: 'name: a\ndescription: b', body: '\n# Title\n' })
+  assert.deepEqual(splitFrontmatter('\uFEFF---\r\nname: a\r\n---\r\nbody'), { meta: 'name: a', body: 'body' })
+  assert.deepEqual(splitFrontmatter('---\nname: a\n---'), { meta: 'name: a', body: '' })
+  // not frontmatter: a rule in the middle, or no closing line
+  assert.deepEqual(splitFrontmatter('text\n---\nmore\n---\n'), { meta: '', body: 'text\n---\nmore\n---\n' })
+  assert.deepEqual(splitFrontmatter('---\nname: a'), { meta: '', body: '---\nname: a' })
 })

@@ -1,73 +1,23 @@
 """Tool servers (MCP) of a project, and the keys that can be given to agents. See app/mcp.py and app/keys.py."""
 
-import shlex
 from datetime import datetime
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from .. import project_config
+from ..app_settings import load_settings
+from ..crypto import decrypt
 from ..deps import CurrentUser, SessionDep
-from ..keys import ENV_NAME, unique_env_names
-from ..mcp import NAME
-from ..models import Agent, McpServer, Project, Secret
+from ..keys import unique_env_names
+from ..mcp import McpIn, probe_http
+from ..models import Agent, McpServer, Project, Secret, utcnow
+from ..toolcheck import image_for, missing_commands
 from .projects import _bad, _project
 
 router = APIRouter(tags=["tools"])
-
-
-class McpIn(BaseModel):
-    name: str = Field(min_length=1, max_length=40)
-    kind: Literal["stdio", "http"] = "stdio"
-    command: str = Field(default="", max_length=1000)
-    args: list[str] = Field(default_factory=list, max_length=50)
-    url: str = Field(default="", max_length=2000)
-    env: dict[str, str] = Field(default_factory=dict)
-    secret_env: dict[str, int] = Field(default_factory=dict)  # environment variable -> key id
-    bearer_secret_id: int | None = None  # http: a key sent as a bearer token
-
-    @field_validator("name")
-    @classmethod
-    def valid_name(cls, v: str) -> str:
-        v = v.strip().lower()
-        if not NAME.match(v):
-            raise ValueError("Use lowercase letters, digits and dashes, starting with a letter or digit")
-        return v
-
-    @field_validator("args")
-    @classmethod
-    def short_args(cls, v: list[str]) -> list[str]:
-        if any(len(a) > 2000 for a in v):
-            raise ValueError("An argument is too long")
-        return v
-
-    @field_validator("env", "secret_env")
-    @classmethod
-    def valid_variable_names(cls, v: dict) -> dict:
-        if len(v) > 50 or any(not ENV_NAME.match(k) for k in v):
-            raise ValueError("Environment variable names use letters, digits and underscores")
-        return v
-
-    @model_validator(mode="after")
-    def valid_for_kind(self) -> "McpIn":
-        if self.kind == "http":
-            if not self.url.strip().startswith(("http://", "https://")):
-                raise ValueError("A web tool needs a URL that starts with http:// or https://")
-            self.url, self.command, self.args = self.url.strip(), "", []
-            self.env, self.secret_env = {}, {}
-        else:
-            command = self.command.strip()
-            if not command:
-                raise ValueError(
-                    "A tool needs the command that starts it, such as: npx -y @scope/some-server"
-                )
-            if not self.args and any(c.isspace() for c in command):
-                parts = shlex.split(command)  # "npx -y pkg" typed into the command box
-                command, self.args = parts[0], parts[1:]
-            self.command, self.url, self.bearer_secret_id = command, "", None
-        return self
 
 
 class McpOut(BaseModel):
@@ -76,6 +26,7 @@ class McpOut(BaseModel):
     id: int
     project_id: int
     name: str
+    description: str
     kind: str
     command: str
     args: list[str]
@@ -83,6 +34,9 @@ class McpOut(BaseModel):
     env: dict[str, str]
     secret_env: dict[str, int]
     bearer_secret_id: int | None
+    path: str  # the tool's file in the project's config folder
+    config_error: str  # why that file cannot be used right now ("" when it is fine)
+    last_test: dict | None  # the latest connection test, see test_server
     created_at: datetime
 
 
@@ -127,6 +81,9 @@ async def available_keys(session: SessionDep, _: CurrentUser) -> list[KeyOut]:
 @router.get("/projects/{project_id}/mcp-servers", response_model=list[McpOut])
 async def list_servers(project_id: int, session: SessionDep, user: CurrentUser) -> list[McpServer]:
     await _project(session, project_id, user)
+    await project_config.sync_project(
+        session, project_id
+    )  # a file may have been edited in the Files page or on disk
     return list(
         (
             await session.scalars(
@@ -136,35 +93,50 @@ async def list_servers(project_id: int, session: SessionDep, user: CurrentUser) 
     )
 
 
-@router.post("/projects/{project_id}/mcp-servers", response_model=McpOut, status_code=status.HTTP_201_CREATED)
-async def create_server(project_id: int, body: McpIn, session: SessionDep, user: CurrentUser) -> McpServer:
-    await _project(session, project_id, user)
-    await _check_keys(session, body, user)
-    server = McpServer(project_id=project_id, **body.model_dump())
-    session.add(server)
+async def _save(session, server: McpServer) -> None:
+    """Commits a tool row together with its file (the caller holds the config lock). The row goes first, so a name
+    that is taken is refused before any file is written."""
     try:
-        await session.commit()
+        await session.flush()
     except IntegrityError:
         await session.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT, "This project already has a tool with that name"
         ) from None
+    try:
+        await project_config.write_mcp(session, server)
+        await session.commit()
+    except BaseException:
+        await session.rollback()
+        raise
+
+
+@router.post("/projects/{project_id}/mcp-servers", response_model=McpOut, status_code=status.HTTP_201_CREATED)
+async def create_server(project_id: int, body: McpIn, session: SessionDep, user: CurrentUser) -> McpServer:
+    await _project(session, project_id, user)
+    await _check_keys(session, body, user)
+    async with project_config.lock:
+        server = McpServer(project_id=project_id, **body.model_dump())
+        session.add(server)
+        await _save(session, server)
     return server
 
 
 @router.put("/mcp-servers/{server_id}", response_model=McpOut)
 async def replace_server(server_id: int, body: McpIn, session: SessionDep, user: CurrentUser) -> McpServer:
     server, _ = await _server(session, server_id, user)
-    await _check_keys(session, body, user, before=server)
-    for key, value in body.model_dump().items():
-        setattr(server, key, value)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "This project already has a tool with that name"
-        ) from None
+    async with project_config.lock:
+        await session.refresh(server)
+        await _check_keys(session, body, user, before=server)
+        renamed = body.name != server.name
+        for key, value in body.model_dump().items():
+            setattr(server, key, value)
+        server.last_test = None  # what was tried is not what is saved any more
+        await _save(session, server)
+        if renamed:  # agent files name their tools, so the ones that use this one are written again
+            agents = await session.scalars(select(Agent).where(Agent.project_id == server.project_id))
+            await project_config.rewrite_agents(session, [a for a in agents if server.id in a.mcp_servers])
+            await session.commit()
     return server
 
 
@@ -172,8 +144,53 @@ async def replace_server(server_id: int, body: McpIn, session: SessionDep, user:
 async def delete_server(server_id: int, session: SessionDep, user: CurrentUser) -> None:
     """Removes the tool from the project and from the agents that had it."""
     server, project = await _server(session, server_id, user)
-    for agent in await session.scalars(select(Agent).where(Agent.project_id == project.id)):
-        if server.id in agent.mcp_servers:
-            agent.mcp_servers = [i for i in agent.mcp_servers if i != server.id]
-    await session.delete(server)
+    async with project_config.lock:
+        changed = []
+        for agent in await session.scalars(select(Agent).where(Agent.project_id == project.id)):
+            if server.id in agent.mcp_servers:
+                agent.mcp_servers = [i for i in agent.mcp_servers if i != server.id]
+                changed.append(agent)
+        project_config.remove_mcp_file(server)
+        await session.delete(server)
+        await session.flush()
+        await project_config.rewrite_agents(session, changed)
+        await session.commit()
+
+
+class ProbeOut(BaseModel):
+    ok: bool
+    message: str
+    tools: list[str]  # what the server offers (a web tool that answered)
+    at: datetime
+
+
+@router.post("/mcp-servers/{server_id}/test", response_model=ProbeOut)
+async def test_server(server_id: int, session: SessionDep, user: CurrentUser) -> ProbeOut:
+    """Can the project reach this tool? A web tool is connected to and asked what it offers. A command is looked up in
+    the image agents run in (it is only started when an agent runs, which needs a whole cell)."""
+    server, project = await _server(session, server_id, user)
+    cfg = await load_settings(session)
+    if server.kind == "http":
+        bearer, note = None, ""
+        if server.bearer_secret_id:
+            if user.is_admin:  # a key is only ever sent where an administrator may send it
+                secret = await session.get(Secret, server.bearer_secret_id)
+                bearer = decrypt(secret.value_encrypted) if secret else None
+            else:
+                note = " Tested without its key: only an administrator can test with it."
+        probe = await probe_http(server.url, bearer)
+        ok, message, tools = probe.ok, probe.message + note, list(probe.tools)
+    else:
+        image = image_for(project, cfg, "codex", None)
+        warnings = await missing_commands(image, {server.name: server.command}, cfg.docker_host)
+        ok = not warnings
+        message = (
+            warnings[0]
+            if warnings
+            else f"'{server.command}' is available in {image}. It is started when an agent runs, not by this test."
+        )
+        tools = []
+    result = ProbeOut(ok=ok, message=message, tools=tools, at=utcnow())
+    server.last_test = {**result.model_dump(mode="json")}
     await session.commit()
+    return result

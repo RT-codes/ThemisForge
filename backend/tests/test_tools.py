@@ -7,7 +7,6 @@ from app.config import settings
 from app.harness import codex_script
 from app.keys import HIDDEN, Redactor, key_env_name, unique_env_names
 from app.mcp import McpSpec, config_toml
-from app.models import Agent
 from app.routers import agents as agents_router
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
@@ -333,22 +332,19 @@ async def test_a_run_fails_with_the_reason_when_a_key_or_tool_is_gone(client, sc
     await connect(maker, me["id"])
     pid = (await make_project(client))["id"]
     agent = await make_agent(client, pid)
-    async with maker() as s:  # references that were never cleaned up, as if edited by hand
-        row = await s.get(Agent, agent["id"])
-        row.secrets = [999]
-        await s.commit()
+    file = settings.data_dir / "projects" / str(pid) / "config" / agent["path"]
     task = await make_task(client, pid, status="ready", agent_id=agent["id"])
-    assert await scheduler.tick() == 0
-    attempt = (await client.get(f"/api/tasks/{task['id']}/attempts")).json()[0]
-    assert "no longer exists" in (await client.get(f"/api/attempts/{attempt['id']}")).json()["log"]
-    async with maker() as s:
-        row = await s.get(Agent, agent["id"])
-        row.secrets, row.mcp_servers = [], [998]
-        await s.commit()
-    await client.post(f"/api/tasks/{task['id']}/run")
-    assert await scheduler.tick() == 0
-    attempts = (await client.get(f"/api/tasks/{task['id']}/attempts")).json()
-    assert "tool server" in (await client.get(f"/api/attempts/{attempts[0]['id']}")).json()["log"]
+    # the agent's file is the truth: names in it that point at nothing stop the run, and say which
+    original = file.read_text()
+    for old, new, problem in (
+        ("keys: []", "keys: [Gone key]", "key 'Gone key'"),
+        ("tools: []", "tools: [gone-tool]", "tool 'gone-tool'"),
+    ):
+        file.write_text(original.replace(old, new))
+        assert await scheduler.tick() == 0
+        attempts = (await client.get(f"/api/tasks/{task['id']}/attempts")).json()
+        assert problem in (await client.get(f"/api/attempts/{attempts[0]['id']}")).json()["log"]
+        await client.post(f"/api/tasks/{task['id']}/run")
 
 
 # ----- checking tools before saving -----

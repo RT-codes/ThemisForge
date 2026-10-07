@@ -5,6 +5,8 @@ hand files to each other. Two kinds:
 
   managed   a folder ThemisForge makes under its data directory (nothing to set up)
   host      an existing folder on this machine, only inside a folder an administrator approved in Settings
+  config    the project's own config folder (agents, skills, tools). It is a volume only so the Files page and its
+            file API work on it unchanged: it can never be mounted into a cell, so no agent can edit its own setup
 
 The rules for host folders are the safety net, so they are checked when a volume is made and again every time a cell
 starts (the folder, a symlink or the approved list may have changed since).
@@ -29,6 +31,8 @@ from .models import Volume
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 DEFAULT_NAME = "shared"
+# not a valid folder name (names start with a letter or digit), so a person can never make a folder that clashes with it
+CONFIG_NAME = "_config"
 
 
 class MountError(Exception):
@@ -47,7 +51,11 @@ class MountRef(BaseModel):
 
 
 def managed_dir(project_id: int, name: str) -> Path:
-    return settings.data_dir / "projects" / str(project_id) / "volumes" / name
+    return settings.project_dir(project_id) / "volumes" / name
+
+
+def config_dir(project_id: int) -> Path:
+    return settings.project_dir(project_id) / "config"
 
 
 def _protected() -> list[Path]:
@@ -94,6 +102,8 @@ def resolve_volume(volume: Volume, cfg: AppSettings) -> tuple[Path, bool]:
     Host folders are validated again on every call, for the same reason they are on every cell start."""
     if volume.kind == "host":
         return host_target(volume.host_path, cfg.mount_roots)
+    if volume.kind == "config":
+        return config_dir(volume.project_id), True
     return managed_dir(volume.project_id, volume.name), True
 
 
@@ -147,6 +157,18 @@ async def ensure_default_volume(session: AsyncSession, project_id: int) -> Volum
     return volume
 
 
+async def ensure_config_volume(session: AsyncSession, project_id: int) -> Volume:
+    """Every project has a config folder, shown on its Files page. Made the first time it is needed."""
+    volume = await session.scalar(
+        select(Volume).where(Volume.project_id == project_id, Volume.kind == "config")
+    )
+    if volume is None:
+        volume = Volume(project_id=project_id, name=CONFIG_NAME, kind="config", mode="rw")
+        session.add(volume)
+        await session.commit()
+    return volume
+
+
 def is_default(volume: Volume) -> bool:
     return volume.kind == "managed" and volume.name == DEFAULT_NAME
 
@@ -169,6 +191,8 @@ async def plan_mounts(
         volume = volumes.get(volume_id)
         if volume is None or volume.project_id != project_id:
             raise MountError("A shared folder this run uses no longer exists")
+        if volume.kind == "config":
+            raise MountError("The config folder cannot be mounted: it is where agents are set up")
         source, allowed = resolve_volume(volume, cfg)
         writable = volume.mode == "rw" and allowed
         if mode == "rw" and volume.mode == "rw" and not allowed:

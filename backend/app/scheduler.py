@@ -23,6 +23,7 @@ from .keys import Redactor, key_path, unique_env_names
 from .mcp import CONFIG_PATH, McpSpec, config_toml
 from .models import Agent, Attempt, AttemptStatus, McpServer, Project, Secret, Task, TaskStatus, utcnow
 from .profiles import Profile, resolve_profile
+from .project_config import sync_project
 from .scheduling import finish_task
 from .skills import missing as missing_skills
 from .volumes import MountError, plan_mounts
@@ -303,6 +304,9 @@ class Scheduler:
             for p in await s.scalars(select(Project).where(Project.id.in_({t.project_id for t in tasks})))
         }
         agent_ids = {t.agent_id for t in tasks if t.agent_id}
+        for project_id in {t.project_id for t in tasks if t.agent_id}:
+            # a run is planned from what the agent's file says right now (it may have been edited since the last look)
+            await sync_project(s, project_id)
         agents = (
             {a.id: a for a in await s.scalars(select(Agent).where(Agent.id.in_(agent_ids)))}
             if agent_ids
@@ -352,6 +356,8 @@ class Scheduler:
     ) -> tuple[list[str], list[McpSpec], dict[int, str], str]:
         """What an agent is given besides its words: skills, tool servers and keys. Anything that was deleted since
         the agent was set up stops the run with a reason, instead of running without it."""
+        if agent is not None and agent.config_error:
+            return [], [], {}, f"The agent's file in the config folder has a problem: {agent.config_error}"
         if agent is None or not (agent.skills or agent.mcp_servers or agent.secrets):
             return [], [], {}, ""
         if gone := missing_skills(project.id, agent.skills):

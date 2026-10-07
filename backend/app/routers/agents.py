@@ -8,24 +8,18 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from .. import project_config
 from .. import skills as skill_store
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
-from ..harness import CATALOG, plan_for
+from ..harness import CATALOG, clean_model_name
 from ..models import Agent, McpServer, Project, Secret, Task, TaskStatus, Volume
 from ..profiles import ProfileOverrides
-from ..toolcheck import missing_commands
+from ..toolcheck import image_for, missing_commands
 from ..volumes import MountRef
 from .projects import _bad, _project
 
 router = APIRouter(tags=["agents"])
-
-
-def _clean_model(v: str) -> str:
-    v = v.strip()
-    if v and (v.startswith("-") or any(c.isspace() or c in "'\"$`\\;&|<>" for c in v)):
-        raise ValueError("Invalid model name")
-    return v
 
 
 class AgentIn(BaseModel):
@@ -59,7 +53,7 @@ class AgentIn(BaseModel):
     @field_validator("model")
     @classmethod
     def valid_model(cls, v: str) -> str:
-        return _clean_model(v)
+        return clean_model_name(v)
 
 
 class AgentPatch(BaseModel):
@@ -79,7 +73,7 @@ class AgentPatch(BaseModel):
     @field_validator("model")
     @classmethod
     def valid_model(cls, v: str | None) -> str | None:
-        return None if v is None else _clean_model(v)
+        return None if v is None else clean_model_name(v)
 
 
 class AgentOut(BaseModel):
@@ -99,6 +93,8 @@ class AgentOut(BaseModel):
     skills: list[str]
     mcp_servers: list[int]
     secrets: list[int]
+    path: str  # the agent's file in the project's config folder
+    config_error: str  # why that file cannot be used right now ("" when it is fine)
     created_at: datetime
     updated_at: datetime
 
@@ -137,7 +133,10 @@ async def _mounts(session, project_id: int, refs: list[MountRef]) -> list[dict]:
     if by_id:
         found = set(
             await session.scalars(
-                select(Volume.id).where(Volume.project_id == project_id, Volume.id.in_(list(by_id)))
+                # the config folder is never mounted: it is where agents are set up
+                select(Volume.id).where(
+                    Volume.project_id == project_id, Volume.id.in_(list(by_id)), Volume.kind != "config"
+                )
             )
         )
         if missing := set(by_id) - found:
@@ -184,12 +183,7 @@ async def check_agent_tools(
     """Before saving: would the agent's tool servers start in the image it will run in?"""
     project: Project = await _project(session, project_id, user)
     cfg = await load_settings(session)
-    hp = plan_for(body.harness, cfg)
-    image = (
-        (body.cell_profile.image if body.cell_profile else None)
-        or (project.cell_profile or {}).get("image")
-        or (hp.image if hp else cfg.cell_image)
-    )
+    image = image_for(project, cfg, body.harness, body.cell_profile.clean() if body.cell_profile else None)
     commands = {}
     if body.mcp_servers:
         rows = await session.scalars(
@@ -211,6 +205,9 @@ async def list_harnesses(_: CurrentUser) -> list[HarnessOut]:
 @router.get("/projects/{project_id}/agents", response_model=list[AgentOut])
 async def list_agents(project_id: int, session: SessionDep, user: CurrentUser) -> list[Agent]:
     await _project(session, project_id, user)
+    await project_config.sync_project(
+        session, project_id
+    )  # a file may have been edited in the Files page or on disk
     return list(
         (
             await session.scalars(select(Agent).where(Agent.project_id == project_id).order_by(Agent.name))
@@ -221,38 +218,61 @@ async def list_agents(project_id: int, session: SessionDep, user: CurrentUser) -
 @router.post("/projects/{project_id}/agents", response_model=AgentOut, status_code=status.HTTP_201_CREATED)
 async def create_agent(project_id: int, body: AgentIn, session: SessionDep, user: CurrentUser) -> Agent:
     await _project(session, project_id, user)
-    agent = Agent(
-        project_id=project_id,
-        name=body.name,
-        role=body.role,
-        description=body.description,
-        instructions=body.instructions,
-        harness=body.harness,
-        model=body.model,
-        reasoning_effort=body.reasoning_effort,
-        cell_profile=body.cell_profile.clean() if body.cell_profile else None,
-        mounts=await _mounts(session, project_id, body.mounts),
-        **await _capabilities(session, project_id, body, user),
-    )
-    session.add(agent)
+    async with project_config.lock:
+        agent = Agent(
+            project_id=project_id,
+            name=body.name,
+            role=body.role,
+            description=body.description,
+            instructions=body.instructions,
+            harness=body.harness,
+            model=body.model,
+            reasoning_effort=body.reasoning_effort,
+            cell_profile=body.cell_profile.clean() if body.cell_profile else None,
+            mounts=await _mounts(session, project_id, body.mounts),
+            **await _capabilities(session, project_id, body, user),
+        )
+        session.add(agent)
+        await _save(session, agent)
+    return agent
+
+
+async def _save(session, agent: Agent, *, renamed: bool = False) -> None:
+    """Commits an agent row together with its file (the caller holds the config lock). The row goes first, so a name
+    that is taken is refused before any file is written."""
     try:
-        await session.commit()
+        await session.flush()
     except IntegrityError:
         await session.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT, "This project already has an agent with that name"
         ) from None
-    return agent
+    try:
+        await project_config.write_agent(session, agent, renamed=renamed)
+        await session.commit()
+    except BaseException:
+        await session.rollback()
+        raise
 
 
 @router.get("/agents/{agent_id}", response_model=AgentOut)
 async def get_agent(agent_id: int, session: SessionDep, user: CurrentUser) -> Agent:
-    return await _agent(session, agent_id, user)
+    agent = await _agent(session, agent_id, user)
+    await project_config.sync_project(session, agent.project_id)
+    await session.refresh(agent)
+    return agent
 
 
 @router.patch("/agents/{agent_id}", response_model=AgentOut)
 async def update_agent(agent_id: int, body: AgentPatch, session: SessionDep, user: CurrentUser) -> Agent:
     agent = await _agent(session, agent_id, user)
+    async with project_config.lock:
+        await session.refresh(agent)  # a sync may have changed it since it was loaded
+        return await _update(session, agent, body, user)
+
+
+async def _update(session, agent: Agent, body: AgentPatch, user) -> Agent:
+    old_name = agent.name
     fields = body.model_fields_set
     for key in ("name", "role", "description", "instructions", "harness", "model", "reasoning_effort"):
         value = getattr(body, key)
@@ -266,13 +286,7 @@ async def update_agent(agent_id: int, body: AgentPatch, session: SessionDep, use
         agent.mounts = await _mounts(session, agent.project_id, body.mounts)
     for key, value in (await _capabilities(session, agent.project_id, body, user, before=agent)).items():
         setattr(agent, key, value)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "This project already has an agent with that name"
-        ) from None
+    await _save(session, agent, renamed=agent.name != old_name)
     return agent
 
 
@@ -284,5 +298,7 @@ async def delete_agent(agent_id: int, session: SessionDep, user: CurrentUser) ->
     )
     if running:
         raise HTTPException(status.HTTP_409_CONFLICT, "This agent is running a task. Cancel it first.")
-    await session.delete(agent)
-    await session.commit()
+    async with project_config.lock:
+        project_config.remove_agent_file(agent)
+        await session.delete(agent)
+        await session.commit()

@@ -11,6 +11,7 @@ from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
 from .db import SessionLocal
 from .migrate import upgrade_database
+from .project_config import sync_all_configs
 from .routers import access, agents, auth, codex, projects, skills, system, tools, volumes, workflows
 from .scheduler import Scheduler
 from .workflows import WorkflowRunner
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.secret_key == DEFAULT_SECRET_KEY:
         log.warning("THEMIS_SECRET_KEY is the insecure default: set a real one before exposing this server")
     await upgrade_database()
+    await sync_all_configs(SessionLocal)
     scheduler: Scheduler = app.state.scheduler
     await app.state.workflows.reconcile()
     if settings.scheduler_enabled:

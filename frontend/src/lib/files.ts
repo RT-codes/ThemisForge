@@ -42,6 +42,13 @@ export function fileKind(name: string): 'image' | 'text' | 'other' {
 
 export const isMarkdown = (name: string) => /\.(md|markdown)$/i.test(name)
 
+/** The settings between the two --- lines at the top of a markdown file (a skill, an agent), and the text after them.
+ * Rendered as markdown they would turn into a rule and a giant heading, so they are shown on their own instead. */
+export function splitFrontmatter(text: string): { meta: string; body: string } {
+  const m = text.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/)
+  return m ? { meta: m[1], body: text.slice(m[0].length) } : { meta: '', body: text }
+}
+
 /** Where a picture named in a markdown file (`![](img/a.png)`) lives, as a path inside the same folder tree. A relative
  * path is read from the folder the markdown file is in; a web address, an absolute path or a path that climbs out of the
  * folder is refused (null), because a file written by an agent must not make this page load things from elsewhere. */

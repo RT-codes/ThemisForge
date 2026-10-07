@@ -59,8 +59,11 @@ def config_dir(project_id: int) -> Path:
 
 
 def _protected() -> list[Path]:
-    """What a mounted folder may never be, or contain: ThemisForge's own data, database and configuration."""
-    paths = [settings.data_dir, BACKEND_DIR]
+    """What a mounted folder may never be, or contain: ThemisForge's own data, database and configuration. An installed
+    Themis keeps its code, settings (with the secret key), database and logs in its home folder: all of it is off limits."""
+    paths = [settings.data_dir, settings.log_dir, BACKEND_DIR]
+    if settings.home is not None:
+        paths.append(settings.home)
     if db := make_url(settings.database_url).database:
         paths.append(Path(db))
     return [p.resolve() for p in paths]

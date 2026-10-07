@@ -29,7 +29,7 @@ from .app_settings import AppSettings, load_settings
 from .config import DEFAULT_SECRET_KEY, settings
 from .docker_check import DockerStatus, check_docker, docker_env, run_command
 from .harness import plan_for
-from .migrate import _config
+from .migrate import _config, is_unknown_revision, too_new_message
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def check_secret_key() -> Check:
             "secret_key",
             WARN,
             "THEMIS_SECRET_KEY is the insecure default",
-            "Set a real one in backend/.env before exposing this server (the installer does this for you).",
+            f"Set a real one in {settings.home / 'config.env' if settings.home else 'backend/.env'} before exposing this server (the installer does this for you).",
         )
     return Check("secret_key", OK, "Secret key is set")
 
@@ -118,6 +118,13 @@ def check_database() -> Check:
     finally:
         engine.dispose()
     head = ScriptDirectory.from_config(_config(settings.database_url)).get_current_head()
+    if is_unknown_revision(settings.database_url, current):
+        return Check(
+            "database",
+            FAIL,
+            f"Database {path}: {too_new_message(str(current), head)}",
+            "Restoring a backup is in the operations guide.",
+        )
     if current is None:
         return Check(
             "database", WARN, f"Database {path} is empty: it is created when the server first starts"

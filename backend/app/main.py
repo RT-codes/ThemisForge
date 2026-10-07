@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     trail: Trail = app.state.trail
     preflight: Preflight = app.state.preflight
     scheduler: Scheduler = app.state.scheduler
+    settings.ensure_state_dirs()
     setup_file_logging(settings.log_dir)
     run_id = trail.begin()
     log.info("Themis %s starting (run %s)", build_info().version, run_id)

@@ -37,6 +37,26 @@ def _is_unversioned_legacy_db(url: str) -> bool:
 KEEP_BACKUPS = 5
 
 
+class DatabaseTooNewError(RuntimeError):
+    """The database was changed by a newer Themis than this one. Older code must not touch it: it could damage what it
+    does not understand (this is what a failed upgrade that was rolled back would otherwise run into)."""
+
+
+def too_new_message(found: str, head: str | None) -> str:
+    return (
+        f"This database was made by a newer version of Themis (it is at revision {found}; this version knows up to "
+        f"{head}). Upgrade Themis (themis upgrade), or restore a database backup made before the newer version ran."
+    )
+
+
+def is_unknown_revision(url: str, revision: str | None) -> bool:
+    """Whether the database is at a revision this code has never heard of, which means it came from a newer version."""
+    if not revision:
+        return False
+    known = {r.revision for r in ScriptDirectory.from_config(_config(url)).walk_revisions()}
+    return revision not in known
+
+
 def _current_revision(db_file: Path) -> str | None:
     con = sqlite3.connect(db_file)
     try:
@@ -83,6 +103,11 @@ def backup_before_upgrade(url: str, head: str) -> Path | None:
 def _upgrade(url: str) -> None:
     cfg = _config(url)
     head = ScriptDirectory.from_config(cfg).get_current_head()
+    parsed = make_url(url)
+    if parsed.get_backend_name() == "sqlite" and parsed.database and Path(parsed.database).exists():
+        found = _current_revision(Path(parsed.database))
+        if is_unknown_revision(url, found):
+            raise DatabaseTooNewError(too_new_message(str(found), head))
     if head:
         backup_before_upgrade(url, head)
     if _is_unversioned_legacy_db(url):

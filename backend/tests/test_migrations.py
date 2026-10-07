@@ -178,3 +178,43 @@ async def test_ids_of_volumes_and_agents_survive_the_switch_to_never_reused_ids(
             in con.execute("SELECT sql FROM sqlite_master WHERE name = ?", (table,)).fetchone()[0].upper()
         )
     con.close()
+
+
+async def test_a_database_from_a_newer_version_is_refused_not_touched(tmp_path):
+    """After a rollback (or by mistake) an older Themis may meet a database that a newer one migrated."""
+    import pytest
+
+    from app.migrate import DatabaseTooNewError, is_unknown_revision
+
+    path = tmp_path / "newer.db"
+    url = f"sqlite+aiosqlite:///{path}"
+    await upgrade_database(url)
+    con = sqlite3.connect(path)
+    con.execute("UPDATE alembic_version SET version_num = '9999_from_the_future'")
+    con.execute("CREATE TABLE only_the_future_knows (x)")
+    con.commit()
+    con.close()
+    assert is_unknown_revision(url, "9999_from_the_future") and not is_unknown_revision(url, None)
+    with pytest.raises(DatabaseTooNewError, match="newer version of Themis"):
+        await upgrade_database(url)
+    con = sqlite3.connect(path)
+    assert con.execute("SELECT version_num FROM alembic_version").fetchone() == (
+        "9999_from_the_future",
+    )  # untouched
+    assert not (tmp_path / "backups").exists()  # and nothing was "backed up" or changed
+    con.close()
+
+
+def test_the_doctor_calls_a_newer_database_a_failure(tmp_path, monkeypatch):
+    from app import preflight
+    from app.config import settings
+
+    path = tmp_path / "newer.db"
+    asyncio.run(upgrade_database(f"sqlite+aiosqlite:///{path}"))
+    con = sqlite3.connect(path)
+    con.execute("UPDATE alembic_version SET version_num = '9999_from_the_future'")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(settings, "database_url", f"sqlite+aiosqlite:///{path}")
+    check = preflight.check_database()
+    assert check.level == "fail" and "newer version of Themis" in check.message

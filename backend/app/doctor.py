@@ -2,12 +2,14 @@
 
     themis doctor              the checks (see preflight.py), then the last runs from the run trail (see runlog.py)
     themis doctor --report     also write themis-report-<time>.txt, to attach to a bug report
+    themis doctor --json       the checks as JSON, for the installer (it decides what to fix from them)
 
 Exit code 1 when something is broken.
 """
 
 import argparse
 import asyncio
+import json
 import os
 import platform
 import sys
@@ -19,7 +21,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from .app_settings import AppSettings, load_settings
 from .config import settings
-from .preflight import FAIL, OK, WARN, Check, run_checks
+from .docker_check import check_docker
+from .preflight import FAIL, OK, WARN, Check, cells_can_run, run_checks
 from .runlog import Run, read_runs
 from .version import build_info
 
@@ -93,6 +96,24 @@ def _report(checks: list[Check], runs: list[Run]) -> str:
     return "\n".join(out) + "\n"
 
 
+def _json() -> int:
+    """For `themis install` and `themis upgrade`, which read it to decide what to fix: one list of checks, here."""
+    cfg = _app_settings()
+    docker = asyncio.run(check_docker(cfg.docker_host)) if settings.cell_backend == "docker" else None
+    checks = asyncio.run(run_checks(cfg, docker=docker))
+    print(
+        json.dumps(
+            {
+                "version": build_info().version,
+                "checks": [c.to_dict() for c in checks],
+                "cells_can_run": cells_can_run(checks),
+                "docker": docker.to_dict() if docker else None,
+            }
+        )
+    )
+    return 0 if all(c.level != FAIL for c in checks) else 1
+
+
 def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="themis doctor", description="Check that this machine can run Themis."
@@ -104,8 +125,11 @@ def run(argv: list[str] | None = None) -> int:
         metavar="FILE",
         help="also write a report file to attach to a bug report",
     )
+    parser.add_argument("--json", action="store_true", help="print the checks as JSON and nothing else")
     args = parser.parse_args(argv)
 
+    if args.json:
+        return _json()
     info = build_info()
     print(f"Themis {info.version} ({info.kind})\n")
     checks = asyncio.run(run_checks(_app_settings()))

@@ -8,11 +8,13 @@ ThemisForge is the project. The app you use is called **Themis**: a place to giv
 
 For example: *"Every morning, research the news in my field and write me a short summary."*
 
+> **Early development (version 0.x).** Themis works and is used daily, but it is young: things still change, and rough edges remain. Back up what matters (`themis backup`), and tell us what you run into in the [issues](https://github.com/RT-codes/ThemisForge/issues).
+
 ## What you can do
 
 - **Give agents jobs.** Say what should be done and when: right now, at a set time, or every day.
 - **Keep work organised.** Each project has its own agents, tasks and files. Tasks show up on a board, a list or a timeline.
-- **Build a small team.** Give each agent a role and instructions. Add **skills** (how-to guides it can follow), **tools** (extra abilities, such as working with files) and **keys** (access to services it needs).
+- **Build a small team.** Give each agent a role and instructions. Add **skills** (how-to guides it can follow), **tools** (extra abilities, such as working with files) and **keys** (access to services it needs). Agents, skills and tools are plain files in the project's config folder that you can read and edit.
 - **Chain steps together.** Draw a **workflow**, like a flowchart, where one agent's result feeds the next step.
 - **Share files safely.** Agents hand files to each other through shared folders, and you choose which folders they may read or change.
 - **Stay in control.** Read every log and result, cancel anything, and limit how much of the computer's power agents can use.
@@ -58,7 +60,7 @@ Installing on a server you reach from elsewhere? By default Themis only answers 
 
 Windows support, and more agent engines: Codex is the one supported today, with Claude and OpenRouter to follow. See the [roadmap](docs/11-roadmap.md). ThemisForge is under active development.
 
-Want to help build it? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Want to help build it? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security problem? Please read [SECURITY.md](SECURITY.md) before you report it.
 
 ## License
 

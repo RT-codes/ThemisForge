@@ -135,7 +135,9 @@
 		radial-gradient(40% 40% at 90% 100%, oklch(0.65 0.19 40 / 10%), transparent 70%);
 }
 
-/* sidebar link pulse: the border fades in, a shine sweeps right to left, the border fades out (600ms) */
+/* A pulse: the border fades in, a shine sweeps right to left, the border fades out (600ms by default). It is played on
+   the sidebar links and on files that change; --pulse-ms and --pulse-color change its length and colour for one element
+   (set them on it). Play it from script with restartPulse in lib/pulse.ts. */
 .nav-pulse {
 	position: relative;
 }
@@ -146,15 +148,16 @@
 	inset: 0;
 	border-radius: inherit;
 	pointer-events: none;
+	z-index: 1; /* above whatever the element holds, so the shine is seen over a preview and not behind it */
 }
 .nav-pulse::after {
-	border: 1px solid var(--sidebar-primary);
-	animation: nav-pulse-border 600ms ease-in-out forwards;
+	border: 1px solid var(--pulse-color, var(--sidebar-primary));
+	animation: nav-pulse-border var(--pulse-ms, 600ms) ease-in-out forwards;
 }
 .nav-pulse::before {
-	background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--sidebar-primary) 45%, transparent), transparent);
+	background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--pulse-color, var(--sidebar-primary)) 45%, transparent), transparent);
 	transform: translateX(100%);
-	animation: nav-pulse-shine 600ms ease-in-out forwards;
+	animation: nav-pulse-shine var(--pulse-ms, 600ms) ease-in-out forwards;
 }
 @keyframes nav-pulse-border {
 	0% { opacity: 0; }
@@ -309,6 +312,63 @@
 	top: 50%;
 	width: 0.5rem;
 	height: 1px;
+}
+
+/* Files page tree: the same branch lines as the sidebar, but a folder row can hold more rows, so the line of the last
+   item stops at the middle of its own row (2rem high) instead of at the middle of everything inside it. */
+.file-leaf {
+	position: relative;
+}
+.file-leaf::before,
+.file-leaf::after {
+	content: '';
+	position: absolute;
+	left: -0.625rem; /* the left edge of the list this row belongs to */
+	background: var(--border);
+	pointer-events: none;
+}
+.file-leaf::before {
+	top: -0.25rem; /* up into the gap above, so the line stays unbroken */
+	bottom: -0.25rem;
+	width: 1px;
+}
+.file-leaf:last-child::before {
+	bottom: auto;
+	height: 1.25rem;
+}
+.file-leaf::after {
+	top: 1rem;
+	width: 0.5rem;
+	height: 1px;
+}
+
+/* A slim scrollbar in the look of the board's: a rounded muted pill that turns primary on hover. The board's own is a
+   horizontal one drawn in script; this is the plain CSS version for ordinary scrolling areas. Chromium and Safari take the
+   ::-webkit-scrollbar rules (which Chromium ignores once scrollbar-width is set, hence the @supports split); Firefox gets
+   the standard properties. */
+.slim-scrollbar::-webkit-scrollbar {
+	width: 0.5rem;
+	height: 0.5rem;
+}
+.slim-scrollbar::-webkit-scrollbar-track {
+	background: transparent;
+}
+.slim-scrollbar::-webkit-scrollbar-thumb {
+	background: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+	background-clip: content-box;
+	border: 1px solid transparent; /* keeps the pill off the edges, like the board's 6px track */
+	border-radius: 9999px;
+}
+.slim-scrollbar::-webkit-scrollbar-thumb:hover,
+.slim-scrollbar::-webkit-scrollbar-thumb:active {
+	background: var(--primary);
+	background-clip: content-box;
+}
+@supports not selector(::-webkit-scrollbar) {
+	.slim-scrollbar {
+		scrollbar-width: thin;
+		scrollbar-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent) transparent;
+	}
 }
 
 /* the board draws its own scrollbar above the columns */

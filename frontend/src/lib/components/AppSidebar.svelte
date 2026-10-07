@@ -8,6 +8,7 @@
 	import HouseIcon from '@lucide/svelte/icons/house'
 	import BotIcon from '@lucide/svelte/icons/bot'
 	import BookOpenIcon from '@lucide/svelte/icons/book-open'
+	import FilesIcon from '@lucide/svelte/icons/files'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks'
@@ -16,6 +17,7 @@
 	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 	import UsersIcon from '@lucide/svelte/icons/users'
 	import { inbox } from '$lib/inbox.svelte'
+	import { restartPulse } from '$lib/pulse'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import Logo from './Logo.svelte'
@@ -42,10 +44,7 @@
 			target?.closest('a[data-sidebar="menu-button"], a[data-sidebar="menu-sub-button"]') ??
 			(target?.closest('a[data-pulse-sibling]') &&
 				target.closest('[data-sidebar="menu-sub-item"]')?.querySelector('a[data-sidebar="menu-sub-button"]'))
-		if (!link) return
-		link.classList.remove('nav-pulse')
-		void (link as HTMLElement).offsetWidth // restart the animation when clicked again
-		link.classList.add('nav-pulse')
+		if (link) restartPulse(link)
 	}
 </script>
 
@@ -114,6 +113,13 @@
 										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'tasks'} class="me-2.5">
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem class="tree-leaf">
+										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'files'} class="me-2.5">
+											{#snippet child({ props })}
+												<a href="/projects/{p.id}/files" {...props}><FilesIcon /><span>Files</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>

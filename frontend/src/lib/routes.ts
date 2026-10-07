@@ -1,4 +1,4 @@
-export type ProjectPageName = 'overview' | 'tasks'
+export type ProjectPageName = 'overview' | 'tasks' | 'files'
 
 export type Route =
   | { name: 'home' }
@@ -27,7 +27,7 @@ export function parse(path: string): Route {
   if (wf) return { name: 'workflow', id: Number(wf[1]), workflowId: Number(wf[2]), run: wf[3] ? Number(wf[3]) : null, resume: false }
   const agent = path.match(/^\/projects\/(\d+)\/agents(?:\/(new|\d+))?\/?$/)
   if (agent) return { name: 'agents', id: Number(agent[1]), agentId: agent[2] && agent[2] !== 'new' ? Number(agent[2]) : null, isNew: agent[2] === 'new' }
-  const m = path.match(/^\/projects\/(\d+)(?:\/(tasks))?\/?$/)
-  if (m) return { name: 'project', id: Number(m[1]), page: m[2] ? 'tasks' : 'overview' }
+  const m = path.match(/^\/projects\/(\d+)(?:\/(tasks|files))?\/?$/)
+  if (m) return { name: 'project', id: Number(m[1]), page: (m[2] as ProjectPageName | undefined) ?? 'overview' }
   return { name: 'not-found' }
 }

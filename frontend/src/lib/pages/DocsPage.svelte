@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import Logo from '$lib/components/Logo.svelte'
+	import { onCodeCopyClick } from '$lib/markdown'
 	import { router } from '$lib/router.svelte'
 	import { cn } from '$lib/utils'
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left'
@@ -75,31 +76,13 @@
 	// code block copy buttons live inside the rendered markdown, so listen on the article itself
 	$effect(() => {
 		const el = article
-		el?.addEventListener('click', onArticleClick)
-		return () => el?.removeEventListener('click', onArticleClick)
+		el?.addEventListener('click', onCodeCopyClick)
+		return () => el?.removeEventListener('click', onCodeCopyClick)
 	})
 
 	function open(slugToOpen: string, id: string | null) {
 		query = ''
 		router.navigate(`/docs/${slugToOpen}${id ? `#${id}` : ''}`)
-	}
-
-	async function onArticleClick(e: MouseEvent) {
-		const button = (e.target as Element).closest<HTMLButtonElement>('[data-copy]')
-		if (!button) return
-		const code = button.closest('.docs-code')?.querySelector('code')?.textContent ?? ''
-		try {
-			await navigator.clipboard.writeText(code)
-			button.textContent = 'Copied'
-		} catch {
-			// not a secure context (plain http): select the code so Ctrl+C works
-			const range = document.createRange()
-			range.selectNodeContents(button.closest('.docs-code')!.querySelector('code')!)
-			window.getSelection()?.removeAllRanges()
-			window.getSelection()?.addRange(range)
-			button.textContent = 'Press Ctrl+C'
-		}
-		setTimeout(() => (button.textContent = 'Copy'), 1800)
 	}
 </script>
 

@@ -124,6 +124,20 @@ export interface Volume {
   can_write: boolean
 }
 
+export interface FileEntry {
+  name: string
+  is_dir: boolean
+  size: number
+  modified: string
+}
+
+export interface FolderListing {
+  path: string
+  entries: FileEntry[]
+  writable: boolean // the folder allows changes
+  runs: { task_id: number; title: string }[] // the runs using it: while there are any, it is locked
+}
+
 export interface VolumeInput {
   name: string
   kind?: 'managed' | 'host'
@@ -382,22 +396,25 @@ export class ApiError extends Error {
   }
 }
 
+/** the error for a response that was not ok, with the server's own explanation */
+async function failure(res: Response): Promise<ApiError> {
+  let detail = res.statusText
+  try {
+    const body = await res.json()
+    if (typeof body.detail === 'string') detail = body.detail
+    else if (Array.isArray(body.detail)) detail = body.detail[0]?.msg?.replace(/^Value error, /, '') ?? detail
+  } catch {
+    // non-JSON error body
+  }
+  return new ApiError(res.status, detail)
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
-  if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const body = await res.json()
-      if (typeof body.detail === 'string') detail = body.detail
-      else if (Array.isArray(body.detail)) detail = body.detail[0]?.msg?.replace(/^Value error, /, '') ?? detail
-    } catch {
-      // non-JSON error body
-    }
-    throw new ApiError(res.status, detail)
-  }
+  if (!res.ok) throw await failure(res)
   return res.status === 204 ? (undefined as T) : res.json()
 }
 
@@ -405,6 +422,11 @@ const send = (method: string, body?: unknown): RequestInit => ({
   method,
   body: body === undefined ? undefined : JSON.stringify(body),
 })
+
+/** where a file can be shown or downloaded from; the browser fetches it with the session cookie */
+// `version` (the file's modified time) is ignored by the server; it only makes the browser fetch the file again after it changed
+const fileUrl = (id: number, path: string, download = false, version = '') =>
+  `/api/volumes/${id}/file?path=${encodeURIComponent(path)}${download ? '&download=true' : ''}${version ? `&v=${encodeURIComponent(version)}` : ''}`
 
 export const api = {
   me: () => request<User>('/auth/me'),
@@ -448,8 +470,35 @@ export const api = {
   systemStatus: () => request<SystemStatus>('/system/status'),
   volumes: (projectId: number) => request<Volume[]>(`/projects/${projectId}/volumes`),
   createVolume: (projectId: number, body: VolumeInput) => request<Volume>(`/projects/${projectId}/volumes`, send('POST', body)),
-  updateVolume: (id: number, patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) => request<Volume>(`/volumes/${id}`, send('PATCH', patch)),
+  updateVolume: (id: number, patch: { name?: string; mode?: 'ro' | 'rw'; exclusive_write?: boolean }) => request<Volume>(`/volumes/${id}`, send('PATCH', patch)),
   deleteVolume: (id: number) => request<void>(`/volumes/${id}`, send('DELETE')),
+  /** A folder's contents. Pass the `etag` of the last answer: if nothing changed since, the server sends no body and
+   * this returns null, so watching a folder is cheap. */
+  listFiles: async (id: number, path: string, etag = ''): Promise<{ listing: FolderListing; etag: string } | null> => {
+    const res = await fetch(`/api/volumes/${id}/files?path=${encodeURIComponent(path)}`, {
+      headers: etag ? { 'If-None-Match': etag } : {},
+      cache: 'no-store', // the conditional request is ours; the browser's own cache must not answer instead
+    })
+    if (res.status === 304) return null
+    if (!res.ok) throw await failure(res)
+    return { listing: await res.json(), etag: res.headers.get('ETag') ?? '' }
+  },
+  fileUrl,
+  readFileText: async (id: number, path: string) => {
+    const res = await fetch(fileUrl(id, path), { cache: 'no-store' }) // a file that was just saved must not come from the cache
+    if (!res.ok) throw new ApiError(res.status, res.statusText)
+    return res.text()
+  },
+  /** `base`: the modified time the file had when it was opened; the save is refused (412) if it changed since */
+  uploadFile: (id: number, path: string, file: File, overwrite = false, base = '') =>
+    request<void>(`/volumes/${id}/file?path=${encodeURIComponent(path)}&overwrite=${overwrite}${base ? `&base=${encodeURIComponent(base)}` : ''}`, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }),
+  createFolder: (id: number, path: string) => request<void>(`/volumes/${id}/folder`, send('POST', { path })),
+  moveFile: (id: number, source: string, destination: string) => request<void>(`/volumes/${id}/move`, send('POST', { source, destination })),
+  deleteFile: (id: number, path: string) => request<void>(`/volumes/${id}/file?path=${encodeURIComponent(path)}`, send('DELETE')),
   skills: (projectId: number) => request<Skill[]>(`/projects/${projectId}/skills`),
   skill: (projectId: number, name: string) => request<SkillDetail>(`/projects/${projectId}/skills/${name}`),
   saveSkill: (projectId: number, name: string, content: string) => request<Skill>(`/projects/${projectId}/skills/${name}`, send('PUT', { content })),

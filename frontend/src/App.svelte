@@ -8,6 +8,7 @@
 	import { Separator } from '$lib/components/ui/separator/index.js'
 	import AccessPage from '$lib/pages/AccessPage.svelte'
 	import AgentEditorPage from '$lib/pages/AgentEditorPage.svelte'
+	import FilesPage from '$lib/pages/FilesPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
 	import WorkflowResume from '$lib/pages/WorkflowResume.svelte'
@@ -49,7 +50,8 @@
 	const crumbs = $derived.by<Crumb[]>(() => {
 		if (route.name === 'workflow' || route.name === 'project') {
 			const project: Crumb = { label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }
-			const page = route.name === 'workflow' ? 'Workflow editor' : route.page === 'tasks' ? 'Tasks' : 'Overview'
+			const pages = { overview: 'Overview', tasks: 'Tasks', files: 'Files' }
+			const page = route.name === 'workflow' ? 'Workflow editor' : pages[route.page]
 			return [project, { label: page }]
 		}
 		if (route.name === 'agents') return [{ label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }, { label: 'Agents' }]
@@ -99,6 +101,8 @@
 					{#key route.id}
 						{#if route.page === 'tasks'}
 							<ProjectPage id={route.id} />
+						{:else if route.page === 'files'}
+							<FilesPage id={route.id} />
 						{:else}
 							<ProjectOverview id={route.id} />
 						{/if}

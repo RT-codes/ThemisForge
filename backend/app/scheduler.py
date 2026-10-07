@@ -106,6 +106,10 @@ class Scheduler:
     ) -> None:
         self.maker, self.cells, self.interval = maker, cells, interval
         self._live: dict[int, _Live] = {}  # attempt id -> running cell
+        # Runs that have picked their folders but are not in `_live` yet, as (volume ids, task id, title). They count as
+        # using their folders already, so there is no moment between "chosen" and "running" when a folder looks free.
+        self._starting: list[tuple[frozenset[int], int, str]] = []
+        self._renaming: set[int] = set()  # folders being renamed: no run starts on them until that is done
         self._loop_task: asyncio.Task | None = None
         self._wake = asyncio.Event()
         self._last_prune = float("-inf")
@@ -135,6 +139,26 @@ class Scheduler:
     @property
     def active_cells(self) -> int:
         return sum(1 for live in self._live.values() if live.cell)
+
+    def runs_using(self, volume_id: int) -> list[tuple[int, str]]:
+        """The runs (task id, title) that have a folder mounted, read only or not. While there are any, the Files page
+        leaves the folder alone: a change from outside could break what an agent is in the middle of."""
+        live = [
+            (x.spec.task_id, x.spec.title)
+            for x in self._live.values()
+            if x.spec and any(m.volume_id == volume_id for m in x.spec.mounts)
+        ]
+        return live + [(task_id, title) for ids, task_id, title in self._starting if volume_id in ids]
+
+    @contextlib.contextmanager
+    def renaming(self, volume_id: int):
+        """Held while a folder is renamed (its directory moves, then the database follows). A run planned meanwhile would
+        mount the old path and make a fresh empty folder there, so none starts on this folder until it is done."""
+        self._renaming.add(volume_id)
+        try:
+            yield
+        finally:
+            self._renaming.discard(volume_id)
 
     def wake(self) -> None:
         """Run a tick right away (used when a user presses 'Run now')."""
@@ -187,6 +211,7 @@ class Scheduler:
 
     async def tick(self) -> int:
         """Start cells for due tasks while they fit the resource budget. Returns how many were started."""
+        self._starting = []  # whatever an interrupted earlier tick left behind
         async with self.maker() as s:
             cfg = await load_settings(s)
             playing = len(self._live) - self.active_cells
@@ -226,7 +251,7 @@ class Scheduler:
             claimed: set[int] = set().union(*(live.locks for live in self._live.values()))
             eligible = []
             for plan in cells:
-                if plan.locks & claimed:
+                if plan.locks & claimed or any(m.volume_id in self._renaming for m in plan.mounts):
                     continue
                 claimed |= plan.locks
                 eligible.append(plan)
@@ -241,6 +266,11 @@ class Scheduler:
                 if broken:
                     await s.commit()
                 return 0
+            # the awaits below (flush, commit) happen before the runs are in `_live`: these folders already count as in
+            # use meanwhile (see runs_using), so nothing renames or changes them in that gap
+            self._starting = [
+                (frozenset(m.volume_id for m in p.mounts), p.task.id, p.task.title) for p in due
+            ]
             started: list[tuple[int, CellSpec, frozenset[int]]] = []
             for plan in due:
                 task = plan.task
@@ -261,6 +291,7 @@ class Scheduler:
             )
             self._live[attempt_id] = live
             live.task.add_done_callback(lambda _t, aid=attempt_id: self._live.pop(aid, None))
+        self._starting = []
         return len(started)
 
     async def _plans(self, s: AsyncSession, tasks: list[Task], cfg: AppSettings) -> list[_Plan]:

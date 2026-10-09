@@ -25,7 +25,10 @@
 	import EditPopover, { type Details } from './EditPopover.svelte'
 	import { workspaceOf } from '$lib/boards'
 	import BoardDialog from './project/BoardDialog.svelte'
+	import BlocksIcon from '@lucide/svelte/icons/blocks'
 	import LayersIcon from '@lucide/svelte/icons/layers'
+	import LayersPlusIcon from '@lucide/svelte/icons/layers-plus'
+	import WorkspaceDialog from './project/WorkspaceDialog.svelte'
 	import Logo from './Logo.svelte'
 	import ProjectDialog from './project/ProjectDialog.svelte'
 
@@ -42,6 +45,11 @@
 	// the workspace that is getting a new board (the plus beside it)
 	let boardFor = $state<{ projectId: number; workspaceId: number } | null>(null)
 	let boardOpen = $state(false)
+	// the project that is getting a new workspace (the layers-plus beside "Workspaces")
+	let workspaceFor = $state<number | null>(null)
+	let workspaceOpen = $state(false)
+	// the plus beside a page or a workspace stays hidden until the pointer is on that row (or the plus has the keyboard)
+	const revealed = '-end-[1.2rem] top-1/2 -translate-y-1/2 opacity-0 group-hover/menu-sub-item:opacity-100 focus-visible:opacity-100'
 	const route = $derived(router.route)
 
 	const user = $derived(auth.user)
@@ -131,30 +139,6 @@
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
-									{@const spaces = structure.get(p.id) ?? []}
-										<!-- each workspace opens its boards (a new project starts with one) -->
-										{#each spaces as w (w.id)}
-											<Sidebar.MenuSubItem class="tree-leaf">
-												<Sidebar.MenuSubButton
-													isActive={route.name === 'project' &&
-														((route.page === 'workspace' && route.workspaceId === w.id) || (route.page === 'board' && workspaceOf(spaces, route.boardId)?.id === w.id))}
-													class="me-2.5"
-												>
-													{#snippet child({ props })}
-														<a href="/projects/{p.id}/workspaces/{w.id}" {...props}><DynamicIcon name={w.icon} fallback={LayersIcon} /><span>{w.name}</span></a>
-													{/snippet}
-												</Sidebar.MenuSubButton>
-												<EditPopover
-													kind="workspace"
-													current={{ name: w.name, purpose: w.purpose, description: w.description, icon: w.icon }}
-													fallback={LayersIcon}
-													onsave={(d) => saveWorkspace(p.id, w.id, d)}
-													class="end-[0.8rem] top-1/2 -translate-y-1/2 group-hover/menu-sub-item:opacity-100"
-												/>
-												<SidebarPlus label="New board in {w.name}" class="-end-[1.2rem] top-1/2 -translate-y-1/2" onclick={() => ((boardFor = { projectId: p.id, workspaceId: w.id }), (boardOpen = true))} />
-											</Sidebar.MenuSubItem>
-										{/each}
-
 									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'files'} class="me-2.5">
 											{#snippet child({ props })}
@@ -168,7 +152,7 @@
 												<a href="/projects/{p.id}/agents" {...props}><BotIcon /><span>Agents</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
-										<SidebarPlus label="New agent" href="/projects/{p.id}/agents/new" class="-end-[1.2rem] top-1/2 -translate-y-1/2" />
+										<SidebarPlus label="New agent" href="/projects/{p.id}/agents/new" class={revealed} />
 									</Sidebar.MenuSubItem>
 									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'workflow'} class="me-2.5">
@@ -176,8 +160,41 @@
 												<a href="/projects/{p.id}/workflows" {...props}><WorkflowIcon /><span>Workflow editor</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
-										<SidebarPlus label="New workflow" href="/projects/{p.id}/workflows/new" class="-end-[1.2rem] top-1/2 -translate-y-1/2" />
+										<SidebarPlus label="New workflow" href="/projects/{p.id}/workflows/new" class={revealed} />
 									</Sidebar.MenuSubItem>
+
+									<!-- the workspaces, set apart from the pages above -->
+									<li class="mx-2 my-1.5 h-px bg-sidebar-border" role="separator"></li>
+									<Sidebar.MenuSubItem class="tree-leaf">
+										<div class="me-2.5 flex h-7 items-center gap-2 px-2 text-sm font-medium text-sidebar-foreground/70">
+											<BlocksIcon class="size-4 shrink-0" />
+											<span class="truncate">Workspaces</span>
+										</div>
+										<SidebarPlus label="New workspace" icon={LayersPlusIcon} onclick={() => ((workspaceFor = p.id), (workspaceOpen = true))} class={revealed} />
+									</Sidebar.MenuSubItem>
+									{@const spaces = structure.get(p.id) ?? []}
+									<!-- each workspace opens its boards (a new project starts with one) -->
+									{#each spaces as w (w.id)}
+										<Sidebar.MenuSubItem class="tree-leaf">
+											<Sidebar.MenuSubButton
+												isActive={route.name === 'project' &&
+													((route.page === 'workspace' && route.workspaceId === w.id) || (route.page === 'board' && workspaceOf(spaces, route.boardId)?.id === w.id))}
+												class="me-2.5"
+											>
+												{#snippet child({ props })}
+													<a href="/projects/{p.id}/workspaces/{w.id}" {...props}><DynamicIcon name={w.icon} fallback={LayersIcon} /><span>{w.name}</span></a>
+												{/snippet}
+											</Sidebar.MenuSubButton>
+											<EditPopover
+												kind="workspace"
+												current={{ name: w.name, purpose: w.purpose, description: w.description, icon: w.icon }}
+												fallback={LayersIcon}
+												onsave={(d) => saveWorkspace(p.id, w.id, d)}
+												class="end-[0.8rem] top-1/2 -translate-y-1/2 group-hover/menu-sub-item:opacity-100"
+											/>
+											<SidebarPlus label="New board in {w.name}" class={revealed} onclick={() => ((boardFor = { projectId: p.id, workspaceId: w.id }), (boardOpen = true))} />
+										</Sidebar.MenuSubItem>
+									{/each}
 								</Sidebar.MenuSub>
 							{/if}
 						</Sidebar.MenuItem>
@@ -259,6 +276,17 @@
 			const projectId = boardFor!.projectId
 			await structure.refresh(projectId)
 			router.navigate(`/projects/${projectId}/boards/${b.id}`)
+		}}
+	/>
+{/if}
+{#if workspaceFor !== null}
+	<WorkspaceDialog
+		bind:open={workspaceOpen}
+		projectId={workspaceFor}
+		onsaved={async (w) => {
+			const projectId = workspaceFor!
+			await structure.refresh(projectId)
+			router.navigate(`/projects/${projectId}/workspaces/${w.id}`)
 		}}
 	/>
 {/if}

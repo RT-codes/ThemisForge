@@ -3,6 +3,7 @@
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import CodexConnection from '$lib/components/CodexConnection.svelte'
+	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
@@ -211,6 +212,7 @@
 
 	<div class="mt-8 grid gap-3">
 		<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Your account</h3>
+		<AppearanceSettings />
 		<SettingsSection id="codex" title="Codex" description="Sign in with ChatGPT so your tasks use your plan's Codex usage." defaultOpen>
 			<CodexConnection bare />
 		</SettingsSection>
@@ -363,6 +365,11 @@
 							<div class="grid gap-2">
 								<Label for="cell-timeout">Time limit per run</Label>
 								<NumberField id="cell-timeout" bind:value={form.cell_timeout_seconds} unit="seconds" min={10} step={10} />
+							</div>
+							<div class="grid gap-2 sm:col-span-2">
+								<Label for="start-cooldown">Wait before a Ready task starts</Label>
+								<NumberField id="start-cooldown" bind:value={form.start_cooldown_seconds} unit="seconds" min={0} max={3600} />
+								<p class="text-xs text-muted-foreground">A task starts this long after it was moved to Ready or its last run ended. It stops loops from hammering the machine; 0 starts tasks right away.</p>
 							</div>
 							<div class="grid gap-2 sm:col-span-2">
 								<Label for="keep-days">Keep working folders for</Label>

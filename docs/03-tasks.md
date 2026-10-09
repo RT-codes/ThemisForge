@@ -23,7 +23,7 @@ whether the scheduler is on and how many cells are busy.
 
 | Status | Meaning |
 | --- | --- |
-| **Inbox** | Not scheduled yet. A recurring task parked here is **paused**. |
+| **Backlog** | Not scheduled yet. A recurring task parked here is **paused**. |
 | **Ready** | The scheduler may pick it up. With no schedule it runs as soon as a cell is free; with a schedule it runs when due. |
 | **Running** | A cell is working on it right now. |
 | **Review** | Finished and waiting for a human. |
@@ -84,7 +84,7 @@ Open a task to find the actions:
 
 - **Run now**: makes the task Ready and wakes the scheduler. A recurring task still keeps its normal schedule afterwards.
 - **Cancel run**: stops the cell. The attempt is recorded as cancelled.
-- **Delete**: removes the task and its history. Files it wrote to the project workspace are not touched.
+- **Delete**: removes the task and its attempts, after you confirm. Use the trash icon that appears when you point at a card on the board, or the one in the task's details panel. Files it wrote to the project workspace are not touched. The project's **History** tab keeps a note of every deleted task, with who deleted it, when, and what it was (description, status and schedule), so you can find it again.
 
 ## Attempts and history
 

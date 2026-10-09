@@ -47,7 +47,7 @@ One-off times are picked in your browser's local time and stored as an exact mom
 
 ## Pausing
 
-A recurring task only runs while it is in **Ready**. Move it to **Inbox** to pause it and back to **Ready** to resume.
+A recurring task only runs while it is in **Ready**. Move it to **Backlog** to pause it and back to **Ready** to resume.
 Resuming does not replay what was missed: the next occurrence is computed from the moment you resume.
 
 ## Late and missed runs
@@ -61,6 +61,15 @@ Resuming does not replay what was missed: the next occurrence is computed from t
 
 How many cells run at the same time depends on the **resource budget** (CPUs and memory) under **Settings, Resources**, and
 on the size of each cell. By default the budget fits two cells of the default size. A raised budget applies immediately.
+
+Tasks that do not fit simply stay in **Ready** and start, in order, as running cells finish. Nothing fails or is
+dropped because the budget is full.
+
+## Start delay
+
+A Ready task starts only some seconds after it was moved to Ready or its previous run ended (**Settings, Cell defaults,
+Wait before a Ready task starts**, 5 seconds by default). It keeps a task that puts itself back in Ready, or a workflow
+that keeps creating tasks, from hammering the machine. Set it to 0 to start tasks right away.
 
 ## Reading the timeline
 

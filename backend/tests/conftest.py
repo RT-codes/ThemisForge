@@ -18,6 +18,14 @@ def default_secret_key(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_start_cooldown(monkeypatch):
+    """Tests tick right after creating a task; the cooldown has its own test."""
+    from app import app_settings
+
+    monkeypatch.setattr(app_settings, "DEFAULT_START_COOLDOWN_SECONDS", 0)
+
+
+@pytest.fixture(autouse=True)
 def fresh_codex_locks():
     """A lock that was contended in one test is bound to that test's event loop, so the next test must not reuse it."""
     import asyncio

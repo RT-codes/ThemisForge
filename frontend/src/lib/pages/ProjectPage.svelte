@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type WorkflowSummary } from '$lib/api'
+	import { watchersByStatus } from '$lib/workflow'
 	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import { BoardViewStore } from '$lib/boardView.svelte'
@@ -7,6 +8,7 @@
 	import Board from '$lib/components/project/Board.svelte'
 	import ScheduleTimeline from '$lib/components/project/ScheduleTimeline.svelte'
 	import TaskList from '$lib/components/project/TaskList.svelte'
+	import ProjectHistory from '$lib/components/project/ProjectHistory.svelte'
 	import TaskSheet from '$lib/components/project/TaskSheet.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -24,6 +26,7 @@
 
 	let project = $state<Project | null>(null)
 	let tasks = $state<Task[]>([])
+	let workflows = $state<WorkflowSummary[]>([])
 	let system = $state<SystemStatus | null>(null)
 	let notFound = $state(false)
 	let loadError = $state('')
@@ -34,11 +37,13 @@
 
 	let sheetOpen = $state(false)
 	let sheetTaskId = $state<number | null>(null)
-	let sheetStatus = $state<TaskStatus>('inbox')
+	let sheetStatus = $state<TaskStatus>('backlog')
 	let propsOpen = $state(false)
 	let editOpen = $state(false)
 	let deleteOpen = $state(false)
 	let deleteError = $state('')
+	let taskToDelete = $state<Task | null>(null)
+	let taskDeleteError = $state('')
 
 	const sheetTask = $derived(tasks.find((t) => t.id === sheetTaskId) ?? null)
 	const defs = $derived(project?.properties ?? [])
@@ -57,7 +62,7 @@
 
 	async function load() {
 		try {
-			;[project, tasks] = await Promise.all([api.project(id), api.tasks(id)])
+			;[project, tasks, workflows] = await Promise.all([api.project(id), api.tasks(id), api.workflows(id)])
 			system = await api.systemStatus()
 			loadError = ''
 			revision++
@@ -76,6 +81,7 @@
 		const poll = setInterval(() => {
 			if (document.hidden) return
 			api.tasks(id).then((t) => (tasks = t)).catch(() => {})
+			api.workflows(id).then((w) => (workflows = w)).catch(() => {})
 			api.systemStatus().then((s) => (system = s)).catch(() => {})
 		}, 3000)
 		const clock = setInterval(() => (now = Date.now()), 20_000)
@@ -87,7 +93,7 @@
 		sheetOpen = true
 	}
 
-	function addTask(status: TaskStatus = 'inbox') {
+	function addTask(status: TaskStatus = 'backlog') {
 		sheetTaskId = null
 		sheetStatus = status
 		sheetOpen = true
@@ -102,6 +108,24 @@
 		} catch (e) {
 			tasks = before
 			loadError = e instanceof Error ? e.message : 'Could not move the task'
+		}
+	}
+
+	function askDeleteTask(task: Task) {
+		taskDeleteError = ''
+		taskToDelete = task
+	}
+
+	async function deleteTask() {
+		const task = taskToDelete
+		if (!task) return
+		try {
+			await api.deleteTask(task.id)
+			if (sheetTaskId === task.id) sheetOpen = false
+			taskToDelete = null
+			await reload()
+		} catch (e) {
+			taskDeleteError = e instanceof Error ? e.message : 'Could not delete the task'
 		}
 	}
 
@@ -182,6 +206,7 @@
 					<Tabs.Trigger value="board">Board</Tabs.Trigger>
 					<Tabs.Trigger value="list">List</Tabs.Trigger>
 					<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
+					<Tabs.Trigger value="history">History</Tabs.Trigger>
 				</Tabs.List>
 				<!-- search, order and filters for the whole board; each status adds its own under its title -->
 				{#if tab === 'board'}
@@ -189,13 +214,16 @@
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} {defs} {now} {view} onopen={openTask} onadd={addTask} onmove={move} />
+				<Board {tasks} {defs} {now} {view} projectId={id} watchers={watchersByStatus(workflows)} selectedId={sheetOpen ? sheetTaskId : null} onopen={openTask} ondelete={askDeleteTask} onadd={addTask} onmove={move} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
-				<TaskList {tasks} {defs} {now} onopen={openTask} />
+				<TaskList {tasks} {defs} {now} selectedId={sheetOpen ? sheetTaskId : null} onopen={openTask} />
 			</Tabs.Content>
 			<Tabs.Content value="schedule">
 				<ScheduleTimeline projectId={id} {now} timezone={system?.timezone ?? 'UTC'} {revision} />
+			</Tabs.Content>
+			<Tabs.Content value="history">
+				<ProjectHistory projectId={id} {now} {revision} />
 			</Tabs.Content>
 		</Tabs.Root>
 	</div>
@@ -209,7 +237,23 @@
 		timezone={system?.timezone ?? 'UTC'}
 		{now}
 		onchange={reload}
+		ondelete={askDeleteTask}
 	/>
+	<AlertDialog.Root open={taskToDelete !== null} onOpenChange={(o) => !o && (taskToDelete = null)}>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>Delete this task?</AlertDialog.Title>
+				<AlertDialog.Description>
+					"{taskToDelete?.title}" and its attempt history will be removed. The project's History keeps a note that it was deleted.
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			{#if taskDeleteError}<p class="text-sm text-destructive" role="alert">{taskDeleteError}</p>{/if}
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel>Keep it</AlertDialog.Cancel>
+				<AlertDialog.Action onclick={(e) => (e.preventDefault(), deleteTask())}>Delete</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 	<PropertiesDialog bind:open={propsOpen} projectId={id} {defs} onsaved={reload} />
 	<ProjectDialog bind:open={editOpen} {project} onsaved={reload} />
 

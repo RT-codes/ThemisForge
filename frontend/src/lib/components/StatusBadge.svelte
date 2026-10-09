@@ -6,7 +6,7 @@
 	let { status, class: className }: { status: TaskStatus; class?: string } = $props()
 
 	const styles: Record<TaskStatus, string> = {
-		inbox: 'bg-muted text-muted-foreground',
+		backlog: 'bg-muted text-muted-foreground',
 		ready: 'bg-sky-500/15 text-sky-300',
 		running: 'bg-primary/15 text-primary',
 		review: 'bg-violet-500/15 text-violet-300',

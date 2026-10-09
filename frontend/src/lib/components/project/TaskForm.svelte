@@ -1,6 +1,10 @@
+<script lang="ts" module>
+	/** the id of the form, so the Save button in the panel's top bar can submit it */
+	export const TASK_FORM_ID = 'task-form'
+</script>
+
 <script lang="ts">
 	import { api, ApiError, type Agent, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
-	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
@@ -18,16 +22,19 @@
 		defaultStatus,
 		defs,
 		timezone,
+		saving = $bindable(false),
+		canSave = $bindable(false),
 		onsaved,
-		oncancel,
 	}: {
 		projectId: number
 		task: Task | null
 		defaultStatus: TaskStatus
 		defs: PropertyDef[]
 		timezone: string
+		/** the Save and Cancel buttons live in the panel's top bar (they submit this form by its id), so it reports their state */
+		saving?: boolean
+		canSave?: boolean
 		onsaved: (task: Task) => void
-		oncancel: () => void
 	} = $props()
 
 	// Initial values only: live updates of the task never overwrite what is being typed.
@@ -89,10 +96,12 @@
 	})
 	let properties = $state<Record<string, PropertyValue>>(initial.properties)
 
-	let saving = $state(false)
 	let error = $state('')
 
 	const running = $derived(task?.status === 'running')
+	$effect.pre(() => {
+		canSave = !saving && !running && !!title.trim()
+	})
 	const scheduleChanged = $derived(kind !== initial.kind || (kind === 'cron' && cron !== initial.cron) || (kind === 'once' && runAt !== initial.runAt))
 	const kinds: { id: ScheduleKind; label: string }[] = [
 		{ id: 'none', label: 'Manual' },
@@ -155,7 +164,11 @@
 	}
 </script>
 
-<form onsubmit={save} class="grid gap-5 px-4">
+<form id={TASK_FORM_ID} onsubmit={save} class="grid gap-5 px-4 pb-6">
+	{#if error}
+		<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
+	{/if}
+
 	<div class="grid gap-2">
 		<Label for="task-title">Title</Label>
 		<Input id="task-title" bind:value={title} required maxlength={200} placeholder="What needs to be done?" autofocus />
@@ -164,6 +177,49 @@
 	<div class="grid gap-2">
 		<Label for="task-desc">Description</Label>
 		<Textarea id="task-desc" bind:value={description} rows={4} placeholder="Context, goal, acceptance criteria..." />
+	</div>
+
+	<div class="grid gap-2">
+		<Label for="task-harness">Run with</Label>
+		<Select.Root type="single" bind:value={runWith}>
+			<Select.Trigger id="task-harness" class="w-full">{runLabel}</Select.Trigger>
+			<Select.Content>
+				<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
+				<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+				{#each agents as a (a.id)}
+					<Select.Item value="agent:{a.id}" label={a.name}>{a.name}{a.role ? ` - ${a.role}` : ''}</Select.Item>
+				{/each}
+				<Select.Item value="workflow" label="Workflow">Workflow</Select.Item>
+			</Select.Content>
+		</Select.Root>
+		{#if harness === 'workflow'}
+			<div class="grid gap-1.5" transition:slide={{ duration: 160 }}>
+				<Select.Root type="single" bind:value={workflowId}>
+					<Select.Trigger id="task-workflow" class="w-full" aria-label="Workflow to play">
+						{chosenWorkflow?.name ?? (workflowId ? 'Workflow' : 'Choose a workflow')}
+					</Select.Trigger>
+					<Select.Content>
+						{#each workflows as w (w.id)}<Select.Item value={String(w.id)} label={w.name}>{w.name}</Select.Item>{/each}
+					</Select.Content>
+				</Select.Root>
+				{#if workflows.length === 0}
+					<p class="text-xs text-muted-foreground">
+						This project has no workflows yet. <a class="text-primary hover:underline" href="/projects/{projectId}#workflows">Create one</a> on the overview.
+					</p>
+				{/if}
+			</div>
+		{/if}
+		<p class="text-xs text-muted-foreground">
+			{#if harness === 'workflow'}
+				Plays the workflow instead of running a container: its nodes run in order and can start other tasks. The attempt history links to the run.
+			{:else if agentId !== null}
+				{chosenAgent?.name ?? 'The agent'} does the task with its own instructions, model, cell and folders (set on the Agents page).
+			{:else if harness === 'codex'}
+				An agent works on the task in its own container, using the project owner's Codex connection (Settings). Its working folder is private to each run.
+			{:else}
+				Prints the task and finishes. Useful to try out scheduling.
+			{/if}
+		</p>
 	</div>
 
 	<div class="grid gap-2">
@@ -179,6 +235,13 @@
 		<p class="text-xs text-muted-foreground">
 			{running ? 'A cell is working on this task. Cancel it to change the status.' : STATUSES.find((s) => s.id === status)?.hint}
 		</p>
+		<div class="flex items-center justify-between gap-3 pt-2">
+			<div>
+				<Label for="task-review">Ask for review when it succeeds</Label>
+				<p class="text-xs text-muted-foreground">One-off tasks go to Review instead of Done.</p>
+			</div>
+			<Switch id="task-review" bind:checked={review} />
+		</div>
 	</div>
 
 	<fieldset class="grid gap-3 rounded-lg border p-3">
@@ -275,62 +338,11 @@
 					{/if}
 					<p class="text-xs text-muted-foreground">
 						{describeRecurrence(repeat)}, in the <span class="text-foreground">{timezone}</span> time zone (set in Settings). It runs every time while
-						the task is Ready; move the task to Inbox to pause it.
+						the task is Ready; move the task to Backlog to pause it.
 					</p>
 				{/if}
 			</div>
 		{/if}
-
-		<div class="grid gap-2 pt-1">
-			<Label for="task-harness">Run with</Label>
-			<Select.Root type="single" bind:value={runWith}>
-				<Select.Trigger id="task-harness" class="w-full">{runLabel}</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
-					<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
-					{#each agents as a (a.id)}
-						<Select.Item value="agent:{a.id}" label={a.name}>{a.name}{a.role ? ` - ${a.role}` : ''}</Select.Item>
-					{/each}
-					<Select.Item value="workflow" label="Workflow">Workflow</Select.Item>
-				</Select.Content>
-			</Select.Root>
-			{#if harness === 'workflow'}
-				<div class="grid gap-1.5" transition:slide={{ duration: 160 }}>
-					<Select.Root type="single" bind:value={workflowId}>
-						<Select.Trigger id="task-workflow" class="w-full" aria-label="Workflow to play">
-							{chosenWorkflow?.name ?? (workflowId ? 'Workflow' : 'Choose a workflow')}
-						</Select.Trigger>
-						<Select.Content>
-							{#each workflows as w (w.id)}<Select.Item value={String(w.id)} label={w.name}>{w.name}</Select.Item>{/each}
-						</Select.Content>
-					</Select.Root>
-					{#if workflows.length === 0}
-						<p class="text-xs text-muted-foreground">
-							This project has no workflows yet. <a class="text-primary hover:underline" href="/projects/{projectId}#workflows">Create one</a> on the overview.
-						</p>
-					{/if}
-				</div>
-			{/if}
-			<p class="text-xs text-muted-foreground">
-				{#if harness === 'workflow'}
-					Plays the workflow instead of running a container: its nodes run in order and can start other tasks. The attempt history links to the run.
-				{:else if agentId !== null}
-					{chosenAgent?.name ?? 'The agent'} does the task with its own instructions, model, cell and folders (set on the Agents page).
-				{:else if harness === 'codex'}
-					An agent works on the task in its own container, using the project owner's Codex connection (Settings). Its working folder is private to each run.
-				{:else}
-					Prints the task and finishes. Useful to try out scheduling.
-				{/if}
-			</p>
-		</div>
-
-		<div class="flex items-center justify-between gap-3 pt-1">
-			<div>
-				<Label for="task-review">Ask for review when it succeeds</Label>
-				<p class="text-xs text-muted-foreground">One-off tasks go to Review instead of Done.</p>
-			</div>
-			<Switch id="task-review" bind:checked={review} />
-		</div>
 	</fieldset>
 
 	{#if defs.length}
@@ -377,13 +389,4 @@
 			{/each}
 		</fieldset>
 	{/if}
-
-	{#if error}
-		<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
-	{/if}
-
-	<div class="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur">
-		<Button type="button" variant="ghost" onclick={oncancel}>Cancel</Button>
-		<Button type="submit" disabled={saving || running || !title.trim()}>{task ? 'Save changes' : 'Create task'}</Button>
-	</div>
 </form>

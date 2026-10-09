@@ -52,7 +52,7 @@ Open the task, switch **Schedule** to *Recurring*, pick *Every hour* (or any oth
 **Ready**. Open the **Schedule** tab of the project to see the upcoming runs on a timeline.
 
 > [!NOTE]
-> A recurring task parked in **Inbox** is paused. Only tasks in **Ready** run on their schedule.
+> A recurring task parked in **Backlog** is paused. Only tasks in **Ready** run on their schedule.
 
 ## Where to go next
 

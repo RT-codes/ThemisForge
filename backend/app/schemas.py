@@ -166,7 +166,7 @@ def check_schedule(
 class TaskIn(_ScheduleFields):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20_000)
-    status: TaskStatus = TaskStatus.INBOX
+    status: TaskStatus = TaskStatus.BACKLOG
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
     harness: Literal["", "codex", "workflow"] = ""
@@ -215,6 +215,44 @@ class TaskPatch(BaseModel):
         return v
 
 
+class TaskSnapshot(BaseModel):
+    """What is kept of a task that was deleted (see ProjectEvent)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str
+    description: str
+    status: TaskStatus
+    properties: dict[str, Any]
+    schedule_kind: ScheduleKind
+    cron: str | None
+    run_at: datetime | None
+    review_on_success: bool
+    harness: str
+    workflow_id: int | None
+    agent_id: int | None
+
+
+class ProjectEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: str
+    title: str
+    actor: str
+    data: dict[str, Any]
+    created_at: datetime
+
+
+class TaskWorkflowRun(BaseModel):
+    """A workflow run that this task started and that is still going (what the board shows on the card)."""
+
+    run_id: int
+    workflow_id: int
+    workflow_name: str
+    step: str  # the node it is working on right now ("" between nodes)
+
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -237,6 +275,7 @@ class TaskOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None
+    workflow_run: TaskWorkflowRun | None = None
 
 
 class AttemptOut(BaseModel):

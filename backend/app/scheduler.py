@@ -221,6 +221,8 @@ class Scheduler:
             ready = (
                 Task.status == TaskStatus.READY,
                 (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
+                # cooldown: updated_at moves whenever the task changes status, including when a run ends
+                Task.updated_at <= now - timedelta(seconds=cfg.start_cooldown_seconds),
             )
             order = (Task.next_run_at.asc().nulls_first(), Task.id)
             budget = cfg.budget.as_cost()

@@ -22,7 +22,7 @@ async def test_project_summary_counts_tasks(client):
     await make_task(client, project["id"], status="ready", schedule_kind="cron", cron="0 9 * * *")
     await make_task(client, project["id"])
     summary = (await client.get("/api/projects")).json()[0]
-    assert summary["task_counts"] == {"ready": 1, "inbox": 1}
+    assert summary["task_counts"] == {"ready": 1, "backlog": 1}
     assert summary["next_run_at"] is not None
 
 
@@ -137,10 +137,10 @@ async def test_paused_cron_task_has_no_next_run_until_ready(client):
     await register(client)
     pid = (await make_project(client))["id"]
     task = await make_task(client, pid, schedule_kind="cron", cron="*/5 * * * *")
-    assert task["status"] == "inbox" and task["next_run_at"] is None
+    assert task["status"] == "backlog" and task["next_run_at"] is None
     task = (await client.patch(f"/api/tasks/{task['id']}", json={"status": "ready"})).json()
     assert task["next_run_at"] is not None
-    task = (await client.patch(f"/api/tasks/{task['id']}", json={"status": "inbox"})).json()
+    task = (await client.patch(f"/api/tasks/{task['id']}", json={"status": "backlog"})).json()
     assert task["next_run_at"] is None
 
 
@@ -152,3 +152,25 @@ async def test_upcoming_runs_expands_recurring_tasks(client):
     runs = (await client.get(f"/api/projects/{pid}/schedule?hours=6")).json()
     assert {r["title"] for r in runs} == {"hourly"}
     assert 5 <= len(runs) <= 6 and all(r["recurring"] for r in runs)
+
+
+async def test_deleting_a_task_is_kept_in_the_project_history(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    task = await make_task(client, pid, title="Old idea", description="Maybe later", status="review")
+    other = await make_task(client, pid, title="Keeper")
+    assert (await client.get(f"/api/projects/{pid}/history")).json() == []
+
+    assert (await client.delete(f"/api/tasks/{task['id']}")).status_code == 204
+
+    (event,) = (await client.get(f"/api/projects/{pid}/history")).json()
+    assert (event["kind"], event["title"], event["actor"]) == ("task_deleted", "Old idea", "Ada")
+    assert event["data"]["description"] == "Maybe later" and event["data"]["status"] == "review"
+    assert (await client.get(f"/api/tasks/{other['id']}")).status_code == 200
+
+
+async def test_the_history_belongs_to_the_owner_of_the_project(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    await register(client, "b@b.co", "Bob")
+    assert (await client.get(f"/api/projects/{pid}/history")).status_code == 404

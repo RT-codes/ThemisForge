@@ -33,7 +33,7 @@ Nothing here depends on you being logged in. Close the browser and the schedule 
 ## How a task moves
 
 <div class="docs-flow">
-<span class="node muted">Inbox</span><span class="arrow">&rarr;</span><span class="node sky">Ready</span><span class="arrow">&rarr;</span><span class="node amber">Running</span><span class="arrow">&rarr;</span><span class="node violet">Review</span><span class="arrow">&rarr;</span><span class="node green">Done</span>
+<span class="node muted">Backlog</span><span class="arrow">&rarr;</span><span class="node sky">Ready</span><span class="arrow">&rarr;</span><span class="node amber">Running</span><span class="arrow">&rarr;</span><span class="node violet">Review</span><span class="arrow">&rarr;</span><span class="node green">Done</span>
 </div>
 <div class="docs-flow small">
 <span class="label">If an attempt does not succeed, a one-off task ends as</span><span class="node red">Failed</span><span class="label">or</span><span class="node yellow">Blocked</span><span class="label">(cancelled)</span>

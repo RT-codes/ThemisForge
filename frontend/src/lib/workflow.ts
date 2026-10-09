@@ -18,8 +18,8 @@ export type NodeKindInfo = {
 
 export const NODE_KINDS: NodeKindInfo[] = [
   { kind: 'start', label: 'Start', description: 'A run begins here', hasInput: false, hasOutput: true },
-  { kind: 'trigger', label: 'Trigger', description: 'Also begins a run: on a schedule or event (not automatic yet)', hasInput: false, hasOutput: true },
-  { kind: 'task', label: 'Task', description: 'Creates or updates a task', hasInput: true, hasOutput: true },
+  { kind: 'trigger', label: 'Trigger', description: 'Begins a run when a task moves into a status (schedules are not automatic yet)', hasInput: false, hasOutput: true },
+  { kind: 'task', label: 'Task', description: 'Creates, moves or runs a task', hasInput: true, hasOutput: true },
   { kind: 'agent', label: 'Agent', description: 'Runs an agent', hasInput: true, hasOutput: true, mountIn: true },
   { kind: 'condition', label: 'Condition', description: 'Branches on a check: yes or no', hasInput: true, hasOutput: true, outputs: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
   { kind: 'end', label: 'End', description: 'Finishes the workflow', hasInput: true, hasOutput: false },
@@ -46,21 +46,21 @@ export type FieldDef = {
 }
 
 const opts = (...pairs: [string, string][]) => pairs.map(([value, label]) => ({ value, label }))
-const STATUSES = opts(['inbox', 'Inbox'], ['ready', 'Ready'], ['review', 'Review'], ['done', 'Done'], ['failed', 'Failed'])
+const STATUSES = opts(['backlog', 'Backlog'], ['ready', 'Ready'], ['review', 'Review'], ['done', 'Done'], ['failed', 'Failed'])
 
 export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
   start: [],
   trigger: [
-    { key: 'type', label: 'Starts when', type: 'select', options: opts(['manual', 'I run it'], ['schedule', 'On a schedule'], ['task_status', 'A task changes status']) },
+    { key: 'type', label: 'Starts when', type: 'select', options: opts(['manual', 'I run it'], ['schedule', 'On a schedule'], ['task_status', 'A task moves into a status']) },
     { key: 'repeat', label: 'Repeats', type: 'select', options: opts(['day', 'Every day'], ['weekdays', 'Every weekday'], ['week', 'Every week'], ['month', 'Every month']), when: { key: 'type', oneOf: ['schedule'] } },
     { key: 'time', label: 'At', type: 'time', when: { key: 'type', oneOf: ['schedule'] } },
-    { key: 'status', label: 'Status', type: 'select', options: STATUSES, when: { key: 'type', oneOf: ['task_status'] } },
+    { key: 'status', label: 'The status', type: 'select', options: STATUSES, hint: 'Runs when a task is moved into this status, or created in it. Where it came from does not matter. The task that moved is available to the steps after it.', when: { key: 'type', oneOf: ['task_status'] } },
   ],
   task: [
-    { key: 'action', label: 'Action', type: 'select', options: opts(['create', 'Create a task'], ['update', 'Update a task'], ['run', 'Run a task']) },
+    { key: 'action', label: 'Action', type: 'select', options: opts(['create', 'Create a task'], ['update', 'Update a task (by title)'], ['run', 'Run a task (by title)'], ['move_trigger', 'Move the task that started this run']) },
     { key: 'title', label: 'Task title', type: 'text', placeholder: 'What needs doing', when: { key: 'action', oneOf: ['create', 'update', 'run'] } },
     { key: 'description', label: 'Description', type: 'textarea', when: { key: 'action', oneOf: ['create'] } },
-    { key: 'status', label: 'Move to', type: 'select', options: STATUSES, when: { key: 'action', oneOf: ['create', 'update'] } },
+    { key: 'status', label: 'Move to', type: 'select', options: STATUSES, when: { key: 'action', oneOf: ['create', 'update', 'move_trigger'] } },
   ],
   agent: [
     // the options of agentId are the project's agents: the panel fills them in, this one is always there
@@ -107,8 +107,9 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
     case 'start':
       return 'Begins a run'
     case 'trigger':
-      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `Task becomes ${c.status}` : 'Run by hand'
+      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `A task moves into ${optionLabel('trigger', 'status', c) || c.status}` : 'Run by hand'
     case 'task':
+      if (c.action === 'move_trigger') return `Move that task to ${optionLabel('task', 'status', c) || c.status}`
       return `${optionLabel('task', 'action', c)}${c.title ? `: ${c.title}` : ''}`
     case 'agent':
       return c.instructions.trim() ? c.instructions.trim().split('\n')[0] : 'No instructions yet'
@@ -160,6 +161,13 @@ export function mountsFromGraph(nodes: MountNodeLike[], edges: { source: string;
     const volume_id = Number(config?.volumeId)
     if (Number.isInteger(volume_id) && volume_id > 0) out.push({ volume_id, mode: config?.mode === 'ro' ? 'ro' : 'rw' })
   }
+  return out
+}
+
+/** the workflows that start by themselves when a task moves into each status, for the badge on a board column */
+export function watchersByStatus(workflows: { id: number; name: string; watches: string[] }[]): Record<string, { id: number; name: string }[]> {
+  const out: Record<string, { id: number; name: string }[]> = {}
+  for (const w of workflows) for (const status of w.watches) (out[status] ??= []).push({ id: w.id, name: w.name })
   return out
 }
 

@@ -218,3 +218,34 @@ def test_the_doctor_calls_a_newer_database_a_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "database_url", f"sqlite+aiosqlite:///{path}")
     check = preflight.check_database()
     assert check.level == "fail" and "newer version of Themis" in check.message
+
+
+async def test_inbox_becomes_backlog_for_tasks_and_workflow_nodes(tmp_path):
+    path = tmp_path / "backlog.db"
+    url = f"sqlite+aiosqlite:///{path}"
+    await asyncio.to_thread(_alembic, url, "upgrade", "0011")
+    con = sqlite3.connect(path)
+    con.executescript(
+        """
+        INSERT INTO users (id, email, name, password_hash, is_admin, created_at) VALUES (1, 'a@b.co', 'Ada', 'x', 1, '2026-01-01 00:00:00');
+        INSERT INTO projects (id, owner_id, name, description, properties, created_at) VALUES (1, 1, 'P', '', '[]', '2026-01-01 00:00:00');
+        INSERT INTO tasks (id, project_id, title, description, status, position, properties, schedule_kind, review_on_success, harness, created_at, updated_at)
+            VALUES (1, 1, 'T', '', 'inbox', 1, '{}', 'none', 0, 'codex', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        """
+    )
+    graph = '{"nodes": [{"id": "t", "type": "task", "config": {"status": "inbox"}}], "edges": []}'
+    cols = [r[1] for r in con.execute("PRAGMA table_info(workflows)")]
+    assert "graph" in cols
+    con.execute(
+        "INSERT INTO workflows (id, project_id, name, graph, created_at, updated_at) VALUES (1, 1, 'W', ?, '2026-01-01 00:00:00', '2026-01-01 00:00:00')",
+        (graph,),
+    )
+    con.commit()
+    con.close()
+
+    await upgrade_database(url)
+
+    con = sqlite3.connect(path)
+    assert con.execute("SELECT status FROM tasks").fetchone() == ("backlog",)
+    assert '"status": "backlog"' in con.execute("SELECT graph FROM workflows").fetchone()[0]
+    con.close()

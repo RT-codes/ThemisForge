@@ -3,7 +3,7 @@
 A task is picked up by the scheduler when it is READY and its next_run_at is empty (run as soon
 as there is a free cell) or in the past. Recurring (cron) tasks return to READY after every
 attempt with the next occurrence; one-off tasks finish as DONE / REVIEW / FAILED. A recurring task
-parked in INBOX is paused.
+parked in BACKLOG is paused.
 """
 
 from collections.abc import Iterator

@@ -5,7 +5,6 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js'
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down'
-	import HouseIcon from '@lucide/svelte/icons/house'
 	import BotIcon from '@lucide/svelte/icons/bot'
 	import BookOpenIcon from '@lucide/svelte/icons/book-open'
 	import FilesIcon from '@lucide/svelte/icons/files'
@@ -58,8 +57,6 @@
 		</div>
 	</Sidebar.Header>
 
-	<Sidebar.Separator class="mx-4 data-horizontal:w-auto" />
-
 	<Sidebar.Content>
 		<Sidebar.Group>
 			<Sidebar.GroupContent>
@@ -67,14 +64,12 @@
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton isActive={route.name === 'home'}>
 							{#snippet child({ props })}
-								<a href="/" {...props}><HouseIcon /><span>Home</span></a>
-							{/snippet}
-						</Sidebar.MenuButton>
-					</Sidebar.MenuItem>
-					<Sidebar.MenuItem>
-						<Sidebar.MenuButton isActive={route.name === 'docs'}>
-							{#snippet child({ props })}
-								<a href="/docs" {...props}><BookOpenIcon /><span>Docs</span></a>
+								<a href="/" {...props}>
+									<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true">
+										<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z" />
+									</svg>
+									<span>Home</span>
+								</a>
 							{/snippet}
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
@@ -153,7 +148,15 @@
 	</Sidebar.Content>
 
 	<Sidebar.Footer>
+		<Sidebar.Separator class="mx-4 data-horizontal:w-auto" />
 		<Sidebar.Menu>
+			<Sidebar.MenuItem>
+				<Sidebar.MenuButton isActive={route.name === 'docs'}>
+					{#snippet child({ props })}
+						<a href="/docs" {...props}><BookOpenIcon /><span>Docs</span></a>
+					{/snippet}
+				</Sidebar.MenuButton>
+			</Sidebar.MenuItem>
 			{#if user?.is_admin}
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton isActive={route.name === 'access'}>

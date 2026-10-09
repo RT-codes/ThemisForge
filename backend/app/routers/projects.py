@@ -11,11 +11,15 @@ from ..models import (
     Agent,
     Attempt,
     AttemptStatus,
+    NodeStatus,
     Project,
+    ProjectEvent,
+    RunStatus,
     ScheduleKind,
     Task,
     TaskStatus,
     Workflow,
+    WorkflowNodeRun,
     WorkflowRun,
     utcnow,
 )
@@ -24,6 +28,7 @@ from ..scheduling import cron_occurrences, refresh_next_run
 from ..schemas import (
     AttemptDetail,
     AttemptOut,
+    ProjectEventOut,
     ProjectIn,
     ProjectOut,
     ProjectPatch,
@@ -32,6 +37,8 @@ from ..schemas import (
     TaskIn,
     TaskOut,
     TaskPatch,
+    TaskSnapshot,
+    TaskWorkflowRun,
     check_schedule,
 )
 
@@ -67,12 +74,47 @@ async def _task_out(session: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
         )
         rows = await session.execute(select(Attempt.task_id, Attempt.status).where(Attempt.id.in_(newest)))
         latest = {task_id: AttemptStatus(attempt_status) for task_id, attempt_status in rows}
+    running = await _running_workflow_runs(session, [t.id for t in tasks])
     out = []
     for t in tasks:
         item = TaskOut.model_validate(t)
         item.last_attempt_status = latest.get(t.id)
+        item.workflow_run = running.get(t.id)
         out.append(item)
     return out
+
+
+async def _running_workflow_runs(session: AsyncSession, task_ids: list[int]) -> dict[int, TaskWorkflowRun]:
+    """For each task, the workflow run it started that is still going (the newest, if there are several)."""
+    if not task_ids:
+        return {}
+    rows = await session.execute(
+        select(WorkflowRun.trigger_task_id, WorkflowRun.id, WorkflowRun.workflow_id, Workflow.name)
+        .join(Workflow, Workflow.id == WorkflowRun.workflow_id)
+        .where(WorkflowRun.trigger_task_id.in_(task_ids), WorkflowRun.status == RunStatus.RUNNING)
+        .order_by(WorkflowRun.id)  # a later run overwrites an earlier one below
+    )
+    runs = {task_id: (run_id, wf_id, name) for task_id, run_id, wf_id, name in rows}
+    if not runs:
+        return {}
+    steps = dict(
+        (
+            await session.execute(
+                select(WorkflowNodeRun.run_id, WorkflowNodeRun.label)
+                .where(
+                    WorkflowNodeRun.run_id.in_([r[0] for r in runs.values()]),
+                    WorkflowNodeRun.status == NodeStatus.RUNNING,
+                )
+                .order_by(WorkflowNodeRun.id)
+            )
+        ).all()
+    )
+    return {
+        task_id: TaskWorkflowRun(
+            run_id=run_id, workflow_id=wf_id, workflow_name=name, step=steps.get(run_id, "")
+        )
+        for task_id, (run_id, wf_id, name) in runs.items()
+    }
 
 
 async def _next_position(session: AsyncSession, project_id: int, status_: str) -> float:
@@ -311,8 +353,37 @@ async def delete_task(task_id: int, session: SessionDep, user: CurrentUser) -> N
     task = await _task(session, task_id, user)
     if task.status == TaskStatus.RUNNING:
         raise HTTPException(status.HTTP_409_CONFLICT, "This task is running. Cancel it first.")
+    # the history keeps its own copy, so a deleted task can still be looked at (and put back by hand) afterwards
+    session.add(
+        ProjectEvent(
+            project_id=task.project_id,
+            kind="task_deleted",
+            title=task.title,
+            actor=user.name,
+            data=TaskSnapshot.model_validate(task).model_dump(mode="json"),
+        )
+    )
     await session.delete(task)
     await session.commit()
+
+
+@router.get("/projects/{project_id}/history", response_model=list[ProjectEventOut])
+async def project_history(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> list[ProjectEvent]:
+    """What was done to the project, newest first."""
+    await _project(session, project_id, user)
+    return list(
+        await session.scalars(
+            select(ProjectEvent)
+            .where(ProjectEvent.project_id == project_id)
+            .order_by(ProjectEvent.id.desc())
+            .limit(limit)
+        )
+    )
 
 
 @router.post("/tasks/{task_id}/run", response_model=TaskOut)

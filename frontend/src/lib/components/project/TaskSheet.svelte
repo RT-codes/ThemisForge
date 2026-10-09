@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { api, ApiError, type PropertyDef, type Task, type TaskStatus } from '$lib/api'
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
-	import * as Sheet from '$lib/components/ui/sheet/index.js'
+	import XIcon from '@lucide/svelte/icons/x'
+	import { fly } from 'svelte/transition'
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
 	import StatusBadge from '$lib/components/StatusBadge.svelte'
 	import { dateTime, relative } from '$lib/format'
@@ -12,7 +10,8 @@
 	import SquareIcon from '@lucide/svelte/icons/square'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import AttemptHistory from './AttemptHistory.svelte'
-	import TaskForm from './TaskForm.svelte'
+	import TaskForm, { TASK_FORM_ID } from './TaskForm.svelte'
+	import TaskWorkflowRuns from './TaskWorkflowRuns.svelte'
 
 	let {
 		open = $bindable(false),
@@ -23,6 +22,7 @@
 		timezone,
 		now,
 		onchange,
+		ondelete,
 	}: {
 		open: boolean
 		projectId: number
@@ -32,12 +32,15 @@
 		timezone: string
 		now: number
 		onchange: () => void
+		/** asks the page to delete the task (it confirms first and refreshes the board) */
+		ondelete: (task: Task) => void
 	} = $props()
 
 	let tab = $state('details')
 	let error = $state('')
-	let confirmDelete = $state(false)
 	let busy = $state(false)
+	let formSaving = $state(false) // reported by the form: its buttons are in the top bar
+	let formCanSave = $state(false)
 
 	// a fresh form every time the sheet opens on a different task
 	const formKey = $derived(task ? `task-${task.id}` : 'new')
@@ -49,13 +52,19 @@
 		}
 	})
 
-	async function act(fn: () => Promise<unknown>, close = false) {
+	/** Escape closes the panel, unless it is meant for a menu or a dialog that is open on top of it */
+	function closeOnEscape(e: KeyboardEvent) {
+		if (!open || e.key !== 'Escape' || e.defaultPrevented) return
+		if (document.querySelector('[role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"]')) return
+		open = false
+	}
+
+	async function act(fn: () => Promise<unknown>) {
 		error = ''
 		busy = true
 		try {
 			await fn()
 			onchange()
-			if (close) open = false
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong'
 		} finally {
@@ -64,14 +73,29 @@
 	}
 </script>
 
-<Sheet.Root bind:open>
-	<Sheet.Content side="right" class="w-full gap-0 overflow-y-auto sm:max-w-xl">
-		<Sheet.Header class="pb-3">
-			<div class="flex items-center gap-2 pe-8">
-				<Sheet.Title class="truncate">{task ? task.title : 'New task'}</Sheet.Title>
+<!-- Not a modal: the board behind stays sharp and usable (clicking another card switches the panel to it). -->
+<svelte:window onkeydown={closeOnEscape} />
+
+{#if open}
+	<aside
+		aria-label={task ? 'Task details' : 'New task'}
+		class="fixed inset-y-0 right-0 z-40 flex w-full flex-col overflow-y-auto border-l bg-popover text-sm text-popover-foreground shadow-float sm:max-w-xl"
+		transition:fly={{ x: 48, duration: 160 }}
+	>
+		<!-- Save and Cancel stay at the top, in view however far the form is scrolled. History has nothing to save. -->
+		<div class="sticky top-0 z-10 flex items-center justify-end gap-2 border-b bg-popover/95 px-4 py-2 backdrop-blur">
+			{#if !task || tab === 'details'}
+				<Button type="button" variant="ghost" size="sm" onclick={() => (open = false)}>Cancel</Button>
+				<Button type="submit" form={TASK_FORM_ID} size="sm" disabled={!formCanSave}>{formSaving ? 'Saving...' : task ? 'Save changes' : 'Create task'}</Button>
+			{/if}
+			<Button variant="ghost" size="icon-sm" aria-label="Close" onclick={() => (open = false)}><XIcon /></Button>
+		</div>
+		<header class="flex flex-col gap-0.5 p-4 pb-3">
+			<div class="flex items-center gap-2">
+				<h2 class="truncate text-base font-medium text-foreground">{task ? task.title : 'New task'}</h2>
 				{#if task}<StatusBadge status={task.status} />{/if}
 			</div>
-			<Sheet.Description>
+			<p class="text-sm text-muted-foreground">
 				{#if !task}
 					Tasks are the unit of work. Schedule them, and cells run them around the clock.
 				{:else if task.status === 'ready' && task.next_run_at}
@@ -81,8 +105,8 @@
 				{:else}
 					Created {dateTime(task.created_at)}
 				{/if}
-			</Sheet.Description>
-		</Sheet.Header>
+			</p>
+		</header>
 
 		{#if task}
 			<div class="flex items-center gap-2 px-4 pb-5">
@@ -95,22 +119,17 @@
 						<PlayIcon /> Run now
 					</Button>
 				{/if}
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button {...props} size="icon-sm" variant="ghost" class="ms-auto" aria-label="More actions"><EllipsisIcon /></Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-44">
-						<DropdownMenu.Item
-							class="text-destructive focus:text-destructive"
-							disabled={busy || task.status === 'running'}
-							onSelect={() => (confirmDelete = true)}
-						>
-							<Trash2Icon /> Delete task
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
+				<Button
+					size="icon-sm"
+					variant="ghost"
+					class="ms-auto text-muted-foreground hover:text-destructive"
+					aria-label="Delete task"
+					title={task.status === 'running' ? 'Cancel the run before deleting' : 'Delete task'}
+					disabled={busy || task.status === 'running'}
+					onclick={() => ondelete(task!)}
+				>
+					<Trash2Icon />
+				</Button>
 			</div>
 			{#if error}
 				<p class="mx-4 mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
@@ -123,32 +142,18 @@
 				</Tabs.List>
 				<Tabs.Content value="details">
 					{#key formKey}
-						<TaskForm {projectId} {task} {defaultStatus} {defs} {timezone} oncancel={() => (open = false)} onsaved={() => (onchange(), (open = false))} />
+						<TaskForm {projectId} {task} {defaultStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} onsaved={() => (onchange(), (open = false))} />
 					{/key}
 				</Tabs.Content>
 				<Tabs.Content value="history">
+					<TaskWorkflowRuns taskId={task.id} projectId={task.project_id} taskStatus={task.status} />
 					<AttemptHistory taskId={task.id} taskStatus={task.status} projectId={task.project_id} />
 				</Tabs.Content>
 			</Tabs.Root>
 		{:else}
 			{#key formKey}
-				<TaskForm {projectId} task={null} {defaultStatus} {defs} {timezone} oncancel={() => (open = false)} onsaved={() => (onchange(), (open = false))} />
+				<TaskForm {projectId} task={null} {defaultStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} onsaved={() => (onchange(), (open = false))} />
 			{/key}
 		{/if}
-	</Sheet.Content>
-</Sheet.Root>
-
-<AlertDialog.Root bind:open={confirmDelete}>
-	<AlertDialog.Content>
-		<AlertDialog.Header>
-			<AlertDialog.Title>Delete this task?</AlertDialog.Title>
-			<AlertDialog.Description>
-				"{task?.title}" and its attempt history will be removed permanently.
-			</AlertDialog.Description>
-		</AlertDialog.Header>
-		<AlertDialog.Footer>
-			<AlertDialog.Cancel>Keep it</AlertDialog.Cancel>
-			<AlertDialog.Action onclick={() => task && act(() => api.deleteTask(task.id), true)}>Delete</AlertDialog.Action>
-		</AlertDialog.Footer>
-	</AlertDialog.Content>
-</AlertDialog.Root>
+	</aside>
+{/if}

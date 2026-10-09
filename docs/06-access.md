@@ -21,7 +21,7 @@ prefilled with a short collaboration message that you can edit.
 
 For privacy the form always answers "Request sent", whether or not that email already has an account. Only one request
 per email stays pending, and the number of pending requests is capped, so the form cannot be used to probe accounts or
-flood the inbox.
+flood the backlog.
 
 ## Handling requests
 

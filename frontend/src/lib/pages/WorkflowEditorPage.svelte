@@ -107,7 +107,7 @@
 				workflow = created
 				name = created.name
 				current = created.id
-				all = [{ ...created, node_count: created.graph.nodes.length, runs: 0, last_run: null }, ...all]
+				all = [{ ...created, node_count: created.graph.nodes.length, runs: 0, last_run: null, watches: [] }, ...all]
 				// give it its real address, unless the user has already gone somewhere else
 				if (router.path.endsWith('/workflows/new')) router.replace(`/projects/${projectId}/workflows/${created.id}`)
 				return created

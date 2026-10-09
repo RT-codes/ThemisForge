@@ -241,7 +241,10 @@ async def test_linear_run_records_every_node_in_order(client, runner, cells):
 async def test_a_task_that_is_not_ready_is_only_created(client, runner, cells):
     _, pid = await setup(client)
     detail = await run(
-        client, pid, [node("s", "start"), node("t", "task", title="Later", status="inbox")], [edge("s", "t")]
+        client,
+        pid,
+        [node("s", "start"), node("t", "task", title="Later", status="backlog")],
+        [edge("s", "t")],
     )
     assert detail["status"] == "succeeded" and not cells.specs
     assert "Created task" in by_id(detail)["t"]["log"]
@@ -379,7 +382,7 @@ async def test_a_loop_does_not_run_forever(client, runner):
     detail = await run(
         client,
         pid,
-        [node("s", "start"), node("t", "task", title="loop", status="inbox")],
+        [node("s", "start"), node("t", "task", title="loop", status="backlog")],
         [edge("s", "t"), edge("t", "s"), edge("t", "t")],
     )
     assert detail["status"] == "succeeded" and len(detail["nodes"]) == 2
@@ -484,7 +487,9 @@ async def test_a_task_validates_the_workflow_it_plays(client, runner):
             f"/api/projects/{pid}/tasks", json={"title": "x", "harness": "workflow", "workflow_id": wf}
         )
         assert r.status_code == 422, wf
-    task = await play_task(client, pid, wid, status="inbox")  # not ready, so nothing starts it while we edit
+    task = await play_task(
+        client, pid, wid, status="backlog"
+    )  # not ready, so nothing starts it while we edit
     assert task["harness"] == "workflow" and task["workflow_id"] == wid
     back = await client.patch(f"/api/tasks/{task['id']}", json={"harness": ""})
     assert back.json()["harness"] == "" and back.json()["workflow_id"] is None  # not playing one any more
@@ -547,7 +552,7 @@ async def test_playing_a_workflow_never_starves_the_cells_it_needs(client, runne
 async def test_a_workflow_that_plays_itself_through_a_task_is_stopped(client, runner):
     _, pid = await setup(client)
     wid = await make_workflow(client, pid)
-    player = await play_task(client, pid, wid, "Player", status="inbox")
+    player = await play_task(client, pid, wid, "Player", status="backlog")
     await save(
         client, wid, [node("s", "start"), node("t", "task", action="run", title="Player")], [edge("s", "t")]
     )
@@ -566,9 +571,156 @@ async def test_a_workflow_that_plays_itself_through_a_task_is_stopped(client, ru
 async def test_a_task_whose_workflow_was_deleted_fails_clearly(client, runner):
     _, pid = await setup(client)
     wid = await make_workflow(client, pid)
-    task = await play_task(client, pid, wid, status="inbox")
+    task = await play_task(client, pid, wid, status="backlog")
     await client.delete(f"/api/workflows/{wid}")
     assert (await client.get(f"/api/tasks/{task['id']}")).json()["workflow_id"] is None
     await client.post(f"/api/tasks/{task['id']}/run")
     attempt = await attempt_of(client, task["id"])
     assert attempt["status"] == "failed" and "no longer exists" in attempt["log"]
+
+
+# ----- triggers: a task moves into a status -----
+
+
+async def save_auth_for_agent(maker) -> None:
+    async with maker() as s:
+        await save_auth(s, 1, fake_auth(), fresh=True)
+
+
+def status_trigger(status: str) -> dict:
+    return node("t", "trigger", type="task_status", status=status)
+
+
+async def runs_of(client, wid: int) -> list[dict]:
+    return (await client.get(f"/api/workflows/{wid}/runs")).json()
+
+
+async def wait_for_runs(client, wid: int, count: int) -> list[dict]:
+    async with asyncio.timeout(10):
+        while len(runs := await runs_of(client, wid)) < count:
+            await asyncio.sleep(0.02)
+    return runs
+
+
+async def test_a_task_moving_into_the_status_starts_the_workflow_and_it_can_move_that_task(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(
+        client,
+        wid,
+        [status_trigger("review"), node("m", "task", action="move_trigger", status="done")],
+        [edge("t", "m")],
+    )
+    task = await make_task(client, pid, title="Ship it", status="backlog")
+    other = await make_task(client, pid, title="Elsewhere", status="backlog")
+    assert await runs_of(client, wid) == []  # creating them in Backlog is not a move into Review
+
+    await client.patch(f"/api/tasks/{task['id']}", json={"status": "review"})
+    (started,) = await wait_for_runs(client, wid, 1)
+    detail = await wait_for_run(client, started["id"])
+    assert detail["trigger"] == "status" and detail["status"] == RunStatus.SUCCEEDED
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()["status"] == "done"
+    assert (await client.get(f"/api/tasks/{other['id']}")).json()["status"] == "backlog"
+
+
+async def test_a_task_created_in_the_status_also_starts_the_workflow(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(client, wid, [status_trigger("review"), node("e", "end")], [edge("t", "e")])
+    await make_task(client, pid, status="review")
+    assert len(await wait_for_runs(client, wid, 1)) == 1
+
+
+async def test_moving_the_task_back_into_its_own_trigger_status_does_not_run_away(client, runner):
+    """A workflow that puts the task back into the status that starts it: one run, not an endless chain."""
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(
+        client,
+        wid,
+        [status_trigger("review"), node("m", "task", action="move_trigger", status="review")],
+        [edge("t", "m")],
+    )
+    await client.put("/api/settings", json={"start_cooldown_seconds": 60})
+    task = await make_task(client, pid, status="backlog")
+    await client.patch(f"/api/tasks/{task['id']}", json={"status": "review"})
+    await wait_for_runs(client, wid, 1)
+    await asyncio.sleep(0.3)
+    assert len(await runs_of(client, wid)) == 1
+
+
+async def test_the_task_of_an_agent_node_does_not_start_workflows(client, runner, maker):
+    _, pid = await setup(client)
+    await save_auth_for_agent(maker)
+    watcher = await make_workflow(client, pid, "Watcher")
+    await save(client, watcher, [status_trigger("ready"), node("e", "end")], [edge("t", "e")])
+    detail = await run(
+        client, pid, [node("s", "start"), node("a", "agent", instructions="Say hi")], [edge("s", "a")]
+    )
+    assert detail["status"] == RunStatus.SUCCEEDED
+    await asyncio.sleep(0.2)
+    assert await runs_of(client, watcher) == []
+
+
+async def test_moving_the_task_that_started_the_run_needs_a_status_trigger(client, runner):
+    _, pid = await setup(client)
+    detail = await run(
+        client,
+        pid,
+        [node("s", "start"), node("m", "task", action="move_trigger", status="done")],
+        [edge("s", "m")],
+    )
+    assert detail["status"] == RunStatus.FAILED
+    assert "No task started this run" in by_id(detail)["m"]["error"]
+
+
+# ----- seeing the automation from the board -----
+
+
+async def test_the_board_can_see_what_watches_a_status_and_which_run_a_task_started(client, runner, maker):
+    _, pid = await setup(client)
+    await save_auth_for_agent(maker)
+    wid = await make_workflow(client, pid)
+    await save(
+        client,
+        wid,
+        [
+            status_trigger("review"),
+            node("a", "agent", instructions="Say hi"),
+            node("m", "task", action="move_trigger", status="done"),
+        ],
+        [edge("t", "a"), edge("a", "m")],
+    )
+    manual = await make_workflow(client, pid, "By hand")
+    summaries = {w["id"]: w for w in (await client.get(f"/api/projects/{pid}/workflows")).json()}
+    assert summaries[wid]["watches"] == ["review"] and summaries[manual]["watches"] == []
+
+    task = await make_task(client, pid, title="Ticket", status="backlog")
+    await client.patch(f"/api/tasks/{task['id']}", json={"status": "review"})
+    (started,) = await wait_for_runs(client, wid, 1)
+    await wait_for_run(client, started["id"])
+
+    history = (await client.get(f"/api/tasks/{task['id']}/workflow-runs")).json()
+    assert [(h["id"], h["workflow_name"], h["status"]) for h in history] == [
+        (started["id"], "Flow", RunStatus.SUCCEEDED)
+    ]
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()[
+        "workflow_run"
+    ] is None  # nothing going any more
+
+
+async def test_a_task_shows_the_run_it_started_while_it_is_going(client, runner, maker):
+    _, pid = await setup(client)
+    await save_auth_for_agent(maker)
+    wid = await make_workflow(client, pid)
+    await save(
+        client,
+        wid,
+        [status_trigger("review"), node("a", "agent", "Thinker", instructions="Say hi")],
+        [edge("t", "a")],
+    )
+    task = await make_task(client, pid, status="review")
+    async with asyncio.timeout(10):
+        while not (current := (await client.get(f"/api/tasks/{task['id']}")).json()["workflow_run"]):
+            await asyncio.sleep(0.01)
+    assert current["workflow_id"] == wid and current["workflow_name"] == "Flow"

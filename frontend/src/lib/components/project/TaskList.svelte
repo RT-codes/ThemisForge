@@ -4,10 +4,11 @@
 	import { chipStyle } from '$lib/colors'
 	import { dateTime, relative } from '$lib/format'
 	import { describeSchedule } from '$lib/recurrence'
+	import { cn } from '$lib/utils'
 
-	let { tasks, defs, now, onopen }: { tasks: Task[]; defs: PropertyDef[]; now: number; onopen: (task: Task) => void } = $props()
+	let { tasks, defs, now, selectedId = null, onopen }: { tasks: Task[]; defs: PropertyDef[]; now: number; selectedId?: number | null; onopen: (task: Task) => void } = $props()
 
-	const order = ['running', 'ready', 'review', 'inbox', 'blocked', 'failed', 'done']
+	const order = ['running', 'ready', 'review', 'backlog', 'blocked', 'failed', 'done']
 	const sorted = $derived([...tasks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.position - b.position))
 
 	function schedule(t: Task) {
@@ -36,7 +37,7 @@
 			</thead>
 			<tbody>
 				{#each sorted as t (t.id)}
-					<tr class="cursor-pointer border-b last:border-0 hover:bg-accent/40" onclick={() => onopen(t)}>
+					<tr class={cn('cursor-pointer border-b last:border-0 hover:bg-accent/40', t.id === selectedId && 'bg-primary/10 hover:bg-primary/10')} onclick={() => onopen(t)}>
 						<td class="max-w-72 truncate px-4 py-2.5 font-medium">
 							<button type="button" class="truncate text-start" onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>
 						</td>

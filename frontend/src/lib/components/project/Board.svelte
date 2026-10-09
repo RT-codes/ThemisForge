@@ -4,7 +4,10 @@
 	import type { BoardViewStore } from '$lib/boardView.svelte'
 	import { STATUSES } from '$lib/format'
 	import { dropPosition } from '$lib/kanban'
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
+	import { router } from '$lib/router.svelte'
 	import EyeOffIcon from '@lucide/svelte/icons/eye-off'
+	import ZapIcon from '@lucide/svelte/icons/zap'
 	import { cn } from '$lib/utils'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import { onMount } from 'svelte'
@@ -16,7 +19,11 @@
 		defs,
 		now,
 		view,
+		projectId,
+		watchers,
+		selectedId = null,
 		onopen,
+		ondelete,
 		onadd,
 		onmove,
 	}: {
@@ -24,7 +31,13 @@
 		defs: PropertyDef[]
 		now: number
 		view: BoardViewStore
+		projectId: number
+		/** the workflows that start by themselves when a task moves into each status */
+		watchers: Record<string, { id: number; name: string }[]>
+		/** the task whose details are open in the side panel */
+		selectedId?: number | null
 		onopen: (task: Task) => void
+		ondelete: (task: Task) => void
 		onadd: (status: TaskStatus) => void
 		onmove: (task: Task, status: TaskStatus, position: number) => void
 	} = $props()
@@ -179,9 +192,25 @@
 				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums" title={results[column.id].filtered ? `${items.length} of ${byStatus[column.id].length} tasks match` : undefined}>
 					{results[column.id].filtered ? `${items.length} / ${byStatus[column.id].length}` : items.length}
 				</span>
+				{#if watchers[column.id]?.length}
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger
+							class="ms-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
+							title="Moving a task here starts a workflow"
+						>
+							<ZapIcon class="size-3" />{watchers[column.id].length}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="start" class="w-56">
+							<DropdownMenu.Label class="text-xs font-normal text-muted-foreground">A task moved into {column.label} starts</DropdownMenu.Label>
+							{#each watchers[column.id] as w (w.id)}
+								<DropdownMenu.Item onSelect={() => router.navigate(`/projects/${projectId}/workflows/${w.id}`)}>{w.name}</DropdownMenu.Item>
+							{/each}
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				{/if}
 				<button
 					type="button"
-					class="ms-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					class={cn('rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', !watchers[column.id]?.length && 'ms-auto')}
 					aria-label={`Hide ${column.label}`}
 					title={`Hide ${column.label} (bring it back with Statuses)`}
 					onclick={() => view.toggleHidden(column.id)}
@@ -211,8 +240,10 @@
 						{defs}
 						{now}
 						dragging={task.id === dragId}
+						selected={task.id === selectedId}
 						data-card={task.id}
 						onopen={() => onopen(task)}
+						ondelete={() => ondelete(task)}
 						ondragstart={(e: DragEvent) => {
 							dragId = task.id
 							e.dataTransfer?.setData('text/plain', String(task.id))

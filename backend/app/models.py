@@ -55,7 +55,7 @@ class User(Base):
 
 
 class TaskStatus(StrEnum):
-    INBOX = "inbox"
+    BACKLOG = "backlog"
     READY = "ready"
     RUNNING = "running"
     REVIEW = "review"
@@ -94,6 +94,21 @@ class Project(Base):
     tasks: Mapped[list["Task"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
+class ProjectEvent(Base):
+    """One line of a project's history: something was done to it. Kept when the thing itself is gone, so it holds its
+    own copy: the title, who did it, and in `data` whatever is needed to look at the thing again."""
+
+    __tablename__ = "project_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(30))  # "task_deleted"
+    title: Mapped[str] = mapped_column(String(200), default="")
+    actor: Mapped[str] = mapped_column(String(100), default="")  # the user's name at the time
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -101,7 +116,7 @@ class Task(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default=TaskStatus.INBOX, index=True)
+    status: Mapped[str] = mapped_column(String(20), default=TaskStatus.BACKLOG, index=True)
     position: Mapped[float] = mapped_column(Float, default=0.0)
     properties: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
@@ -255,7 +270,11 @@ class WorkflowRun(Base):
         ForeignKey("workflow_runs.id", ondelete="SET NULL"), default=None
     )
     status: Mapped[str] = mapped_column(String(20), default=RunStatus.RUNNING)
-    trigger: Mapped[str] = mapped_column(String(20), default="test")  # test | task
+    trigger: Mapped[str] = mapped_column(String(20), default="test")  # test | task | status
+    # the task whose move into a status started this run (trigger "status"); its nodes can work with it
+    trigger_task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), default=None
+    )
     outcome: Mapped[str] = mapped_column(Text, default="")  # what the End node said, or why the run failed
     started_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)

@@ -6,9 +6,9 @@ import { applyView, emptyColumn, emptyView, filterCount, isDefaultView, parseSto
 let n = 0
 const task = (over: Partial<Task>): Task =>
   ({
-    id: ++n, project_id: 1, title: `Task ${n}`, description: '', status: 'inbox', position: n, properties: {}, schedule_kind: 'none',
+    id: ++n, project_id: 1, title: `Task ${n}`, description: '', status: 'backlog', position: n, properties: {}, schedule_kind: 'none',
     cron: null, run_at: null, next_run_at: null, last_run_at: null, review_on_success: false, harness: '', workflow_id: null,
-    created_at: `2026-01-0${n % 9 || 1}T00:00:00Z`, updated_at: '', last_attempt_status: null, ...over,
+    created_at: `2026-01-0${n % 9 || 1}T00:00:00Z`, updated_at: '', last_attempt_status: null, workflow_run: null, ...over,
   }) as Task
 
 const ids = (tasks: Task[]) => tasks.map((t) => t.title)

@@ -13,6 +13,7 @@ _KEY = "app"
 
 MAX_BUDGET_CPUS = 4096
 MAX_BUDGET_MEMORY_MB = 16_777_216
+DEFAULT_START_COOLDOWN_SECONDS = 5  # read when settings are created (not at import), so tests can lower it
 
 
 class MountRoot(BaseModel):
@@ -72,6 +73,9 @@ class AppSettings(BaseModel):
     cell_memory_mb: int = Field(default=1024, ge=64, le=1_048_576)
     cell_timeout_seconds: int = Field(default=3600, ge=10, le=86_400)
     budget: Budget = Budget()
+    # A Ready task starts only this long after it last changed (was moved to Ready, or its previous run ended). It
+    # keeps a task that keeps putting itself back, or a workflow that keeps creating tasks, from hammering the machine.
+    start_cooldown_seconds: int = Field(default_factory=lambda: DEFAULT_START_COOLDOWN_SECONDS, ge=0, le=3600)
     mount_roots: list[MountRoot] = []  # folders cells may be given, see app/volumes.py
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
     codex_model: str = "gpt-6-luna"

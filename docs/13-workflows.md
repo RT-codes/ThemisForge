@@ -35,9 +35,9 @@ move them all together. **Esc** lets go of the selection.
 | Node | What it does |
 | --- | --- |
 | **Start** | A run begins here. A workflow can have several Start nodes; a run begins at all of them. |
-| **Trigger** | Also begins a run. Schedules and events are not automatic yet, so for now it behaves like Start. |
-| **Task** | Creates a task, updates one, or runs one by its title. A task that becomes **Ready** runs like any other task and the node waits for it. |
-| **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along. |
+| **Trigger** | Begins a run by itself. Set to **A task moves into a status**, it starts the workflow whenever a task of the project is moved into (or created in) that status, from the board, the API or another workflow. The steps after it can use that task. Schedules are not automatic yet; a Trigger set to anything else behaves like Start. |
+| **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). A task that becomes **Ready** runs like any other task and the node waits for it. |
+| **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task that started the run (its title and description). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
 | **Folder** | Not a step: hands a [shared folder](/docs/cells#shared-folders) to an Agent node (see below). |
@@ -109,3 +109,23 @@ Nodes that failed unfold on their own. Nodes the run never reached are listed un
 reason: a failed node before it, the other side of a condition, or no line leading to it.
 
 A run that is still going can be cancelled; this also stops the container its current task is running in.
+
+## Starting workflows from the board
+
+A Trigger set to **A task moves into a status** only looks at where a task lands, not where it came from. Together with
+the Task node's **Move the task that started this run**, this lets a workflow act as a step on the board: for example
+an agent that picks up everything moved into **Backlog**, splits it, and moves the original to **Ready**.
+
+- A task moved by a workflow node starts other workflows too, so workflows can hand work to each other.
+- The task an **Agent** node creates for itself never starts a workflow.
+- A workflow is not started again for the same task while its previous run for that task is still going, nor within the
+  start delay (**Settings, Wait before a Ready task starts**). That slows down a workflow that moves a task back into
+  the status that starts it; it does not forbid it.
+- Moves made while Themis is stopped do not start anything.
+
+You can see this from the board:
+
+- A status column with a **⚡ number** in its header is watched. Click it to see which workflows start when a task is
+  moved there, and to open one.
+- A card shows the workflow run it started, with the step it is on, until the run is over.
+- The **History** tab of a task lists the runs it started, newest first, with a link to each.

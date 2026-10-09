@@ -1,7 +1,7 @@
 import type { AttemptStatus, TaskStatus } from './api'
 
 export const STATUSES: { id: TaskStatus; label: string; hint: string }[] = [
-  { id: 'inbox', label: 'Inbox', hint: 'Not scheduled yet. Recurring tasks parked here are paused.' },
+  { id: 'backlog', label: 'Backlog', hint: 'Not scheduled yet. Recurring tasks parked here are paused.' },
   { id: 'ready', label: 'Ready', hint: 'Picked up by the scheduler when due.' },
   { id: 'running', label: 'Running', hint: 'A cell is working on it.' },
   { id: 'review', label: 'Review', hint: 'Finished, waiting for a human.' },

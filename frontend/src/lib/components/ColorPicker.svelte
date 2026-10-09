@@ -41,7 +41,7 @@
 		<Popover.Content
 			align="start"
 			sideOffset={6}
-			class="data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 z-[60] w-60 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg outline-none"
+			class="data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 z-[60] w-60 rounded-lg border bg-popover p-3 text-popover-foreground shadow-float outline-none"
 		>
 			<div class="grid grid-cols-5 gap-2" role="group" aria-label="Colours">
 				{#each PALETTE as c (c.hex)}

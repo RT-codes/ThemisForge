@@ -102,6 +102,47 @@ async def test_concurrency_limit(client, scheduler, cells, monkeypatch):
     assert statuses == {"done"}
 
 
+async def test_tasks_beyond_the_budget_wait_in_ready_and_start_in_order(
+    client, scheduler, cells, monkeypatch
+):
+    await register(client)
+    await client.put("/api/settings", json={"budget": {"cpus": 2, "memory_mb": 2048}})
+    pid = (await make_project(client))["id"]
+    tasks = [await make_task(client, pid, title=f"t{i}", status="ready") for i in range(5)]
+
+    gate = asyncio.Event()
+
+    async def slow_run(spec: CellSpec, on_log):
+        await gate.wait()
+        return CellResult(exit_code=0)
+
+    monkeypatch.setattr(cells, "run", slow_run)
+    assert await scheduler.tick() == 2  # two cells fit; the other three are not started and not failed
+    assert scheduler.active_cells == 2
+    states = [(await client.get(f"/api/tasks/{t['id']}")).json()["status"] for t in tasks]
+    assert states == ["running", "running", "ready", "ready", "ready"]
+    gate.set()
+    await drain(scheduler)
+    assert await scheduler.tick() == 2  # as cells finish, the next ones in line start
+    await drain(scheduler)
+    assert await scheduler.tick() == 1
+    await drain(scheduler)
+    states = {(await client.get(f"/api/tasks/{t['id']}")).json()["status"] for t in tasks}
+    assert states == {"done"}
+
+
+async def test_ready_task_waits_for_the_start_cooldown(client, scheduler):
+    await register(client)
+    await client.put("/api/settings", json={"start_cooldown_seconds": 60})
+    pid = (await make_project(client))["id"]
+    task = await make_task(client, pid, status="ready")
+    assert await scheduler.tick() == 0  # only just moved to Ready
+    await client.put("/api/settings", json={"start_cooldown_seconds": 0})
+    assert await scheduler.tick() == 1
+    await drain(scheduler)
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()["status"] == "done"
+
+
 async def test_cancel_a_running_task(client, scheduler, cells, monkeypatch):
     await register(client)
     pid = (await make_project(client))["id"]

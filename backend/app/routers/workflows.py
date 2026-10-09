@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from ..deps import CurrentUser, SessionDep
 from ..models import NodeStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
 from ..workflows import Graph, WorkflowRunner
-from .projects import _project
+from .projects import _project, _task
 
 router = APIRouter(tags=["workflows"])
 
@@ -42,6 +42,8 @@ class WorkflowSummary(BaseModel):
     updated_at: datetime
     runs: int
     last_run: LastRun | None
+    # the statuses whose tasks start this workflow by themselves (its Triggers); empty for a manual workflow
+    watches: list[str]
 
 
 class WorkflowIn(BaseModel):
@@ -179,6 +181,7 @@ async def list_workflows(project_id: int, session: SessionDep, user: CurrentUser
         WorkflowSummary(
             id=w.id, project_id=w.project_id, name=w.name, description=w.description, node_count=len(w.graph.get("nodes", [])),
             created_at=w.created_at, updated_at=w.updated_at, runs=run_counts.get(w.id, 0), last_run=last.get(w.id),
+            watches=list(dict.fromkeys(n.config.get("status", "") for n in Graph.model_validate(w.graph).status_triggers())),
         )
         for w in flows
     ]  # fmt: skip
@@ -284,6 +287,38 @@ async def list_runs(
             nodes_failed=counts.get(r.id, {}).get(NodeStatus.FAILED, 0),
         )
         for r in runs
+    ]  # fmt: skip
+
+
+class TaskRunOut(BaseModel):
+    id: int
+    workflow_id: int
+    workflow_name: str
+    status: str
+    outcome: str
+    started_at: datetime
+    finished_at: datetime | None
+
+
+@router.get("/tasks/{task_id}/workflow-runs", response_model=list[TaskRunOut])
+async def task_runs(
+    task_id: int, session: SessionDep, user: CurrentUser, limit: Annotated[int, Query(ge=1, le=200)] = 50
+) -> list[TaskRunOut]:
+    """The workflow runs that this task started by moving into a status, newest first."""
+    await _task(session, task_id, user)
+    rows = await session.execute(
+        select(WorkflowRun, Workflow.name)
+        .join(Workflow, Workflow.id == WorkflowRun.workflow_id)
+        .where(WorkflowRun.trigger_task_id == task_id)
+        .order_by(WorkflowRun.id.desc())
+        .limit(limit)
+    )
+    return [
+        TaskRunOut(
+            id=r.id, workflow_id=r.workflow_id, workflow_name=name, status=r.status, outcome=r.outcome,
+            started_at=r.started_at, finished_at=r.finished_at,
+        )
+        for r, name in rows
     ]  # fmt: skip
 
 

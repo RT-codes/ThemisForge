@@ -6,7 +6,7 @@ export interface User {
   is_admin: boolean
 }
 
-export type TaskStatus = 'inbox' | 'ready' | 'running' | 'review' | 'done' | 'blocked' | 'failed'
+export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'blocked' | 'failed'
 export type ScheduleKind = 'none' | 'once' | 'cron'
 export type AttemptStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type PropertyType = 'text' | 'number' | 'select' | 'checkbox' | 'date'
@@ -64,6 +64,18 @@ export interface Task {
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
+  /** the workflow run this task started that is still going, if any */
+  workflow_run: { run_id: number; workflow_id: number; workflow_name: string; step: string } | null
+}
+
+export interface ProjectEvent {
+  id: number
+  kind: 'task_deleted' | string
+  title: string
+  actor: string
+  /** a copy of the thing as it was (for a deleted task: its description, status, schedule...) */
+  data: Record<string, unknown>
+  created_at: string
 }
 
 export interface TaskInput {
@@ -249,6 +261,7 @@ export interface AppSettings {
   check_for_updates: boolean // ask GitHub once a day whether a newer release exists
   update_channel: 'stable' | 'beta'
   keep_workspaces_days: number
+  start_cooldown_seconds: number
 }
 
 export interface DockerStatus {
@@ -394,6 +407,18 @@ export interface WorkflowSummary {
   updated_at: string
   runs: number
   last_run: { id: number; status: RunStatus; started_at: string } | null
+  /** the statuses whose tasks start this workflow by themselves; empty for one that is only run by hand */
+  watches: TaskStatus[]
+}
+
+export interface TaskWorkflowRunSummary {
+  id: number
+  workflow_id: number
+  workflow_name: string
+  status: RunStatus
+  outcome: string
+  started_at: string
+  finished_at: string | null
 }
 
 export interface WorkflowDetail {
@@ -502,6 +527,7 @@ export const api = {
   tasks: (projectId: number) => request<Task[]>(`/projects/${projectId}/tasks`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),
   updateTask: (id: number, patch: TaskPatch) => request<Task>(`/tasks/${id}`, send('PATCH', patch)),
+  projectHistory: (projectId: number) => request<ProjectEvent[]>(`/projects/${projectId}/history`),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, send('DELETE')),
   runTask: (id: number) => request<Task>(`/tasks/${id}/run`, send('POST')),
   cancelTask: (id: number) => request<Task>(`/tasks/${id}/cancel`, send('POST')),
@@ -578,6 +604,7 @@ export const api = {
   updateWorkflow: (id: number, patch: { name?: string; description?: string; graph?: Graph }) => request<WorkflowDetail>(`/workflows/${id}`, send('PATCH', patch)),
   deleteWorkflow: (id: number) => request<void>(`/workflows/${id}`, send('DELETE')),
   startWorkflowRun: (workflowId: number) => request<WorkflowRunDetail>(`/workflows/${workflowId}/runs`, send('POST')),
+  taskWorkflowRuns: (taskId: number) => request<TaskWorkflowRunSummary[]>(`/tasks/${taskId}/workflow-runs`),
   workflowRuns: (workflowId: number) => request<WorkflowRunSummary[]>(`/workflows/${workflowId}/runs`),
   workflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}`),
   cancelWorkflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}/cancel`, send('POST')),

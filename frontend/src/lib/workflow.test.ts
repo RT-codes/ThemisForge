@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, type NodeKind } from './workflow.ts'
+import { seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, watchersByStatus, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -10,7 +10,7 @@ test('every kind has fields, and every select has options', () => {
 })
 
 test('defaults: selects start on the first option, text starts empty', () => {
-  assert.deepEqual(defaultConfig('trigger'), { type: 'manual', repeat: 'day', time: '09:00', status: 'inbox' })
+  assert.deepEqual(defaultConfig('trigger'), { type: 'manual', repeat: 'day', time: '09:00', status: 'backlog' })
   assert.equal(defaultConfig('task').title, '')
 })
 
@@ -33,6 +33,8 @@ test('a visible field never depends on a field that does not exist', () => {
 test('summaries read well', () => {
   assert.equal(summary('trigger', { type: 'schedule', repeat: 'weekdays', time: '08:30' }), 'Every weekday at 08:30')
   assert.equal(summary('task', { ...defaultConfig('task'), title: 'Write report' }), 'Create a task: Write report')
+  assert.equal(summary('trigger', { type: 'task_status', status: 'review' }), 'A task moves into Review')
+  assert.equal(summary('task', { ...defaultConfig('task'), action: 'move_trigger', status: 'done' }), 'Move that task to Done')
   assert.equal(summary('agent', { ...defaultConfig('agent'), instructions: ' Fix it\nthen test ' }), 'Fix it')
   assert.equal(summary('condition', { source: 'result', operator: 'contains', value: 'ok' }), 'The previous result contains ok')
   assert.equal(summary('end', { outcome: 'failed' }), 'Ends as failed')
@@ -159,4 +161,15 @@ test('the folder points survive saving and loading a graph', () => {
   assert.equal(flow.edges[0].targetHandle, MOUNT)
   assert.deepEqual(toGraph([], flow.edges).edges[0], graph.edges[0])
   assert.ok(!('targetHandle' in toGraph([], [{ id: 'x', source: 'a', target: 'b' }]).edges[0])) // an ordinary line stays as it was
+})
+
+test('a status lists the workflows that start when a task moves into it', () => {
+  const by = watchersByStatus([
+    { id: 1, name: 'Triage', watches: ['backlog'] },
+    { id: 2, name: 'By hand', watches: [] },
+    { id: 3, name: 'Both', watches: ['backlog', 'review'] },
+  ])
+  assert.deepEqual(by.backlog, [{ id: 1, name: 'Triage' }, { id: 3, name: 'Both' }])
+  assert.deepEqual(by.review, [{ id: 3, name: 'Both' }])
+  assert.equal(by.done, undefined)
 })

@@ -2,8 +2,9 @@
 
 A run starts from every Start (or Trigger) node and follows the edges. Nodes run one at a time, in order:
 
-- Start / Trigger: begin the run.
-- Task: create, update or run a task of the project. A task that becomes READY runs through the normal scheduler,
+- Start / Trigger: begin the run. A Trigger set to "a task moves into a status" starts a run by itself, whenever a task
+  of the project moves into that status (see `WorkflowRunner._fire`). The run remembers that task.
+- Task: create, update or run a task of the project, or move the task that started the run. A task that becomes READY runs through the normal scheduler,
   and the node waits for it and takes over its log and result.
 - Agent: a task handed to a Codex agent, with the node's instructions (and the previous result) as its description.
 - Condition: checks the previous node's result or status and follows the `yes` or the `no` edges.
@@ -22,9 +23,9 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import event, func, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from .app_settings import load_settings
 from .models import (
@@ -116,6 +117,16 @@ class Graph(BaseModel):
             out.append({"volume_id": int(raw), "mode": mode if mode in ("ro", "rw") else "rw"})
         return out
 
+    def status_triggers(self, status: str | None = None) -> list[GraphNode]:
+        """The Trigger nodes that start a run when a task moves into a status (into `status`, or any when None)."""
+        return [
+            n
+            for n in self.nodes
+            if n.kind == "trigger"
+            and n.config.get("type") == "task_status"
+            and (status is None or n.config.get("status") == status)
+        ]
+
     @property
     def start_nodes(self) -> list[GraphNode]:
         return [n for n in self.nodes if n.kind in START_KINDS]
@@ -152,6 +163,7 @@ class _Ctx:
     run_id: int
     project_id: int
     graph: Graph
+    trigger_task_id: int | None = None  # the task whose move into a status started this run
 
 
 def evaluate_condition(config: dict[str, str], prev: Prev | None) -> tuple[bool, str]:
@@ -195,6 +207,12 @@ class WorkflowRunner:
         self._scheduler = scheduler  # a getter, so the current scheduler is always the one used
         self._live: dict[int, asyncio.Task] = {}
         self._stopping = False
+        self._firing: set[asyncio.Task] = set()
+        # Every task that moves into a status is noticed where it is saved, so the board, the API, the scheduler and
+        # workflow nodes all count, without each of them having to report it.
+        event.listen(Session, "after_flush", self._note_moves)
+        event.listen(Session, "after_commit", self._fire_moves)
+        event.listen(Session, "after_rollback", self._drop_moves)
 
     # lifecycle
 
@@ -224,6 +242,11 @@ class WorkflowRunner:
 
     async def shutdown(self) -> None:
         self._stopping = True
+        event.remove(Session, "after_flush", self._note_moves)
+        event.remove(Session, "after_commit", self._fire_moves)
+        event.remove(Session, "after_rollback", self._drop_moves)
+        for firing in self._firing:
+            firing.cancel()
         for task in self._live.values():
             task.cancel()
         await asyncio.gather(*self._live.values(), return_exceptions=True)
@@ -256,7 +279,10 @@ class WorkflowRunner:
         graph: Graph,
         trigger: str = "test",
         parent_run_id: int | None = None,
+        trigger_task_id: int | None = None,
+        starts: list[str] | None = None,
     ) -> int:
+        """`starts` limits the run to those start/trigger nodes (a status trigger must not also fire the others)."""
         async with self.maker() as s:
             await self._check_chain(s, workflow_id, parent_run_id)
             run = WorkflowRun(
@@ -264,17 +290,106 @@ class WorkflowRunner:
                 workflow_id=workflow_id,
                 parent_run_id=parent_run_id,
                 trigger=trigger,
+                trigger_task_id=trigger_task_id,
                 graph=graph.model_dump(),
             )
             s.add(run)
             await s.commit()
             run_id = run.id
         task = asyncio.create_task(
-            self._run(_Ctx(run_id, project_id, graph), graph), name=f"workflow-run-{run_id}"
+            self._run(_Ctx(run_id, project_id, graph, trigger_task_id), graph, starts),
+            name=f"workflow-run-{run_id}",
         )
         self._live[run_id] = task
         task.add_done_callback(lambda _t, rid=run_id: self._live.pop(rid, None))
         return run_id
+
+    # runs started by a task moving into a status
+
+    def _ours(self, session: Session) -> bool:
+        return session.get_bind() is self.maker.kw["bind"].sync_engine
+
+    def _note_moves(self, session: Session, _ctx) -> None:
+        """Remember the tasks this flush moved into a status (or created in one); they count once the commit succeeds."""
+        if not self._ours(session):
+            return
+        for obj in (*session.new, *session.dirty):
+            if (
+                isinstance(obj, Task)
+                and (h := inspect(obj).attrs.status.history).added
+                and h.added != h.deleted
+            ):
+                session.info.setdefault("status_moves", []).append((obj.project_id, obj.id, h.added[0]))
+
+    def _drop_moves(self, session: Session) -> None:
+        if self._ours(session):
+            session.info.pop("status_moves", None)
+
+    def _fire_moves(self, session: Session) -> None:
+        if not self._ours(session):  # another runner's session (several exist in tests): leave its list alone
+            return
+        moves = session.info.pop("status_moves", None)
+        if moves and not self._stopping:
+            firing = asyncio.get_running_loop().create_task(self._fire(moves))
+            self._firing.add(firing)
+            firing.add_done_callback(self._firing.discard)
+
+    async def _fire(self, moves: list[tuple[int, int, str]]) -> None:
+        """Start the workflows whose Trigger says "a task moves into <status>" for each move.
+
+        A task is not offered twice to the same workflow while its run is going or within the start cooldown. That is
+        the guard against a workflow that moves a task into the very status that starts it."""
+        try:
+            for project_id, task_id, status in moves:
+                async with self.maker() as s:
+                    cfg = await load_settings(s)
+                    if await self._belongs_to_agent_node(s, task_id):
+                        continue  # the task an Agent node made for itself is part of that workflow, not board work
+                    workflows = (
+                        await s.scalars(select(Workflow).where(Workflow.project_id == project_id))
+                    ).all()
+                    for wf in workflows:
+                        graph = Graph.model_validate(wf.graph)
+                        starts = [n.id for n in graph.status_triggers(status)]
+                        if not starts or await self._recently_started(
+                            s, wf.id, task_id, cfg.start_cooldown_seconds
+                        ):
+                            continue
+                        try:
+                            await self.start(
+                                project_id,
+                                wf.id,
+                                graph,
+                                trigger="status",
+                                trigger_task_id=task_id,
+                                starts=starts,
+                            )
+                        except LoopError:
+                            log.warning("workflow %s not started by task %s: it would loop", wf.id, task_id)
+        except Exception:
+            log.exception("starting workflows for moved tasks failed")
+
+    @staticmethod
+    async def _belongs_to_agent_node(s: AsyncSession, task_id: int) -> bool:
+        return bool(
+            await s.scalar(
+                select(WorkflowNodeRun.id)
+                .where(WorkflowNodeRun.task_id == task_id, WorkflowNodeRun.kind == "agent")
+                .limit(1)
+            )
+        )
+
+    @staticmethod
+    async def _recently_started(s: AsyncSession, workflow_id: int, task_id: int, cooldown: int) -> bool:
+        latest = await s.scalar(
+            select(WorkflowRun)
+            .where(WorkflowRun.workflow_id == workflow_id, WorkflowRun.trigger_task_id == task_id)
+            .order_by(WorkflowRun.id.desc())
+            .limit(1)
+        )
+        return latest is not None and (
+            latest.status == RunStatus.RUNNING or (utcnow() - latest.started_at).total_seconds() < cooldown
+        )
 
     async def cancel(self, run_id: int) -> bool:
         task = self._live.get(run_id)
@@ -369,13 +484,15 @@ class WorkflowRunner:
 
     # the run
 
-    async def _run(self, ctx: _Ctx, graph: Graph) -> None:
+    async def _run(self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None) -> None:
         nodes = {n.id: n for n in graph.nodes}
         outgoing: dict[str, list[GraphEdge]] = {}
         for e in graph.edges:
             if e.sourceHandle != MOUNT:  # a folder handed to an agent is not a step to follow
                 outgoing.setdefault(e.source, []).append(e)
-        queue: deque[tuple[str, Prev | None]] = deque((n.id, None) for n in graph.start_nodes)
+        queue: deque[tuple[str, Prev | None]] = deque(
+            (n.id, None) for n in graph.start_nodes if starts is None or n.id in starts
+        )
         done: dict[str, Outcome] = {}
         carried_on: set[str] = set()  # failed nodes the workflow continued after
         seq = 0
@@ -483,6 +600,11 @@ class WorkflowRunner:
         title = node.label or "Agent"
         run_options = self._run_options(c, ctx.graph.mounts_for(node.id))
         async with self.maker() as s:
+            if ctx.trigger_task_id and (started_by := await s.get(Task, ctx.trigger_task_id)):
+                instructions += (
+                    f'\n\nThis workflow was started by the task "{started_by.title}":\n'
+                    f"{started_by.description.strip() or '(no description)'}"
+                )
             agent = None
             if agent_id := c.get("agentId", "").strip():
                 agent = await s.get(Agent, int(agent_id)) if agent_id.isdigit() else None
@@ -532,9 +654,14 @@ class WorkflowRunner:
         c = node.config
         action = c.get("action", "create")
         title = c.get("title", "").strip()
-        if not title:
+        if action != "move_trigger" and not title:
             raise NodeError("The task title is empty. Open the node and fill it in.")
-        target = c.get("status", "inbox")
+        if action == "move_trigger" and ctx.trigger_task_id is None:
+            raise NodeError(
+                "No task started this run, so there is nothing to move. Use a Trigger set to "
+                "'A task moves into a status' to start the workflow."
+            )
+        target = c.get("status", "backlog")
         if target not in {s.value for s in TaskStatus} or target == TaskStatus.RUNNING:
             raise NodeError(f"'{target}' is not a status a workflow can move a task to")
         async with self.maker() as s:
@@ -547,12 +674,18 @@ class WorkflowRunner:
                 s.add(task)
                 note = f'Created task "{title}" in {target}.'
             else:
-                task = await s.scalar(
-                    select(Task)
-                    .where(Task.project_id == ctx.project_id, Task.title == title)
-                    .order_by(Task.id.desc())
-                    .limit(1)
-                )
+                if action == "move_trigger":
+                    task = await s.get(Task, ctx.trigger_task_id)
+                    if task is None:
+                        raise NodeError("The task that started this run was deleted.")
+                    title = task.title
+                else:
+                    task = await s.scalar(
+                        select(Task)
+                        .where(Task.project_id == ctx.project_id, Task.title == title)
+                        .order_by(Task.id.desc())
+                        .limit(1)
+                    )
                 if task is None:
                     raise NodeError(f'There is no task titled "{title}" in this project.')
                 if task.status == TaskStatus.RUNNING:
@@ -567,6 +700,10 @@ class WorkflowRunner:
                     task.status, task.next_run_at = TaskStatus.READY, None
                     note = f'Started task "{title}".'
                 else:
+                    if (
+                        task.status != target
+                    ):  # lands at the bottom of its new column, like a card dropped there
+                        task.position = await self._next_position(s, ctx.project_id, target)
                     task.status = target
                     task.next_run_at = None
                     if c.get("description", "").strip():

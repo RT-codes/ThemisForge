@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
+	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
@@ -49,14 +50,22 @@
 
 {#if project}
 	<div class="px-6 pt-8 pb-6" in:fade={{ duration: 350 }}>
-		<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
-		{#if project.description}
-			<p class="text-sm text-muted-foreground">{project.description}</p>
-		{/if}
+		<header>
+			<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
+			{#if project.description}
+				<p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
+			{/if}
+		</header>
 
-		<a href="/projects/{id}/tasks" class="mt-8 block rounded-xl border bg-card p-5 transition-colors hover:border-primary/40">
-			<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
-			<div class="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+		<a href="/projects/{id}/tasks" class="mt-6 block rounded-xl border bg-card p-5 transition-colors hover:border-primary/40">
+			<div class="flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
+					<p class="text-xs text-muted-foreground">A quick pulse on work in this project</p>
+				</div>
+				<span class="text-xs font-medium text-primary">Open task board <span aria-hidden="true">↗</span></span>
+			</div>
+			<div class="mt-5 grid grid-cols-2 gap-4 border-t pt-4 sm:grid-cols-4">
 				{#each stats as s (s.label)}
 					<div>
 						<div class="text-2xl font-semibold tabular-nums">{s.value}</div>
@@ -66,12 +75,21 @@
 			</div>
 		</a>
 
-		<WorkflowLibrary projectId={id} {now} />
-		<AgentsSection projectId={id} />
-		<VolumesSection projectId={id} />
-		<SkillsSection projectId={id} />
-		<ToolsSection projectId={id} />
+		<div class="overview-grid mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+			<div class="lg:col-span-7"><WorkflowLibrary projectId={id} {now} /></div>
+			<div class="lg:col-span-5"><ProjectConnections projectId={id} /></div>
+			<div class="lg:col-span-6"><AgentsSection projectId={id} /></div>
+			<div class="lg:col-span-6"><VolumesSection projectId={id} /></div>
+			<div class="lg:col-span-6"><SkillsSection projectId={id} /></div>
+			<div class="lg:col-span-6"><ToolsSection projectId={id} /></div>
+		</div>
 	</div>
 {:else if loadError}
 	<p class="m-auto text-sm text-destructive">{loadError}</p>
 {/if}
+
+<style>
+	.overview-grid :global(section) {
+		margin-top: 0;
+	}
+</style>

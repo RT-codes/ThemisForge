@@ -147,9 +147,9 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
-		<!-- the same numbers as one proportional strip along the bottom edge: how the board is doing at a glance -->
+		<!-- the same numbers as a small proportional strip under the title: how the board is doing at a glance -->
 		{#if total > 0}
-			<div class="pointer-events-none absolute inset-x-0 bottom-0 flex h-[3px]" aria-hidden="true">
+			<div class="pointer-events-none absolute bottom-0 left-3 flex h-[3px] w-1/4 overflow-hidden rounded-full" aria-hidden="true">
 				{#each segments as seg (seg.id)}
 					{#if seg.count > 0}<span class={cn('h-full', seg.tone.dot)} style:flex="{seg.count} 1 0%" style:background-color={seg.color ?? undefined}></span>{/if}
 				{/each}
@@ -157,7 +157,7 @@
 		{/if}
 	</header>
 	{#if !collapsed && desk.project}
-		<div class={fill ? 'h-[max(28rem,calc(100svh-22rem))] px-3 pb-3' : 'h-[28rem] px-3 pb-3'}>
+		<div class={fill ? 'h-[max(29rem,calc(100svh-21rem))] p-3' : 'h-[29rem] p-3'}>
 			<Board
 				{tasks}
 				boardId={board.id}

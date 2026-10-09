@@ -14,11 +14,14 @@
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
 	import WorkflowResume from '$lib/pages/WorkflowResume.svelte'
-	import ProjectPage from '$lib/pages/ProjectPage.svelte'
+	import BoardPage from '$lib/pages/BoardPage.svelte'
+	import WorkspacePage from '$lib/pages/WorkspacePage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
 	import { system } from '$lib/system.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
+	import { structure } from '$lib/structure.svelte'
+	import { findBoard, workspaceOf } from '$lib/boards'
 	import { onMount } from 'svelte'
 	import { fade } from 'svelte/transition'
 
@@ -45,11 +48,18 @@
 	const route = $derived(router.route)
 	// a new page fades in; switching between tabs of the same project counts as a new page too
 	const pageKey = $derived(
-		route.name === 'project' ? `project:${route.id}:${route.page}` : route.name === 'workflow' ? `workflow:${route.id}` : route.name === 'agents' ? `agents:${route.id}` : route.name
+		route.name === 'project' ? `project:${route.id}:${route.page}:${route.page === 'workspace' ? route.workspaceId : route.page === 'board' ? route.boardId : ''}` : route.name === 'workflow' ? `workflow:${route.id}` : route.name === 'agents' ? `agents:${route.id}` : route.name
 	)
 	type Crumb = { label: string; href?: string }
 	// the top bar says where you are; every part but the last leads back up
 	const crumbs = $derived.by<Crumb[]>(() => {
+		if (route.name === 'project' && (route.page === 'workspace' || route.page === 'board')) {
+			const project: Crumb = { label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }
+			const workspaces = structure.get(route.id) ?? []
+			if (route.page === 'workspace') return [project, { label: workspaces.find((w) => w.id === route.workspaceId)?.name ?? 'Workspace' }]
+			const workspace = workspaceOf(workspaces, route.boardId)
+			return [project, ...(workspace ? [{ label: workspace.name, href: `/projects/${route.id}/workspaces/${workspace.id}` }] : []), { label: findBoard(workspaces, route.boardId)?.name ?? 'Board' }]
+		}
 		if (route.name === 'workflow' || route.name === 'project') {
 			const project: Crumb = { label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }
 			const pages = { overview: 'Overview', tasks: 'Tasks', files: 'Files' }
@@ -104,7 +114,11 @@
 				{:else if route.name === 'project'}
 					{#key route.id}
 						{#if route.page === 'tasks'}
-							<ProjectPage id={route.id} />
+							<WorkspacePage id={route.id} workspaceId={null} />
+						{:else if route.page === 'board'}
+							<BoardPage id={route.id} boardId={route.boardId} />
+						{:else if route.page === 'workspace'}
+							<WorkspacePage id={route.id} workspaceId={route.workspaceId} />
 						{:else if route.page === 'files'}
 							<FilesPage id={route.id} />
 						{:else}

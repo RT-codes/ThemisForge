@@ -27,7 +27,7 @@ it, or **New agent** at the top to make one. A project starts with none, and can
 | **Model** and **reasoning effort** | Empty means the ones in **Settings, Codex agents**. |
 | **Instructions** | For the agent: always put in front of whatever task it is given. How to work, what to produce, what to avoid. |
 | **Cell** | The size of its container. **Automatic** by default (the project's cell, which uses the defaults in Settings); press **Customise** only if this agent needs something different. |
-| **Folders** | The [shared folders](/docs/cells#shared-folders) mounted in its workspace, and whether it may write to them. |
+| **Folders** | The [shared folders](/docs/cells#shared-folders) mounted in its work folder, and whether it may write to them. |
 | **Skills** | Guides it reads when a task calls for them (see below). |
 | **Tools** | Extra tools it can use, as MCP servers (see below). |
 | **Keys** | Stored keys its commands can use (see below). |

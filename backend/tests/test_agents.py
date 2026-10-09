@@ -1,6 +1,6 @@
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_harness import connect
-from tests.test_workflows import by_id, edge, node, run, runner, setup  # noqa: F401
+from tests.test_workflows import by_id, edge, node, run, setup
 
 
 async def make_agent(client, pid: int, **body) -> dict:
@@ -182,7 +182,7 @@ async def test_without_an_agent_the_prompt_and_model_are_what_they_were(client, 
 # ----- the workflow Agent node -----
 
 
-async def test_an_agent_node_runs_the_chosen_agent_with_node_level_extras(client, runner, cells, maker):  # noqa: F811
+async def test_an_agent_node_runs_the_chosen_agent_with_node_level_extras(client, runner, cells, maker):
     me, pid = await setup(client)
     await connect(maker, me["id"])
     out = (await client.post(f"/api/projects/{pid}/volumes", json={"name": "out"})).json()
@@ -204,7 +204,7 @@ async def test_an_agent_node_runs_the_chosen_agent_with_node_level_extras(client
     assert task["agent_id"] == agent["id"]
 
 
-async def test_an_agent_node_whose_agent_was_deleted_fails_with_the_reason(client, runner):  # noqa: F811
+async def test_an_agent_node_whose_agent_was_deleted_fails_with_the_reason(client, runner):
     _, pid = await setup(client)
     agent = await make_agent(client, pid)
     await client.delete(f"/api/agents/{agent['id']}")
@@ -218,7 +218,7 @@ async def test_an_agent_node_whose_agent_was_deleted_fails_with_the_reason(clien
     assert "no longer exists" in by_id(detail)["a"]["error"]
 
 
-async def test_an_agent_node_with_an_agent_from_another_project_is_refused(client, runner):  # noqa: F811
+async def test_an_agent_node_with_an_agent_from_another_project_is_refused(client, runner):
     _, pid = await setup(client)
     other = (await make_project(client, "Other"))["id"]
     foreign = await make_agent(client, other)
@@ -231,7 +231,7 @@ async def test_an_agent_node_with_an_agent_from_another_project_is_refused(clien
     assert "no longer exists" in by_id(detail)["a"]["error"]
 
 
-async def test_an_agent_node_with_unusable_cell_settings_fails_before_running_anything(client, runner, cells):  # noqa: F811
+async def test_an_agent_node_with_unusable_cell_settings_fails_before_running_anything(client, runner, cells):
     _, pid = await setup(client)
     detail = await run(
         client,

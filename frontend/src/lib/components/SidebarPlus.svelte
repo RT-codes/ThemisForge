@@ -1,15 +1,20 @@
 <script lang="ts">
 	import { cn } from '$lib/utils'
+	import type { Component } from 'svelte'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 
 	// The small plus in the sidebar (new project, new workflow). On hover the plus turns, grows and gets bolder,
 	// the circle lights up, and a ring of four arcs spins around it for as long as the pointer stays.
-	let { label, href, onclick, class: className }: { label: string; href?: string; onclick?: () => void; class?: string } = $props()
+	// `icon` swaps the plus for another icon (a plus on layers, to make a layer); it grows on hover but does not turn.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let { label, href, onclick, icon, class: className }: { label: string; href?: string; onclick?: () => void; icon?: Component<any>; class?: string } = $props()
 
 	const look =
-		'group/plus absolute flex size-5 items-center justify-center rounded-full text-sidebar-foreground/70 outline-hidden transition-[color,background-color] duration-150 hover:bg-sidebar-accent hover:text-primary focus-visible:bg-sidebar-accent focus-visible:text-primary after:absolute after:-inset-2'
+		'group/plus absolute flex size-5 items-center justify-center rounded-full text-sidebar-foreground/70 outline-hidden transition-[color,background-color,opacity] duration-150 hover:bg-sidebar-accent hover:text-primary focus-visible:bg-sidebar-accent focus-visible:text-primary after:absolute after:-inset-2'
 	const plus =
 		'size-4 transition-[scale,rotate,stroke-width] duration-300 ease-out group-hover/plus:scale-[1.55] group-hover/plus:rotate-90 group-hover/plus:stroke-[3] group-focus-visible/plus:scale-[1.55] group-focus-visible/plus:rotate-90 group-focus-visible/plus:stroke-[3]'
+	const grow =
+		'size-4 transition-[scale,stroke-width] duration-300 ease-out group-hover/plus:scale-[1.55] group-hover/plus:stroke-[3] group-focus-visible/plus:scale-[1.55] group-focus-visible/plus:stroke-[3]'
 	const ring =
 		'pointer-events-none absolute -start-1.5 -top-1.5 size-8 text-primary/60 opacity-0 transition-opacity duration-150 group-hover/plus:animate-[spin_2.4s_linear_infinite] group-hover/plus:opacity-100 group-focus-visible/plus:animate-[spin_2.4s_linear_infinite] group-focus-visible/plus:opacity-100'
 </script>
@@ -19,7 +24,12 @@
 	<svg class={ring} viewBox="0 0 32 32" fill="none" aria-hidden="true">
 		<circle cx="16" cy="16" r="14" pathLength="100" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="17 8" />
 	</svg>
-	<PlusIcon class={plus} />
+	{#if icon}
+		{@const Custom = icon}
+		<Custom class={grow} />
+	{:else}
+		<PlusIcon class={plus} />
+	{/if}
 	<span class="sr-only">{label}</span>
 {/snippet}
 

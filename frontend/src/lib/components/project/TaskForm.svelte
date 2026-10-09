@@ -4,13 +4,16 @@
 </script>
 
 <script lang="ts">
-	import { api, ApiError, type Agent, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Agent, type Board, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
 	import { Switch } from '$lib/components/ui/switch/index.js'
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
-	import { STATUSES, fromLocalInput, statusLabel, toLocalInput } from '$lib/format'
+	import { columnsOf, statusLabel } from '$lib/boards'
+	import GuardFields from '$lib/components/GuardFields.svelte'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
+	import { fromLocalInput, toLocalInput } from '$lib/format'
 	import { MINUTE_INTERVALS, REPEAT_KINDS, WEEKDAYS, defaultRecurrence, describeRecurrence, describeSchedule, fromCron, toCron, type RepeatKind, type Recurrence } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
 	import { onMount, untrack } from 'svelte'
@@ -19,6 +22,7 @@
 	let {
 		projectId,
 		task,
+		board,
 		defaultStatus,
 		defs,
 		timezone,
@@ -28,6 +32,8 @@
 	}: {
 		projectId: number
 		task: Task | null
+		/** the board a new task is created on */
+		board: Board
 		defaultStatus: TaskStatus
 		defs: PropertyDef[]
 		timezone: string
@@ -49,10 +55,13 @@
 		runWith: task?.agent_id ? `agent:${task.agent_id}` : (task?.harness ?? ''),
 		workflowId: task?.workflow_id ? String(task.workflow_id) : '',
 		properties: { ...(task?.properties ?? {}) } as Record<string, PropertyValue>,
+		cooldown: task?.cooldown_seconds ?? null,
+		hops: task?.max_hops ?? null,
 	}))
 
 	let title = $state(initial.title)
 	let description = $state(initial.description)
+	const columns = $derived(columnsOf(board))
 	let status = $state<TaskStatus>(initial.status)
 	let kind = $state<ScheduleKind>(initial.kind)
 	// The repeat rule is edited as a sentence ("every weekday at 09:00"). A task whose stored schedule cannot be
@@ -74,6 +83,8 @@
 		repeat = { ...repeat, days: has ? repeat.days.filter((d) => d !== n) : [...repeat.days, n] }
 	}
 	let runAt = $state(initial.runAt)
+	let cooldown = $state<number | null>(initial.cooldown)
+	let hops = $state<number | null>(initial.hops)
 	let review = $state(initial.review)
 	// "Run with" is one choice: a kind of run, or one of the project's agents
 	let runWith = $state<string>(initial.runWith)
@@ -134,11 +145,14 @@
 						title,
 						description,
 						status,
+						board_id: board.id,
 						properties,
 						review_on_success: review,
 						harness,
 						workflow_id: harness === 'workflow' ? Number(workflowId) : null,
 						agent_id: agentId,
+						cooldown_seconds: cooldown,
+						max_hops: hops,
 						...schedule,
 					})
 				)
@@ -151,6 +165,8 @@
 					harness,
 					workflow_id: harness === 'workflow' ? Number(workflowId) : null,
 					agent_id: agentId,
+					cooldown_seconds: cooldown,
+					max_hops: hops,
 				}
 				if (status !== task.status) patch.status = status
 				if (scheduleChanged) Object.assign(patch, schedule)
@@ -225,15 +241,15 @@
 	<div class="grid gap-2">
 		<Label>Status</Label>
 		<Select.Root type="single" bind:value={status} disabled={running}>
-			<Select.Trigger class="w-full">{statusLabel(status)}</Select.Trigger>
+			<Select.Trigger class="w-full">{statusLabel(status, board)}</Select.Trigger>
 			<Select.Content>
-				{#each STATUSES.filter((s) => s.id !== 'running') as s (s.id)}
-					<Select.Item value={s.id} label={s.label}>{s.label}</Select.Item>
+				{#each columns.filter((s) => s.id !== 'running') as s (s.id)}
+					<Select.Item value={s.id} label={s.label}><StatusIcon status={s.id} icon={s.icon} class="size-4 text-muted-foreground" />{s.label}</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>
 		<p class="text-xs text-muted-foreground">
-			{running ? 'A cell is working on this task. Cancel it to change the status.' : STATUSES.find((s) => s.id === status)?.hint}
+			{running ? 'A cell is working on this task. Cancel it to change the status.' : columns.find((s) => s.id === status)?.hint}
 		</p>
 		<div class="flex items-center justify-between gap-3 pt-2">
 			<div>
@@ -389,4 +405,13 @@
 			{/each}
 		</fieldset>
 	{/if}
+
+	<details class="rounded-lg border p-3" open={initial.cooldown !== null || initial.hops !== null}>
+		<summary class="cursor-pointer px-1 text-sm font-medium">Automation guard</summary>
+		<p class="mt-2 mb-3 text-xs text-muted-foreground">
+			Keeps workflows from moving this task around for ever. Leave a box empty to follow the project's values.
+			{#if task && task.hops > 0}Workflows have handled this task {task.hops} {task.hops === 1 ? 'time' : 'times'} in a row.{/if}
+		</p>
+		<GuardFields bind:cooldown bind:hops prefix="task" fallback="the project" />
+	</details>
 </form>

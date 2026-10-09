@@ -1,11 +1,13 @@
+import re
 from datetime import datetime
 from typing import Any, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from .automation import AutomationOverrides
 from .models import AttemptStatus, ScheduleKind, TaskStatus
 from .profiles import ProfileOverrides
-from .properties import PropertyDef
+from .properties import HEX_COLOR, PropertyDef
 from .scheduling import validate_cron
 
 
@@ -103,11 +105,26 @@ class AcceptInviteIn(BaseModel):
 
 # projects
 
+_ICON_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def _icon(v: str | None) -> str | None:
+    """A Lucide icon name such as "folder-kanban", or empty for the default. Whether the name exists is up to the
+    interface, which falls back to the default icon for one it does not know."""
+    if v is None:
+        return None
+    if v and not _ICON_NAME.match(v):
+        raise ValueError("An icon is named like 'folder-kanban'")
+    return v
+
 
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    purpose: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=2000)
+    icon: str = Field(default="", max_length=40)
     cell_profile: ProfileOverrides | None = None  # overrides of the global cell defaults
+    automation: AutomationOverrides | None = None  # overrides of the global automation guard
 
     @field_validator("name")
     @classmethod
@@ -116,12 +133,19 @@ class ProjectIn(BaseModel):
             raise ValueError("Name cannot be empty")
         return v
 
+    _check_icon = field_validator("icon")(_icon)
+
 
 class ProjectPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    purpose: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
+    icon: str | None = Field(default=None, max_length=40)
     properties: list[PropertyDef] | None = None
     cell_profile: ProfileOverrides | None = None  # sent as null: back to the global defaults
+    automation: AutomationOverrides | None = None  # sent as null: back to the global guard
+
+    _check_icon = field_validator("icon")(_icon)
 
 
 class ProjectOut(BaseModel):
@@ -129,15 +153,143 @@ class ProjectOut(BaseModel):
 
     id: int
     name: str
+    purpose: str
     description: str
+    icon: str
     properties: list[PropertyDef]
     cell_profile: dict[str, Any] | None
+    automation: dict[str, Any] | None
     created_at: datetime
 
 
 class ProjectSummary(ProjectOut):
     task_counts: dict[str, int]
     next_run_at: datetime | None
+
+
+# workspaces and boards
+
+
+def _name(v: str) -> str:
+    if not (v := v.strip()):
+        raise ValueError("Name cannot be empty")
+    return v
+
+
+def _color(v: str | None) -> str | None:
+    if v is not None and not HEX_COLOR.match(v):
+        raise ValueError(f"'{v}' is not a colour like #3b82f6")
+    return v.lower() if v else v
+
+
+class WorkspaceIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    purpose: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=5000)
+    icon: str = Field(default="", max_length=40)
+
+    _strip_name = field_validator("name")(_name)
+    _check_icon = field_validator("icon")(_icon)
+
+
+class WorkspacePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    purpose: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    icon: str | None = Field(default=None, max_length=40)
+    position: float | None = None
+
+    _check_icon = field_validator("icon")(_icon)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        return None if v is None else _name(v)
+
+
+class BoardIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    purpose: str = Field(default="", max_length=200)
+
+    _strip_name = field_validator("name")(_name)
+
+
+class BoardPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    purpose: str | None = Field(default=None, max_length=200)
+    position: float | None = None
+    workspace_id: int | None = None  # move the board to another workspace of the project
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        return None if v is None else _name(v)
+
+
+class StatusIn(BaseModel):
+    """A new custom status for a board."""
+
+    name: str = Field(min_length=1, max_length=40)
+    color: str | None = None
+    index: int | None = Field(default=None, ge=0)  # where among the columns; left out: at the end
+    icon: str = Field(default="box", max_length=40)
+    description: str = Field(default="", max_length=300)  # what it is for, shown in its tooltip
+
+    _strip_name = field_validator("name")(_name)
+    _check_color = field_validator("color")(_color)
+    _check_icon = field_validator("icon")(_icon)
+
+
+class StatusPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    color: str | None = None  # sent as null: no colour
+    index: int | None = Field(default=None, ge=0)
+    icon: str | None = Field(default=None, max_length=40)  # empty: the default icon
+    description: str | None = Field(default=None, max_length=300)
+
+    _check_icon = field_validator("icon")(_icon)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        return None if v is None else _name(v)
+
+    _check_color = field_validator("color")(_color)
+
+
+class ColumnOut(BaseModel):
+    """One column of a board: a built-in status or a custom one (see app/boards.py)."""
+
+    key: str  # "ready", or "custom:12"
+    name: str
+    builtin: bool
+    color: str | None = None  # custom statuses only; built-ins have their own colors in the interface
+    icon: str = ""  # custom statuses only: a Lucide icon name
+    description: str = ""  # custom statuses only: what it is for
+
+
+class BoardOut(BaseModel):
+    id: int
+    project_id: int
+    workspace_id: int
+    name: str
+    purpose: str
+    position: float
+    columns: list[ColumnOut]
+    task_counts: dict[str, int]  # tasks per status key, for summaries
+    created_at: datetime
+
+
+class WorkspaceOut(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    purpose: str
+    description: str
+    icon: str
+    position: float
+    created_at: datetime
+    boards: list[BoardOut]
 
 
 # tasks
@@ -166,12 +318,16 @@ def check_schedule(
 class TaskIn(_ScheduleFields):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20_000)
-    status: TaskStatus = TaskStatus.BACKLOG
+    status: str = TaskStatus.BACKLOG  # a built-in status, or "custom:<id>" of the board (checked against it)
+    board_id: int | None = None  # left out: the project's first board
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
     harness: Literal["", "codex", "workflow"] = ""
     workflow_id: int | None = None  # the workflow to play when harness is "workflow"
     agent_id: int | None = None  # the agent that does it; its harness replaces the one above
+    # the automation guard for this task; left out: the project's (see app/automation.py)
+    cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)
+    max_hops: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("title")
     @classmethod
@@ -182,7 +338,7 @@ class TaskIn(_ScheduleFields):
 
     @field_validator("status")
     @classmethod
-    def not_running(cls, v: TaskStatus) -> TaskStatus:
+    def not_running(cls, v: str) -> str:
         if v == TaskStatus.RUNNING:
             raise ValueError("Tasks start running through the scheduler (use 'Run now')")
         return v
@@ -193,10 +349,29 @@ class TaskIn(_ScheduleFields):
         return self
 
 
+class MoveIn(BaseModel):
+    """Send a task to a board (and a status on it)."""
+
+    board_id: int
+    status: str | None = None  # left out: the same status when the board has it, else Backlog
+    position: float | None = None  # left out: the end of the column
+
+
+class SpawnIn(BaseModel):
+    """Create a follow-up of a task on a board."""
+
+    board_id: int
+    title: str | None = Field(
+        default=None, min_length=1, max_length=200
+    )  # left out: "Follow-up: <its title>"
+    description: str = Field(default="", max_length=20_000)
+    status: str | None = None  # left out: Backlog
+
+
 class TaskPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=20_000)
-    status: TaskStatus | None = None
+    status: str | None = None
     position: float | None = None
     properties: dict[str, Any] | None = None
     schedule_kind: ScheduleKind | None = None
@@ -206,10 +381,12 @@ class TaskPatch(BaseModel):
     harness: Literal["", "codex", "workflow"] | None = None
     workflow_id: int | None = None
     agent_id: int | None = None
+    cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)  # sent as null: the project's
+    max_hops: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("status")
     @classmethod
-    def not_running(cls, v: TaskStatus | None) -> TaskStatus | None:
+    def not_running(cls, v: str | None) -> str | None:
         if v == TaskStatus.RUNNING:
             raise ValueError("Tasks start running through the scheduler (use 'Run now')")
         return v
@@ -222,7 +399,7 @@ class TaskSnapshot(BaseModel):
 
     title: str
     description: str
-    status: TaskStatus
+    status: str
     properties: dict[str, Any]
     schedule_kind: ScheduleKind
     cron: str | None
@@ -240,6 +417,10 @@ class ProjectEventOut(BaseModel):
     kind: str
     title: str
     actor: str
+    cause: str
+    workspace_id: int | None
+    board_id: int | None
+    task_id: int | None
     data: dict[str, Any]
     created_at: datetime
 
@@ -258,9 +439,11 @@ class TaskOut(BaseModel):
 
     id: int
     project_id: int
+    board_id: int
+    origin_task_id: int | None  # the task this one was spawned from
     title: str
     description: str
-    status: TaskStatus
+    status: str
     position: float
     properties: dict[str, Any]
     schedule_kind: ScheduleKind
@@ -272,6 +455,9 @@ class TaskOut(BaseModel):
     harness: str
     workflow_id: int | None
     agent_id: int | None
+    hops: int  # how many times in a row automation moved or made this task
+    cooldown_seconds: int | None
+    max_hops: int | None
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None

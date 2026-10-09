@@ -76,6 +76,9 @@ class AppSettings(BaseModel):
     # A Ready task starts only this long after it last changed (was moved to Ready, or its previous run ended). It
     # keeps a task that keeps putting itself back, or a workflow that keeps creating tasks, from hammering the machine.
     start_cooldown_seconds: int = Field(default_factory=lambda: DEFAULT_START_COOLDOWN_SECONDS, ge=0, le=3600)
+    # How many times automation (workflows) may move or make the same task in a row before it is stopped. A project
+    # and a single task can set their own limit (see app/automation.py).
+    max_automation_hops: int = Field(default=10, ge=1, le=100)
     mount_roots: list[MountRoot] = []  # folders cells may be given, see app/volumes.py
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
     codex_model: str = "gpt-6-luna"

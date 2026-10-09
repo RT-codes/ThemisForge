@@ -21,11 +21,13 @@ It runs on a machine you own (a small VM is plenty) and is operated from the bro
 
 Nothing here depends on you being logged in. Close the browser and the schedule keeps running.
 
-## The four things to know
+## The things to know
 
 | Concept | What it is |
 | --- | --- |
-| **Project** | The container for one system: its tasks, schedule and workspace folder. |
+| **Project** | The container for one system: its tasks, schedule, agents and shared folders. |
+| **Workspace** | A named area of a project, such as research or publishing. It holds one or more boards. A new project has one, called Main. |
+| **Board** | A Kanban with its own statuses. A workspace can hold several; every task lives on one board. |
 | **Task** | A durable piece of work with a status, an optional schedule and your own custom properties. |
 | **Attempt** | One execution of a task. A recurring task has many attempts, each with its own log and result. |
 | **Cell** | The short-lived container an attempt runs in. Created per attempt, removed afterwards. |

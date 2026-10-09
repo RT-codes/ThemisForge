@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, type Agent, type CellDefaults, type ProfileOverrides, type Project, type Volume } from '$lib/api'
+	import { api, type Workspace, type Agent, type CellDefaults, type ProfileOverrides, type Project, type Volume } from '$lib/api'
+	import { boardChoices, customStatusChoices, whereChoices } from '$lib/boards'
 	import { effectiveCell } from '$lib/cell'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
@@ -47,7 +48,14 @@
 	let project = $state<Project | null>(null)
 	let defaults = $state<CellDefaults | null>(null)
 	let volumes = $state<Volume[]>([])
+	// Trigger and Task steps pick statuses and boards of the project: the seven built-in statuses plus the custom ones
+	// (each belongs to one board), and the boards themselves
+	let workspaces = $state<Workspace[]>([])
+	let boardsLoaded = $state(false)
 	onMount(async () => {
+		if (data.kind === 'trigger' || data.kind === 'task') {
+			api.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
+		}
 		if (data.kind === 'agent' || data.kind === 'volume') api.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
 		if (data.kind !== 'agent') return
 		try {
@@ -91,12 +99,21 @@
 			? [...(f.options ?? []), ...agents.map((a) => ({ value: String(a.id), label: a.name }))]
 			: f.key === 'volumeId'
 				? [...(f.options ?? []), ...volumes.map((v) => ({ value: String(v.id), label: `/workspace/${v.name}` }))]
-				: (f.options ?? [])
+				: f.key === 'status'
+					? [...(f.options ?? []), ...customStatusChoices(workspaces, chosenBoardId)]
+					: f.key === 'boardId'
+						? [...(f.options ?? []), ...boardChoices(workspaces)]
+						: f.key === 'where'
+							? [...(f.options ?? []), ...whereChoices(workspaces)]
+							: (f.options ?? [])
 	function labelOf(f: FieldDef): string {
 		const value = data.config[f.key]
 		const found = optionsOf(f).find((o) => o.value === value)
 		if (found) return found.label
 		if (f.key === 'agentId' && agentsLoaded) return 'An agent that was deleted'
+		if (f.key === 'status' && boardsLoaded && value?.startsWith('custom:')) return 'A status that was deleted'
+		if (f.key === 'boardId' && boardsLoaded && value) return 'A board that was deleted'
+		if (f.key === 'where' && boardsLoaded && value) return 'A workspace or board that was deleted'
 		return f.key === 'volumeId' && volumes.length ? 'A folder that was removed' : ''
 	}
 
@@ -110,6 +127,12 @@
 	const volumeName = (volumeId: number) => volumes.find((v) => v.id === volumeId)?.name
 	// open from the start when the node already has settings in there; after that it stays as the person left it
 	let advancedOpen = $state(untrack(() => cell !== null || advancedFields.some((f) => (data.config[f.key] ?? '') !== '')))
+	// a Task step on a chosen board, or a Trigger on one board, only offers that board's own statuses
+	const chosenBoardId = $derived.by(() => {
+		const wanted = data.kind === 'trigger' ? (data.config.where ?? '').replace(/^b:/, '') : (data.config.boardId ?? '')
+		const isBoard = data.kind !== 'trigger' || (data.config.where ?? '').startsWith('b:')
+		return isBoard && /^\d+$/.test(wanted) ? Number(wanted) : null
+	})
 	const chosenAgent = $derived(agents.find((a) => String(a.id) === data.config.agentId))
 	const inheritedCell = $derived(defaults ? effectiveCell(defaults, project?.cell_profile, chosenAgent?.cell_profile) : null)
 </script>

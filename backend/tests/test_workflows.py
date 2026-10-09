@@ -1,34 +1,11 @@
 import asyncio
 
-import pytest
 from sqlalchemy import select
 
 from app.codex import save_auth
-from app.main import app
 from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
-from app.workflows import WorkflowRunner
 from tests.conftest import login, make_project, make_task, register
 from tests.test_harness import fake_auth
-
-
-@pytest.fixture
-async def runner(maker, scheduler):
-    """The workflow engine, with a background pump standing in for the scheduler loop."""
-    r = WorkflowRunner(maker, lambda: app.state.scheduler)
-    r.POLL_SECONDS = 0.02
-    app.state.workflows = r
-    scheduler.workflows = r
-
-    async def pump():
-        while True:
-            await scheduler.tick()
-            await asyncio.sleep(0.02)
-
-    pumper = asyncio.create_task(pump())
-    yield r
-    pumper.cancel()
-    await r.shutdown()
-    await asyncio.gather(pumper, return_exceptions=True)
 
 
 def node(id: str, kind: str, label: str = "", **config) -> dict:
@@ -693,7 +670,10 @@ async def test_the_board_can_see_what_watches_a_status_and_which_run_a_task_star
     )
     manual = await make_workflow(client, pid, "By hand")
     summaries = {w["id"]: w for w in (await client.get(f"/api/projects/{pid}/workflows")).json()}
-    assert summaries[wid]["watches"] == ["review"] and summaries[manual]["watches"] == []
+    assert (
+        summaries[wid]["watches"] == [{"status": "review", "where": ""}]
+        and summaries[manual]["watches"] == []
+    )
 
     task = await make_task(client, pid, title="Ticket", status="backlog")
     await client.patch(f"/api/tasks/{task['id']}", json={"status": "review"})
@@ -724,3 +704,47 @@ async def test_a_task_shows_the_run_it_started_while_it_is_going(client, runner,
         while not (current := (await client.get(f"/api/tasks/{task['id']}")).json()["workflow_run"]):
             await asyncio.sleep(0.01)
     assert current["workflow_id"] == wid and current["workflow_name"] == "Flow"
+
+
+async def test_a_task_node_can_create_a_task_in_a_boards_custom_status(client, runner):
+    _, pid = await setup(client)
+    [workspace] = (await client.get(f"/api/projects/{pid}/workspaces")).json()
+    board = workspace["boards"][0]
+    added = await client.post(f"/api/boards/{board['id']}/statuses", json={"name": "Parked"})
+    key = added.json()["columns"][-1]["key"]
+
+    detail = await run(
+        client,
+        pid,
+        [node("s", "start"), node("t", "task", title="Later", status=key)],
+        [edge("s", "t")],
+    )
+    assert detail["status"] == "succeeded"
+    [task] = (await client.get(f"/api/projects/{pid}/tasks")).json()
+    assert (task["status"], task["board_id"]) == (key, board["id"])
+
+    gone = await client.delete(f"/api/boards/{board['id']}/statuses/{key.removeprefix('custom:')}")
+    assert gone.status_code == 200
+    failed = await run(
+        client,
+        pid,
+        [node("s", "start"), node("t", "task", title="Again", status=key)],
+        [edge("s", "t")],
+    )
+    assert failed["status"] == "failed" and "not a status of this project" in by_id(failed)["t"]["error"]
+
+
+async def test_a_task_arriving_on_a_board_in_the_trigger_status_starts_the_workflow(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(client, wid, [status_trigger("review"), node("e", "end")], [edge("t", "e")])
+    [workspace] = (await client.get(f"/api/projects/{pid}/workspaces")).json()
+    other = (await client.post(f"/api/workspaces/{workspace['id']}/boards", json={"name": "QA"})).json()
+    task = await make_task(client, pid, status="backlog")
+    await client.post(f"/api/tasks/{task['id']}/move", json={"board_id": other["id"]})
+    assert await runs_of(client, wid) == []  # still in the Backlog
+
+    parked = await make_task(client, pid, status="review")
+    await wait_for_runs(client, wid, 1)  # created in Review
+    await client.post(f"/api/tasks/{parked['id']}/move", json={"board_id": other["id"]})
+    assert len(await wait_for_runs(client, wid, 2)) == 2  # the same status, but on a new board

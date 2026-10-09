@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, watchersByStatus, type NodeKind } from './workflow.ts'
+import { seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -10,7 +10,7 @@ test('every kind has fields, and every select has options', () => {
 })
 
 test('defaults: selects start on the first option, text starts empty', () => {
-  assert.deepEqual(defaultConfig('trigger'), { type: 'manual', repeat: 'day', time: '09:00', status: 'backlog' })
+  assert.deepEqual(defaultConfig('trigger'), { type: 'manual', repeat: 'day', time: '09:00', status: 'backlog', where: '' })
   assert.equal(defaultConfig('task').title, '')
 })
 
@@ -19,7 +19,9 @@ test('fields appear only when they apply', () => {
   assert.deepEqual(keys('trigger', { type: 'manual' }), ['type'])
   assert.deepEqual(keys('trigger', { type: 'schedule' }), ['type', 'repeat', 'time'])
   assert.deepEqual(keys('task', { action: 'run' }), ['action', 'title'])
-  assert.deepEqual(keys('task', { action: 'create' }), ['action', 'title', 'description', 'status'])
+  assert.deepEqual(keys('trigger', { type: 'task_status' }), ['type', 'status', 'where'])
+  assert.deepEqual(keys('task', { action: 'create' }), ['action', 'title', 'description', 'status', 'boardId', 'link'])
+  assert.deepEqual(keys('task', { action: 'move_trigger' }), ['action', 'status', 'boardId'])
   assert.deepEqual(keys('condition', { operator: 'empty' }), ['source', 'operator'])
 })
 
@@ -34,6 +36,7 @@ test('summaries read well', () => {
   assert.equal(summary('trigger', { type: 'schedule', repeat: 'weekdays', time: '08:30' }), 'Every weekday at 08:30')
   assert.equal(summary('task', { ...defaultConfig('task'), title: 'Write report' }), 'Create a task: Write report')
   assert.equal(summary('trigger', { type: 'task_status', status: 'review' }), 'A task moves into Review')
+  assert.equal(summary('trigger', { type: 'task_status', status: 'custom:12' }), 'A task moves into a custom status')
   assert.equal(summary('task', { ...defaultConfig('task'), action: 'move_trigger', status: 'done' }), 'Move that task to Done')
   assert.equal(summary('agent', { ...defaultConfig('agent'), instructions: ' Fix it\nthen test ' }), 'Fix it')
   assert.equal(summary('condition', { source: 'result', operator: 'contains', value: 'ok' }), 'The previous result contains ok')
@@ -165,11 +168,27 @@ test('the folder points survive saving and loading a graph', () => {
 
 test('a status lists the workflows that start when a task moves into it', () => {
   const by = watchersByStatus([
-    { id: 1, name: 'Triage', watches: ['backlog'] },
+    { id: 1, name: 'Triage', watches: [{ status: 'backlog', where: '' }] },
     { id: 2, name: 'By hand', watches: [] },
-    { id: 3, name: 'Both', watches: ['backlog', 'review'] },
+    { id: 3, name: 'Both', watches: [{ status: 'backlog', where: '' }, { status: 'review', where: '' }] },
   ])
   assert.deepEqual(by.backlog, [{ id: 1, name: 'Triage' }, { id: 3, name: 'Both' }])
   assert.deepEqual(by.review, [{ id: 3, name: 'Both' }])
   assert.equal(by.done, undefined)
+})
+
+test('a trigger that watches one board or workspace only counts on that board', () => {
+  const board = { id: 5, workspace_id: 2 }
+  assert.equal(coversBoard('', board), true)
+  assert.equal(coversBoard('b:5', board), true)
+  assert.equal(coversBoard('b:6', board), false)
+  assert.equal(coversBoard('w:2', board), true)
+  assert.equal(coversBoard('w:3', board), false)
+  const flows = [
+    { id: 1, name: 'Anywhere', watches: [{ status: 'done', where: '' }] },
+    { id: 2, name: 'Here', watches: [{ status: 'done', where: 'b:5' }, { status: 'done', where: 'w:2' }] },
+    { id: 3, name: 'Elsewhere', watches: [{ status: 'done', where: 'b:9' }] },
+  ]
+  assert.deepEqual(watchersByStatus(flows, board).done, [{ id: 1, name: 'Anywhere' }, { id: 2, name: 'Here' }])
+  assert.equal(watchersByStatus(flows).done?.length, 3) // without a board, everything counts
 })

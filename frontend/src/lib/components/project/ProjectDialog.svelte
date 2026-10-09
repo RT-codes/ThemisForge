@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { api, ApiError, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
 	import CellChoice from '$lib/components/CellChoice.svelte'
+	import GuardFields from '$lib/components/GuardFields.svelte'
+	import IconField from '$lib/components/IconField.svelte'
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -15,8 +18,12 @@
 	}: { open: boolean; project?: Project | null; onsaved: (project: Project) => void } = $props()
 
 	let name = $state('')
+	let purpose = $state('')
 	let description = $state('')
+	let icon = $state('')
 	let profile = $state<ProfileOverrides | null>(null)
+	let cooldown = $state<number | null>(null)
+	let hops = $state<number | null>(null)
 	let formVersion = $state(0) // bumped each time the dialog opens, so the cell control starts from this project
 	let defaults = $state<CellDefaults | null>(null)
 	let error = $state('')
@@ -25,8 +32,12 @@
 	$effect(() => {
 		if (open) {
 			name = project?.name ?? ''
+			purpose = project?.purpose ?? ''
 			description = project?.description ?? ''
+			icon = project?.icon ?? ''
 			profile = project?.cell_profile ? { ...project.cell_profile } : null
+			cooldown = project?.automation?.start_cooldown_seconds ?? null
+			hops = project?.automation?.max_hops ?? null
 			untrack(() => formVersion++)
 			error = ''
 			api.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
@@ -39,8 +50,8 @@
 		saving = true
 		try {
 			const saved = project
-				? await api.updateProject(project.id, { name, description, cell_profile: profile })
-				: await api.createProject(name, description, profile)
+				? await api.updateProject(project.id, { name, purpose, description, icon, cell_profile: profile, automation: cooldown === null && hops === null ? null : { start_cooldown_seconds: cooldown, max_hops: hops } })
+				: await api.createProject({ name, purpose, description, icon, cell_profile: profile })
 			onsaved(saved)
 			open = false
 		} catch (err) {
@@ -56,13 +67,21 @@
 		<Dialog.Header>
 			<Dialog.Title>{project ? 'Edit project' : 'New project'}</Dialog.Title>
 			<Dialog.Description>
-				{project ? 'Rename the project or change what it is about.' : 'A project is one agentic system: its tasks, schedules and workspace.'}
+				{project ? 'Rename the project or change what it is about.' : 'A project is one agentic system: its tasks, boards and schedules.'}
 			</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={save} class="grid gap-4">
 			<div class="grid gap-2">
+				<Label>Icon</Label>
+				<IconField bind:value={icon} fallback={FolderKanbanIcon} />
+			</div>
+			<div class="grid gap-2">
 				<Label for="project-name">Name</Label>
 				<Input id="project-name" bind:value={name} required maxlength={100} placeholder="e.g. Market research" />
+			</div>
+			<div class="grid gap-2">
+				<Label for="project-purpose">What it is for</Label>
+				<Input id="project-purpose" bind:value={purpose} maxlength={200} placeholder="One line, e.g. Find out what customers want" />
 			</div>
 			<div class="grid gap-2">
 				<Label for="project-desc">Description</Label>
@@ -81,6 +100,13 @@
 					/>
 				{/key}
 			</div>
+			{#if project}
+				<div class="grid gap-2">
+					<Label>Automation guard</Label>
+					<p class="-mt-1 text-xs text-muted-foreground">Keeps workflows from moving the same task around for ever. Empty boxes use the values from Settings; a single task can set its own.</p>
+					<GuardFields bind:cooldown bind:hops prefix="project" fallback="Settings" />
+				</div>
+			{/if}
 			{#if error}
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
 			{/if}

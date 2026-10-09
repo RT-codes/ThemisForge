@@ -5,12 +5,14 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import boards
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import (
     Agent,
     Attempt,
     AttemptStatus,
+    Board,
     NodeStatus,
     Project,
     ProjectEvent,
@@ -117,13 +119,6 @@ async def _running_workflow_runs(session: AsyncSession, task_ids: list[int]) -> 
     }
 
 
-async def _next_position(session: AsyncSession, project_id: int, status_: str) -> float:
-    top = await session.scalar(
-        select(func.max(Task.position)).where(Task.project_id == project_id, Task.status == status_)
-    )
-    return (top or 0.0) + 1.0
-
-
 def _bad(detail: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
 
@@ -186,11 +181,16 @@ async def create_project(body: ProjectIn, session: SessionDep, user: CurrentUser
     project = Project(
         owner_id=user.id,
         name=body.name,
+        purpose=body.purpose,
         description=body.description,
+        icon=body.icon,
         properties=[],
         cell_profile=body.cell_profile.clean() if body.cell_profile else None,
+        automation=body.automation.clean() if body.automation else None,
     )
     session.add(project)
+    await session.flush()
+    await boards.create_defaults(session, project.id)  # every project has a board to put tasks on
     await session.commit()
     return project
 
@@ -207,10 +207,16 @@ async def update_project(
     project = await _project(session, project_id, user)
     if body.name is not None:
         project.name = body.name.strip() or project.name
+    if body.purpose is not None:
+        project.purpose = body.purpose
     if body.description is not None:
         project.description = body.description
+    if body.icon is not None:
+        project.icon = body.icon
     if "cell_profile" in body.model_fields_set:
         project.cell_profile = body.cell_profile.clean() if body.cell_profile else None
+    if "automation" in body.model_fields_set:
+        project.automation = body.automation.clean() if body.automation else None
     if body.properties is not None:
         try:
             project.properties = validate_definitions(body.properties)
@@ -236,14 +242,17 @@ async def delete_project(project_id: int, session: SessionDep, user: CurrentUser
 
 
 @router.get("/projects/{project_id}/tasks", response_model=list[TaskOut])
-async def list_tasks(project_id: int, session: SessionDep, user: CurrentUser) -> list[TaskOut]:
+async def list_tasks(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    board_id: Annotated[int | None, Query(description="Only the tasks of this board")] = None,
+) -> list[TaskOut]:
     await _project(session, project_id, user)
-    tasks = (
-        await session.scalars(
-            select(Task).where(Task.project_id == project_id).order_by(Task.position, Task.id)
-        )
-    ).all()
-    return await _task_out(session, list(tasks))
+    query = select(Task).where(Task.project_id == project_id).order_by(Task.position, Task.id)
+    if board_id is not None:
+        query = query.where(Task.board_id == board_id)
+    return await _task_out(session, list((await session.scalars(query)).all()))
 
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -255,18 +264,30 @@ async def create_task(
         props = clean_values(project.properties, body.properties)
     except ValueError as e:
         raise _bad(str(e)) from None
+    try:
+        board = (
+            await boards.project_board(session, project.id, body.board_id)
+            if body.board_id is not None
+            else await boards.default_board(session, project.id)
+        )
+        boards.check_status(board, body.status)
+    except boards.BoardError as e:
+        raise _bad(str(e)) from None
     task = Task(
         project_id=project.id,
+        board_id=board.id,
         title=body.title,
         description=body.description,
         status=body.status,
-        position=await _next_position(session, project.id, body.status),
+        position=await boards.next_position(session, board.id, body.status),
         properties=props,
         schedule_kind=body.schedule_kind,
         cron=body.cron,
         run_at=body.run_at,
         review_on_success=body.review_on_success,
         harness=body.harness,
+        cooldown_seconds=body.cooldown_seconds,
+        max_hops=body.max_hops,
         workflow_id=await _workflow_for(session, project.id, body.harness, body.workflow_id),
     )
     if body.agent_id is not None:
@@ -274,6 +295,8 @@ async def create_task(
         task.agent_id, task.harness, task.workflow_id = agent.id, agent.harness, None
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     session.add(task)
+    await session.flush()
+    boards.record_new_task(session, task, board, user.name)
     await session.commit()
     if task.status == TaskStatus.READY:
         request.app.state.scheduler.wake()
@@ -315,6 +338,10 @@ async def update_task(
         wanted = body.workflow_id if "workflow_id" in fields else task.workflow_id
         task.harness = harness
         task.workflow_id = await _workflow_for(session, project.id, harness, wanted)
+    if "cooldown_seconds" in fields:  # null puts the project's value back
+        task.cooldown_seconds = body.cooldown_seconds
+    if "max_hops" in fields:
+        task.max_hops = body.max_hops
     if "agent_id" in fields:
         task.agent_id = (
             None if body.agent_id is None else (await _agent_for(session, project.id, body.agent_id)).id
@@ -325,10 +352,17 @@ async def update_task(
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:
-        task.status = body.status
+        board = await session.get(Board, task.board_id)
+        try:
+            boards.check_status(board, body.status)
+        except boards.BoardError as e:
+            raise _bad(str(e)) from None
+        was, task.status = task.status, body.status
+        task.hops = 0  # a person took it from here: automation counts again from nothing
+        boards.record_status_change(session, task, board, user.name, was)
         reschedule = True
         if "position" not in fields:
-            task.position = await _next_position(session, project.id, body.status)
+            task.position = await boards.next_position(session, task.board_id, body.status)
     if fields & {"schedule_kind", "cron", "run_at"}:
         kind = body.schedule_kind if "schedule_kind" in fields and body.schedule_kind else task.schedule_kind
         cron = body.cron if "cron" in fields else task.cron
@@ -354,14 +388,13 @@ async def delete_task(task_id: int, session: SessionDep, user: CurrentUser) -> N
     if task.status == TaskStatus.RUNNING:
         raise HTTPException(status.HTTP_409_CONFLICT, "This task is running. Cancel it first.")
     # the history keeps its own copy, so a deleted task can still be looked at (and put back by hand) afterwards
-    session.add(
-        ProjectEvent(
-            project_id=task.project_id,
-            kind="task_deleted",
-            title=task.title,
-            actor=user.name,
-            data=TaskSnapshot.model_validate(task).model_dump(mode="json"),
-        )
+    boards.record_task(
+        session,
+        "task_deleted",
+        task,
+        user.name,
+        await session.get(Board, task.board_id),
+        TaskSnapshot.model_validate(task).model_dump(mode="json"),
     )
     await session.delete(task)
     await session.commit()
@@ -372,18 +405,37 @@ async def project_history(
     project_id: int,
     session: SessionDep,
     user: CurrentUser,
-    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    before: Annotated[int | None, Query(description="Only events older than this id (the next page)")] = None,
+    workspace_id: int | None = None,
+    board_id: int | None = None,
+    task_id: int | None = None,
+    kind: Annotated[list[str] | None, Query(description="Only these kinds of event")] = None,
 ) -> list[ProjectEvent]:
-    """What was done to the project, newest first."""
+    """What was done to the project, newest first, optionally only what concerns one workspace, board or task. A task
+    that left a board is part of that board's history too, and a follow-up is part of the history of its origin."""
     await _project(session, project_id, user)
-    return list(
-        await session.scalars(
-            select(ProjectEvent)
-            .where(ProjectEvent.project_id == project_id)
-            .order_by(ProjectEvent.id.desc())
-            .limit(limit)
+    query = select(ProjectEvent).where(ProjectEvent.project_id == project_id)
+    if before is not None:
+        query = query.where(ProjectEvent.id < before)
+    if kind:
+        query = query.where(ProjectEvent.kind.in_(kind))
+    if workspace_id is not None:
+        query = query.where(
+            (ProjectEvent.workspace_id == workspace_id)
+            | (func.json_extract(ProjectEvent.data, "$.from.workspace_id") == workspace_id)
         )
-    )
+    if board_id is not None:
+        query = query.where(
+            (ProjectEvent.board_id == board_id)
+            | (func.json_extract(ProjectEvent.data, "$.from.board_id") == board_id)
+        )
+    if task_id is not None:
+        query = query.where(
+            (ProjectEvent.task_id == task_id)
+            | (func.json_extract(ProjectEvent.data, "$.origin.task_id") == task_id)
+        )
+    return list(await session.scalars(query.order_by(ProjectEvent.id.desc()).limit(limit)))
 
 
 @router.post("/tasks/{task_id}/run", response_model=TaskOut)

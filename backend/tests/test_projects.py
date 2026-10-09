@@ -159,11 +159,12 @@ async def test_deleting_a_task_is_kept_in_the_project_history(client):
     pid = (await make_project(client))["id"]
     task = await make_task(client, pid, title="Old idea", description="Maybe later", status="review")
     other = await make_task(client, pid, title="Keeper")
-    assert (await client.get(f"/api/projects/{pid}/history")).json() == []
+    history = lambda: client.get(f"/api/projects/{pid}/history", params={"kind": "task_deleted"})
+    assert (await history()).json() == []
 
     assert (await client.delete(f"/api/tasks/{task['id']}")).status_code == 204
 
-    (event,) = (await client.get(f"/api/projects/{pid}/history")).json()
+    (event,) = (await history()).json()
     assert (event["kind"], event["title"], event["actor"]) == ("task_deleted", "Old idea", "Ada")
     assert event["data"]["description"] == "Maybe later" and event["data"]["status"] == "review"
     assert (await client.get(f"/api/tasks/{other['id']}")).status_code == 200
@@ -174,3 +175,30 @@ async def test_the_history_belongs_to_the_owner_of_the_project(client):
     pid = (await make_project(client))["id"]
     await register(client, "b@b.co", "Bob")
     assert (await client.get(f"/api/projects/{pid}/history")).status_code == 404
+
+
+async def test_a_project_has_a_purpose_and_an_icon_that_can_be_changed(client):
+    await register(client)
+    project = (await client.post("/api/projects", json={"name": "P"})).json()
+    assert (project["purpose"], project["icon"]) == ("", "")
+
+    r = await client.patch(
+        f"/api/projects/{project['id']}",
+        json={"purpose": "Run the shop", "icon": "shopping-cart", "name": "Shop"},
+    )
+    assert (r.json()["name"], r.json()["purpose"], r.json()["icon"]) == (
+        "Shop",
+        "Run the shop",
+        "shopping-cart",
+    )
+    assert (await client.get("/api/projects")).json()[0][
+        "icon"
+    ] == "shopping-cart"  # the sidebar reads the list
+
+    assert (await client.patch(f"/api/projects/{project['id']}", json={"icon": ""})).json()["icon"] == ""
+    for bad in ("Shopping Cart", "../x", "x" * 41):
+        assert (
+            await client.patch(f"/api/projects/{project['id']}", json={"icon": bad})
+        ).status_code == 422, bad
+    made = await client.post("/api/projects", json={"name": "Q", "icon": "bot", "purpose": "Agents"})
+    assert (made.json()["icon"], made.json()["purpose"]) == ("bot", "Agents")

@@ -14,7 +14,19 @@ from .db import SessionLocal
 from .migrate import upgrade_database
 from .preflight import Preflight
 from .project_config import sync_all_configs
-from .routers import access, agents, auth, codex, projects, skills, system, tools, volumes, workflows
+from .routers import (
+    access,
+    agents,
+    auth,
+    codex,
+    projects,
+    skills,
+    system,
+    tools,
+    volumes,
+    workflows,
+    workspaces,
+)
 from .runlog import Trail, setup_file_logging
 from .scheduler import Scheduler
 from .updates import UpdateChecker
@@ -89,6 +101,7 @@ api = APIRouter(prefix="/api")
 api.include_router(auth.router)
 api.include_router(access.router)
 api.include_router(projects.router)
+api.include_router(workspaces.router)
 api.include_router(system.router)
 api.include_router(codex.router)
 api.include_router(workflows.router)

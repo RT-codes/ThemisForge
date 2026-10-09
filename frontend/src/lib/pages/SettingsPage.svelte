@@ -369,7 +369,12 @@
 							<div class="grid gap-2 sm:col-span-2">
 								<Label for="start-cooldown">Wait before a Ready task starts</Label>
 								<NumberField id="start-cooldown" bind:value={form.start_cooldown_seconds} unit="seconds" min={0} max={3600} />
-								<p class="text-xs text-muted-foreground">A task starts this long after it was moved to Ready or its last run ended. It stops loops from hammering the machine; 0 starts tasks right away.</p>
+								<p class="text-xs text-muted-foreground">A task starts this long after it was moved to Ready or its last run ended, and a workflow starts for a task no sooner than this after the last one did. It stops loops from hammering the machine; 0 starts right away. A project or a single task can set its own.</p>
+							</div>
+							<div class="grid gap-2 sm:col-span-2">
+								<Label for="max-hops">Most automatic moves of one task in a row</Label>
+								<NumberField id="max-hops" bind:value={form.max_automation_hops} unit="moves" min={1} max={100} />
+								<p class="text-xs text-muted-foreground">Workflows that move or make the same task over and over stop after this many, until a person acts on the task. It catches two boards that keep sending a task back and forth. A project or a single task can set its own.</p>
 							</div>
 							<div class="grid gap-2 sm:col-span-2">
 								<Label for="keep-days">Keep working folders for</Label>

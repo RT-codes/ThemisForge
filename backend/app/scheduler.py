@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .app_settings import AppSettings, load_settings
+from .automation import cooled_down
 from .budget import Cost, admit, never_fits
 from .cells import CellError, CellManager, CellResult, CellSpec, Mount
 from .codex import CodexError, lease_codex, lease_is_busy
@@ -222,7 +223,7 @@ class Scheduler:
                 Task.status == TaskStatus.READY,
                 (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
                 # cooldown: updated_at moves whenever the task changes status, including when a run ends
-                Task.updated_at <= now - timedelta(seconds=cfg.start_cooldown_seconds),
+                cooled_down(cfg, int(now.timestamp())),
             )
             order = (Task.next_run_at.asc().nulls_first(), Task.id)
             budget = cfg.budget.as_cost()
@@ -233,6 +234,7 @@ class Scheduler:
                 waiting = (
                     await s.scalars(
                         select(Task)
+                        .join(Project, Project.id == Task.project_id)
                         .where(*ready, Task.harness != "workflow")
                         .order_by(*order)
                         .limit(MAX_WAITING)
@@ -243,6 +245,7 @@ class Scheduler:
                 playing_workflows = (
                     await s.scalars(
                         select(Task)
+                        .join(Project, Project.id == Task.project_id)
                         .where(*ready, Task.harness == "workflow")
                         .order_by(*order)
                         .limit(MAX_PLAYING - playing)

@@ -1,10 +1,10 @@
 ---
-title: Cells and workspaces
+title: Cells and work folders
 group: Using Themis
 summary: What a cell is, what it can see, where files and results end up.
 ---
 
-# Cells and workspaces
+# Cells and work folders
 
 A **cell** is the short-lived container a task runs in. Themis creates one for every attempt, streams its output
 into the task history, collects its result, and removes it. Nothing persists inside a cell, which is the point:

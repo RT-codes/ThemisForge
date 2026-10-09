@@ -290,7 +290,7 @@
 		<section class="grid gap-3 border-t pt-5 first:border-t-0 first:pt-0">
 			<div>
 				<h3 class="text-sm font-semibold tracking-tight">Folders it can reach</h3>
-				<p class="text-xs text-muted-foreground">Shared folders mounted inside its workspace. A workflow can add more for a single step.</p>
+				<p class="text-xs text-muted-foreground">Shared folders mounted inside its work folder. A workflow can add more for a single step.</p>
 			</div>
 			{#key projectId}<MountsPicker {projectId} bind:value={draft.mounts} />{/key}
 		</section>

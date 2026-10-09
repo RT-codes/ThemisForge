@@ -157,7 +157,7 @@ Operator settings live in `config.env` in the home folder (`backend/.env` in a d
 | `THEMIS_HOME` | none | The install's home folder. When set, the database, data, logs and `config.env` live in it. The installer sets it. |
 | `THEMIS_HOST`, `THEMIS_PORT` | `127.0.0.1`, `8000` | What `themis run` listens on. |
 | `THEMIS_DATABASE_URL` | `<home>/db/themisforge.db` | SQLite database location. |
-| `THEMIS_DATA_DIR` | `<home>/data/` | Project workspaces and cell files. |
+| `THEMIS_DATA_DIR` | `<home>/data/` | Project folders and cell work folders. |
 | `THEMIS_ACCESS_TOKEN_MINUTES` | `10080` | Session lifetime (7 days). |
 | `THEMIS_SCHEDULER_ENABLED` | `true` | Turn the scheduler off, for example for a read-only copy. |
 | `THEMIS_SCHEDULER_INTERVAL_SECONDS` | `3` | How often the scheduler looks for due tasks. |
@@ -172,7 +172,7 @@ changed in the **Settings** page and needs no restart.
 Three things hold all state, all in the home folder:
 
 - `db/themisforge.db` (and its `-wal` file while the server runs): projects, tasks, history, accounts, keys,
-- `data/`: project workspaces and per-attempt files,
+- `data/`: project folders and per-attempt work folders,
 - `config.env`: **without the secret key, stored keys cannot be decrypted.**
 
 `themis backup` saves a consistent copy of the database and `config.env` in `backups/` while the server runs. It does not

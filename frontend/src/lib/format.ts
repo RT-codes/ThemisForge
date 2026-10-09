@@ -1,16 +1,4 @@
-import type { AttemptStatus, TaskStatus } from './api'
-
-export const STATUSES: { id: TaskStatus; label: string; hint: string }[] = [
-  { id: 'backlog', label: 'Backlog', hint: 'Not scheduled yet. Recurring tasks parked here are paused.' },
-  { id: 'ready', label: 'Ready', hint: 'Picked up by the scheduler when due.' },
-  { id: 'running', label: 'Running', hint: 'A cell is working on it.' },
-  { id: 'review', label: 'Review', hint: 'Finished, waiting for a human.' },
-  { id: 'done', label: 'Done', hint: 'Finished.' },
-  { id: 'blocked', label: 'Blocked', hint: 'Waiting on something or cancelled.' },
-  { id: 'failed', label: 'Failed', hint: 'The last attempt failed.' },
-]
-
-export const statusLabel = (s: TaskStatus) => STATUSES.find((x) => x.id === s)?.label ?? s
+import type { AttemptStatus } from './api'
 
 export const attemptLabel: Record<AttemptStatus, string> = {
   running: 'Running',

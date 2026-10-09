@@ -34,7 +34,7 @@ Leave **Docker host** empty to use the Docker on this machine. To use another ma
 | Unix socket | `unix:///var/run/docker.sock` |
 
 Press **Test** to check a value before saving it. This is how a project can run its cells on a different, stronger
-machine than the one hosting Themis. Note that cell workspaces are mounted from the Themis machine, so
+machine than the one hosting Themis. Note that cell work folders are mounted from the Themis machine, so
 a remote host needs the same paths available.
 
 > [!WARNING]
@@ -59,7 +59,15 @@ number is turned into the same number of cells of the configured size.
 ## Cells
 
 Defaults for every cell: image, CPUs, memory, time limit and how long working folders are kept. See
-[Cells and workspaces](/docs/cells). Saving applies the change to the next cell that starts.
+[Cells and work folders](/docs/cells). Saving applies the change to the next cell that starts.
+
+## Automation
+
+- **Wait before a Ready task starts**: a task starts this long after it was moved to Ready or its last run ended, and a
+  workflow starts for a task no sooner than this after the last one did. 5 seconds by default; 0 starts right away.
+- **Most automatic moves of one task in a row**: how many times workflows may move or make the same task before they are
+  stopped (10 by default). Both can be set per project (**Edit project**) and per task. See
+  [the automation guard](/docs/workflows#the-automation-guard).
 
 ## Mount roots
 

@@ -6,7 +6,10 @@ export interface User {
   is_admin: boolean
 }
 
-export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'blocked' | 'failed'
+/** the seven statuses every board has, locked */
+export type BuiltinStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'blocked' | 'failed'
+/** a built-in status, or a custom one of the task's board: "custom:12" */
+export type TaskStatus = BuiltinStatus | `custom:${number}`
 export type ScheduleKind = 'none' | 'once' | 'cron'
 export type AttemptStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type PropertyType = 'text' | 'number' | 'select' | 'checkbox' | 'date'
@@ -28,13 +31,59 @@ export interface ProfileOverrides {
   timeout_seconds?: number | null
 }
 
+/** The parts of the automation guard a project may change; an empty field uses the settings' value */
+export interface AutomationOverrides {
+  start_cooldown_seconds?: number | null
+  max_hops?: number | null
+}
+
 export interface Project {
   id: number
   name: string
+  /** one line on what it is for */
+  purpose: string
   description: string
+  /** a Lucide icon name such as "folder-kanban"; empty is the default icon */
+  icon: string
   properties: PropertyDef[]
   cell_profile: ProfileOverrides | null
+  automation: AutomationOverrides | null
   created_at: string
+}
+
+/** A column of a board: one of the seven built-in statuses, or a custom one the board added */
+export interface Column {
+  key: string // "ready", or "custom:12"
+  name: string
+  builtin: boolean
+  color: string | null // custom statuses only
+  icon: string // custom statuses only: a Lucide icon name (the built-in ones have theirs in the interface)
+  description: string // custom statuses only: what it is for, in its owner's words
+}
+
+export interface Board {
+  id: number
+  project_id: number
+  workspace_id: number
+  name: string
+  purpose: string
+  position: number
+  columns: Column[]
+  task_counts: Partial<Record<TaskStatus, number>>
+  created_at: string
+}
+
+/** A named area of a project that holds boards (not the /workspace folder inside a cell) */
+export interface Workspace {
+  id: number
+  project_id: number
+  name: string
+  purpose: string
+  description: string
+  icon: string
+  position: number
+  created_at: string
+  boards: Board[]
 }
 
 export interface ProjectSummary extends Project {
@@ -47,6 +96,9 @@ export type Harness = '' | 'codex' | 'workflow'
 export interface Task {
   id: number
   project_id: number
+  board_id: number
+  /** the task this one was spawned from, as a follow-up */
+  origin_task_id: number | null
   title: string
   description: string
   status: TaskStatus
@@ -61,6 +113,11 @@ export interface Task {
   harness: Harness
   workflow_id: number | null
   agent_id: number | null
+  /** how many times in a row automation moved or made this task; a person acting on it starts again at 0 */
+  hops: number
+  /** this task's own automation guard; null follows the project's */
+  cooldown_seconds: number | null
+  max_hops: number | null
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
@@ -70,9 +127,14 @@ export interface Task {
 
 export interface ProjectEvent {
   id: number
-  kind: 'task_deleted' | string
+  kind: 'task_deleted' | 'task_moved' | 'task_spawned' | string
   title: string
   actor: string
+  /** what set it off when it was not a person: "run:<workflow run>:<node>" */
+  cause: string
+  workspace_id: number | null
+  board_id: number | null
+  task_id: number | null
   /** a copy of the thing as it was (for a deleted task: its description, status, schedule...) */
   data: Record<string, unknown>
   created_at: string
@@ -82,6 +144,7 @@ export interface TaskInput {
   title: string
   description?: string
   status?: TaskStatus
+  board_id?: number // left out: the project's first board
   properties?: Record<string, PropertyValue>
   schedule_kind?: ScheduleKind
   cron?: string | null
@@ -90,6 +153,8 @@ export interface TaskInput {
   harness?: Harness
   workflow_id?: number | null
   agent_id?: number | null
+  cooldown_seconds?: number | null
+  max_hops?: number | null
 }
 
 export type TaskPatch = Partial<TaskInput> & { position?: number }
@@ -262,6 +327,7 @@ export interface AppSettings {
   update_channel: 'stable' | 'beta'
   keep_workspaces_days: number
   start_cooldown_seconds: number
+  max_automation_hops: number
 }
 
 export interface DockerStatus {
@@ -408,7 +474,8 @@ export interface WorkflowSummary {
   runs: number
   last_run: { id: number; status: RunStatus; started_at: string } | null
   /** the statuses whose tasks start this workflow by themselves; empty for one that is only run by hand */
-  watches: TaskStatus[]
+  /** what starts it by itself: a status and where ("" anywhere, "w:<id>" a workspace, "b:<id>" a board) */
+  watches: { status: TaskStatus; where: string }[]
 }
 
 export interface TaskWorkflowRunSummary {
@@ -518,16 +585,43 @@ export const api = {
 
   projects: () => request<ProjectSummary[]>('/projects'),
   project: (id: number) => request<Project>(`/projects/${id}`),
-  createProject: (name: string, description = '', cell_profile: ProfileOverrides | null = null) =>
-    request<Project>('/projects', send('POST', { name, description, cell_profile })),
-  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'description' | 'properties' | 'cell_profile'>>) =>
+  createProject: (body: { name: string; purpose?: string; description?: string; icon?: string; cell_profile?: ProfileOverrides | null }) =>
+    request<Project>('/projects', send('POST', body)),
+  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'purpose' | 'description' | 'icon' | 'properties' | 'cell_profile' | 'automation'>>) =>
     request<Project>(`/projects/${id}`, send('PATCH', patch)),
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 
+  workspaces: (projectId: number) => request<Workspace[]>(`/projects/${projectId}/workspaces`),
+  createWorkspace: (projectId: number, body: { name: string; purpose?: string; description?: string; icon?: string }) =>
+    request<Workspace>(`/projects/${projectId}/workspaces`, send('POST', body)),
+  updateWorkspace: (id: number, patch: { name?: string; purpose?: string; description?: string; icon?: string; position?: number }) =>
+    request<Workspace>(`/workspaces/${id}`, send('PATCH', patch)),
+  /** `moveTo`: the board that takes over the tasks of its boards (needed when there are any) */
+  deleteWorkspace: (id: number, moveTo?: number) => request<void>(`/workspaces/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),
+  createBoard: (workspaceId: number, body: { name: string; purpose?: string }) =>
+    request<Board>(`/workspaces/${workspaceId}/boards`, send('POST', body)),
+  updateBoard: (id: number, patch: { name?: string; purpose?: string; position?: number; workspace_id?: number }) =>
+    request<Board>(`/boards/${id}`, send('PATCH', patch)),
+  duplicateBoard: (id: number) => request<Board>(`/boards/${id}/duplicate`, send('POST')),
+  deleteBoard: (id: number, moveTo?: number) => request<void>(`/boards/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),
+  addStatus: (boardId: number, body: { name: string; color?: string | null; index?: number; icon?: string; description?: string }) =>
+    request<Board>(`/boards/${boardId}/statuses`, send('POST', body)),
+  updateStatus: (boardId: number, statusId: number, patch: { name?: string; color?: string | null; index?: number; icon?: string; description?: string }) =>
+    request<Board>(`/boards/${boardId}/statuses/${statusId}`, send('PATCH', patch)),
+  /** its tasks go to `moveTo` (a status of the board; the server defaults to Backlog) */
+  removeStatus: (boardId: number, statusId: number, moveTo?: TaskStatus) =>
+    request<Board>(`/boards/${boardId}/statuses/${statusId}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ''}`, send('DELETE')),
   tasks: (projectId: number) => request<Task[]>(`/projects/${projectId}/tasks`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),
   updateTask: (id: number, patch: TaskPatch) => request<Task>(`/tasks/${id}`, send('PATCH', patch)),
-  projectHistory: (projectId: number) => request<ProjectEvent[]>(`/projects/${projectId}/history`),
+  /** the same task continues on another board (and status) */
+  moveTask: (id: number, body: { board_id: number; status?: TaskStatus; position?: number }) =>
+    request<Task>(`/tasks/${id}/move`, send('POST', body)),
+  /** a new task on a board, linked to this one; this one stays where it is */
+  spawnTask: (id: number, body: { board_id: number; title?: string; description?: string; status?: TaskStatus }) =>
+    request<Task>(`/tasks/${id}/spawn`, send('POST', body)),
+  /** `query` comes from historyQuery() */
+  projectHistory: (projectId: number, query: string) => request<ProjectEvent[]>(`/projects/${projectId}/history?${query}`),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, send('DELETE')),
   runTask: (id: number) => request<Task>(`/tasks/${id}/run`, send('POST')),
   cancelTask: (id: number) => request<Task>(`/tasks/${id}/cancel`, send('POST')),

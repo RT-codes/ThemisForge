@@ -7,6 +7,7 @@
 	import BotIcon from '@lucide/svelte/icons/bot'
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
 	import ClockIcon from '@lucide/svelte/icons/clock'
+	import GitBranchIcon from '@lucide/svelte/icons/git-branch'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import RepeatIcon from '@lucide/svelte/icons/repeat'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
@@ -64,6 +65,9 @@
 >
 	<div class="flex items-start gap-2">
 		<p class="min-w-0 flex-1 text-sm leading-snug font-medium break-words">{task.title}</p>
+		{#if task.origin_task_id !== null}
+			<span title="A follow-up of another task (see its details)"><GitBranchIcon class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /></span>
+		{/if}
 		{#if running}
 			<LoaderCircleIcon class="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
 		{:else}

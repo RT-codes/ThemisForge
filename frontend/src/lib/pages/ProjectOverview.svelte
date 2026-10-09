@@ -2,6 +2,17 @@
 	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
+	import HistoryList from '$lib/components/project/HistoryList.svelte'
+	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
+	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
+	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
+	import ProjectDialogs from '$lib/components/project/ProjectDialogs.svelte'
+	import { Button } from '$lib/components/ui/button/index.js'
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
+	import { router } from '$lib/router.svelte'
+	import { structure } from '$lib/structure.svelte'
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
@@ -17,10 +28,20 @@
 	let runs = $state<ScheduledRun[]>([])
 	let now = $state(Date.now())
 	let loadError = $state('')
+	let workspaceOpen = $state(false)
+	let editOpen = $state(false)
+	let propsOpen = $state(false)
+	let deleteOpen = $state(false)
+	let revision = $state(0)
+	let allActivity = $state(false)
+	const workspaces = $derived(structure.get(id) ?? [])
 
 	async function load() {
 		try {
-			;[project, runs] = await Promise.all([api.project(id), api.schedule(id, 168)])
+			const [loaded, upcoming] = await Promise.all([api.project(id), api.schedule(id, 168), structure.refresh(id)])
+			project = loaded
+			runs = upcoming
+			revision++
 			loadError = ''
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.message : 'Could not load the project'
@@ -50,20 +71,41 @@
 
 {#if project}
 	<div class="px-6 pt-8 pb-6" in:fade={{ duration: 350 }}>
-		<header>
-			<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
-			{#if project.description}
-				<p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
-			{/if}
+		<header class="flex flex-wrap items-start justify-between gap-3">
+			<div class="flex min-w-0 items-start gap-3">
+				<DynamicIcon name={project.icon} fallback={FolderKanbanIcon} class="mt-1 size-7 shrink-0 text-primary" />
+				<div class="min-w-0">
+					<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
+					{#if project.purpose}<p class="mt-0.5 text-sm">{project.purpose}</p>{/if}
+					{#if project.description}
+						<p class="mt-1 text-sm whitespace-pre-line text-muted-foreground">{project.description}</p>
+					{/if}
+				</div>
+			</div>
+			<div class="flex items-center gap-2">
+				<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button variant="outline" size="icon-sm" aria-label="Project menu" {...props}><EllipsisIcon /></Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-48">
+						<DropdownMenu.Item onSelect={() => (editOpen = true)}>Edit project</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Task properties</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteOpen = true)}>Delete project</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
 		</header>
 
-		<a href="/projects/{id}/tasks" class="mt-6 block rounded-xl border bg-card p-5 transition-colors hover:border-primary/40">
+		<div class="mt-6 block rounded-xl border bg-card p-5">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
 					<p class="text-xs text-muted-foreground">A quick pulse on work in this project</p>
 				</div>
-				<span class="text-xs font-medium text-primary">Open task board <span aria-hidden="true">↗</span></span>
 			</div>
 			<div class="mt-5 grid grid-cols-2 gap-4 border-t pt-4 sm:grid-cols-4">
 				{#each stats as s (s.label)}
@@ -73,7 +115,22 @@
 					</div>
 				{/each}
 			</div>
-		</a>
+		</div>
+
+		<WorkspaceCards projectId={id} {workspaces} />
+
+		<section class="mt-4 rounded-xl border bg-card p-5">
+			<div class="mb-3 flex items-center justify-between gap-3">
+				<div>
+					<h3 class="text-base font-semibold tracking-tight">Recent activity</h3>
+					<p class="text-xs text-muted-foreground">What was done across all workspaces and boards. Each board and workspace has its own history too.</p>
+				</div>
+				<Button variant="ghost" size="sm" onclick={() => (allActivity = !allActivity)}>{allActivity ? 'Show less' : 'Show everything'}</Button>
+			</div>
+			{#key allActivity}
+				<HistoryList projectId={id} {workspaces} {now} {revision} compact={!allActivity} />
+			{/key}
+		</section>
 
 		<div class="overview-grid mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
 			<div class="lg:col-span-7"><WorkflowLibrary projectId={id} {now} /></div>
@@ -84,6 +141,12 @@
 			<div class="lg:col-span-6"><ToolsSection projectId={id} /></div>
 		</div>
 	</div>
+	<ProjectDialogs {project} bind:editOpen bind:propsOpen bind:deleteOpen onchanged={async () => (await load(), await projects.refresh())} />
+	<WorkspaceDialog
+		bind:open={workspaceOpen}
+		projectId={id}
+		onsaved={(w) => router.navigate(`/projects/${id}/workspaces/${w.id}`)}
+	/>
 {:else if loadError}
 	<p class="m-auto text-sm text-destructive">{loadError}</p>
 {/if}

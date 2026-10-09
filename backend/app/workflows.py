@@ -27,12 +27,15 @@ from sqlalchemy import event, func, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload
 
+from . import automation, boards
 from .app_settings import load_settings
 from .models import (
     Agent,
     Attempt,
     AttemptStatus,
+    Board,
     NodeStatus,
+    Project,
     RunStatus,
     Task,
     TaskStatus,
@@ -117,14 +120,16 @@ class Graph(BaseModel):
             out.append({"volume_id": int(raw), "mode": mode if mode in ("ro", "rw") else "rw"})
         return out
 
-    def status_triggers(self, status: str | None = None) -> list[GraphNode]:
-        """The Trigger nodes that start a run when a task moves into a status (into `status`, or any when None)."""
+    def status_triggers(self, status: str | None = None, board: Board | None = None) -> list[GraphNode]:
+        """The Trigger nodes that start a run when a task moves into a status (into `status`, or any when None). With
+        a `board`, only those whose "where" covers it: anywhere (empty), one workspace ("w:<id>") or one board ("b:<id>")."""
         return [
             n
             for n in self.nodes
             if n.kind == "trigger"
             and n.config.get("type") == "task_status"
             and (status is None or n.config.get("status") == status)
+            and (board is None or _covers(n.config.get("where", ""), board))
         ]
 
     @property
@@ -158,12 +163,80 @@ class Outcome:
     branch: str | None = None  # a Condition's answer, "yes" or "no"
 
 
+def _covers(where: str, board: Board) -> bool:
+    """Is the board in the part of the project a Trigger watches?"""
+    kind, _, ident = where.partition(":")
+    if kind == "b":
+        return ident == str(board.id)
+    if kind == "w":
+        return ident == str(board.workspace_id)
+    return True
+
+
 @dataclass
 class _Ctx:
     run_id: int
     project_id: int
     graph: Graph
     trigger_task_id: int | None = None  # the task whose move into a status started this run
+
+
+class _Step:
+    """What a Task step needs to know before it moves or makes a task: who it acts as, the board it was told to use,
+    and how many times in a row automation has already handled the task that started this run (the loop guard)."""
+
+    def __init__(
+        self,
+        s: AsyncSession,
+        ctx: _Ctx,
+        node: GraphNode,
+        actor: str,
+        trigger: Task | None,
+        chosen_board: Board | None,
+        limit: int,
+    ) -> None:
+        self.s, self.ctx, self.node, self.actor, self.trigger, self.chosen_board = (
+            s, ctx, node, actor, trigger, chosen_board,
+        )  # fmt: skip
+        self.cause = f"run:{ctx.run_id}:{node.id}"
+        self.hops = (
+            trigger.hops if trigger else 0
+        ) + 1  # this step would be one more handling of the same chain
+        self.limit = limit
+
+    @classmethod
+    async def open(cls, s: AsyncSession, ctx: _Ctx, node: GraphNode) -> "_Step":
+        run = await s.get(WorkflowRun, ctx.run_id)
+        workflow = await s.get(Workflow, run.workflow_id) if run else None
+        trigger = await s.get(Task, ctx.trigger_task_id) if ctx.trigger_task_id else None
+        project = await s.get(Project, ctx.project_id)
+        chosen: Board | None = None
+        if wanted := node.config.get("boardId", "").strip():
+            chosen = await s.get(Board, int(wanted)) if wanted.isdigit() else None
+            if chosen is None or chosen.project_id != ctx.project_id:
+                raise NodeError("The board of this step no longer exists. Open the step and choose another.")
+        actor = f"Workflow {workflow.name}" if workflow else "A workflow"
+        limit = automation.hop_limit(await load_settings(s), project, trigger)
+        return cls(s, ctx, node, actor, trigger, chosen, limit)
+
+    async def guard_hops(self) -> None:
+        """Stop, with the reason in the run and in the project's history, when this would be one handling too many."""
+        if self.hops <= self.limit:
+            return
+        reason = (
+            f"Stopped to keep automation from looping: this task has been moved or made by workflows "
+            f"{self.hops - 1} times in a row (the limit is {self.limit}). Move it by hand to carry on, or raise the "
+            f"limit for the project or the task."
+        )
+        board = await self.s.get(Board, self.trigger.board_id) if self.trigger else None
+        boards.record(
+            self.s, "automation_stopped", self.ctx.project_id, self.trigger.title if self.trigger else self.actor,
+            self.actor, workspace_id=board.workspace_id if board else None, board_id=board.id if board else None,
+            task_id=self.trigger.id if self.trigger else None, cause=self.cause,
+            data={"reason": reason, "limit": self.limit, "step": self.node.label or self.node.kind},
+        )  # fmt: skip
+        await self.s.commit()
+        raise NodeError(reason)
 
 
 def evaluate_condition(config: dict[str, str], prev: Prev | None) -> tuple[bool, str]:
@@ -195,6 +268,12 @@ def evaluate_condition(config: dict[str, str], prev: Prev | None) -> tuple[bool,
 def _failed_message(exit_code: int | None) -> str:
     how = f"with exit code {exit_code}" if exit_code is not None else "before it could finish"
     return f"The task failed {how}. The log shows what happened."
+
+
+def _changed(obj: Task, attribute: str) -> bool:
+    """Did this flush give the attribute a new value (or its first one, for a new row)?"""
+    history = inspect(obj).attrs[attribute].history
+    return bool(history.added) and history.added != history.deleted
 
 
 class WorkflowRunner:
@@ -314,12 +393,9 @@ class WorkflowRunner:
         if not self._ours(session):
             return
         for obj in (*session.new, *session.dirty):
-            if (
-                isinstance(obj, Task)
-                and (h := inspect(obj).attrs.status.history).added
-                and h.added != h.deleted
-            ):
-                session.info.setdefault("status_moves", []).append((obj.project_id, obj.id, h.added[0]))
+            # arriving on another board counts too: the card lands in a column there
+            if isinstance(obj, Task) and (_changed(obj, "status") or _changed(obj, "board_id")):
+                session.info.setdefault("status_moves", []).append((obj.project_id, obj.id, obj.status))
 
     def _drop_moves(self, session: Session) -> None:
         if self._ours(session):
@@ -343,17 +419,18 @@ class WorkflowRunner:
             for project_id, task_id, status in moves:
                 async with self.maker() as s:
                     cfg = await load_settings(s)
-                    if await self._belongs_to_agent_node(s, task_id):
-                        continue  # the task an Agent node made for itself is part of that workflow, not board work
+                    task = await s.get(Task, task_id)
+                    if task is None or await self._belongs_to_agent_node(s, task_id):
+                        continue  # gone, or the task an Agent node made for itself: part of that workflow, not board work
+                    board = await s.get_one(Board, task.board_id)
+                    cooldown = automation.start_cooldown(cfg, await s.get(Project, project_id), task)
                     workflows = (
                         await s.scalars(select(Workflow).where(Workflow.project_id == project_id))
                     ).all()
                     for wf in workflows:
                         graph = Graph.model_validate(wf.graph)
-                        starts = [n.id for n in graph.status_triggers(status)]
-                        if not starts or await self._recently_started(
-                            s, wf.id, task_id, cfg.start_cooldown_seconds
-                        ):
+                        starts = [n.id for n in graph.status_triggers(status, board)]
+                        if not starts or await self._recently_started(s, wf.id, task_id, cooldown):
                             continue
                         try:
                             await self.start(
@@ -612,11 +689,14 @@ class WorkflowRunner:
                     raise NodeError(
                         "The agent of this node no longer exists. Open the node and choose another."
                     )
+            board = await boards.default_board(
+                s, ctx.project_id
+            )  # the task an Agent node makes shows on the board
             task = Task(
-                project_id=ctx.project_id, title=title, description=instructions, status=TaskStatus.READY,
-                harness=agent.harness if agent else c.get("harness", "codex"),
+                project_id=ctx.project_id, board_id=board.id, title=title, description=instructions,
+                status=TaskStatus.READY, harness=agent.harness if agent else c.get("harness", "codex"),
                 agent_id=agent.id if agent else None, run_options=run_options,
-                position=await self._next_position(s, ctx.project_id, TaskStatus.READY),
+                position=await boards.next_position(s, board.id, TaskStatus.READY),
             )  # fmt: skip
             s.add(task)
             await s.flush()
@@ -661,18 +741,25 @@ class WorkflowRunner:
                 "No task started this run, so there is nothing to move. Use a Trigger set to "
                 "'A task moves into a status' to start the workflow."
             )
+        link = action == "create" and c.get("link") == "1"
+        if link and ctx.trigger_task_id is None:
+            raise NodeError(
+                "No task started this run, so there is nothing to follow up. Use a Trigger set to "
+                "'A task moves into a status', or turn off 'Follow up the task that started this run'."
+            )
         target = c.get("status", "backlog")
-        if target not in {s.value for s in TaskStatus} or target == TaskStatus.RUNNING:
+        if target == TaskStatus.RUNNING or (
+            target not in {s.value for s in TaskStatus} and boards.custom_id(target) is None
+        ):
             raise NodeError(f"'{target}' is not a status a workflow can move a task to")
         async with self.maker() as s:
+            step = await _Step.open(s, ctx, node)
             before = 0
             if action == "create":
-                task = Task(
-                    project_id=ctx.project_id, title=title, description=c.get("description", ""), status=target,
-                    position=await self._next_position(s, ctx.project_id, target),
-                )  # fmt: skip
-                s.add(task)
-                note = f'Created task "{title}" in {target}.'
+                task = await self._create(s, step, c, title, target, link)
+                note = (
+                    f'Created task "{title}" on {(await s.get_one(Board, task.board_id)).name} in {target}.'
+                )
             else:
                 if action == "move_trigger":
                     task = await s.get(Task, ctx.trigger_task_id)
@@ -700,15 +787,7 @@ class WorkflowRunner:
                     task.status, task.next_run_at = TaskStatus.READY, None
                     note = f'Started task "{title}".'
                 else:
-                    if (
-                        task.status != target
-                    ):  # lands at the bottom of its new column, like a card dropped there
-                        task.position = await self._next_position(s, ctx.project_id, target)
-                    task.status = target
-                    task.next_run_at = None
-                    if c.get("description", "").strip():
-                        task.description = c["description"]
-                    note = f'Updated task "{title}": now {target}.'
+                    note = await self._relocate(s, step, task, c, target)
             await s.flush()
             await s.execute(
                 update(WorkflowNodeRun).where(WorkflowNodeRun.id == nr_id).values(task_id=task.id)
@@ -718,6 +797,53 @@ class WorkflowRunner:
         if becomes_ready:
             return await self._wait_for_task(nr_id, task_id, before)
         return Outcome(NodeStatus.SUCCEEDED, log=note + "\n", result=note)
+
+    async def _create(
+        self, s: AsyncSession, step: "_Step", c: dict[str, str], title: str, target: str, link: bool
+    ) -> Task:
+        """Make the task of a Create step: on the chosen board, linked to the task that started the run when asked.
+        A step makes its task once, whatever happens: running it again finds the one it made."""
+        key = f"run:{step.ctx.run_id}:{step.node.id}"
+        if made := await s.scalar(select(Task).where(Task.origin_key == key)):
+            return made
+        await step.guard_hops()
+        try:
+            board = step.chosen_board or await boards.board_for_status(s, step.ctx.project_id, target)
+            if link:
+                assert step.trigger is not None
+                return await boards.spawn_task(
+                    s, step.trigger, board, step.actor, title, c.get("description", ""), target,
+                    step.cause, key, step.hops,
+                )  # fmt: skip
+            boards.check_status(board, target)
+            task = Task(
+                project_id=step.ctx.project_id, board_id=board.id, title=title,
+                description=c.get("description", ""), status=target, origin_key=key, hops=step.hops,
+                position=await boards.next_position(s, board.id, target),
+            )  # fmt: skip
+        except boards.BoardError as e:
+            raise NodeError(str(e)) from None
+        s.add(task)
+        await s.flush()
+        boards.record_new_task(s, task, board, step.actor, step.cause)
+        return task
+
+    async def _relocate(
+        self, s: AsyncSession, step: "_Step", task: Task, c: dict[str, str], target: str
+    ) -> str:
+        """Move a task to a status, and to another board when the step names one."""
+        await step.guard_hops()
+        board = step.chosen_board or await s.get_one(Board, task.board_id)
+        try:
+            if (board.id, target) != (task.board_id, task.status):  # lands at the bottom of its new column
+                await boards.move_task(s, task, board, step.actor, target, None, step.cause)
+        except boards.BoardError as e:
+            raise NodeError(str(e)) from None
+        task.next_run_at = None
+        task.hops = step.hops
+        if c.get("description", "").strip():
+            task.description = c["description"]
+        return f'Updated task "{task.title}": now {target} on {board.name}.'
 
     async def _wait_for_task(self, nr_id: int, task_id: int, before: int) -> Outcome:
         """Let the scheduler run the task, mirror its log into the node, and report how the attempt ended."""
@@ -759,13 +885,6 @@ class WorkflowRunner:
                 raise NodeError("Timed out waiting for the task to run.")
 
     # records
-
-    @staticmethod
-    async def _next_position(s: AsyncSession, project_id: int, status: str) -> float:
-        top = await s.scalar(
-            select(func.max(Task.position)).where(Task.project_id == project_id, Task.status == status)
-        )
-        return (top or 0.0) + 1.0
 
     async def _update_node(self, nr_id: int, **fields) -> None:
         async with self.maker() as s:

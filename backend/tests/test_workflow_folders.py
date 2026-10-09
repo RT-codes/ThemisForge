@@ -2,7 +2,7 @@ from app.workflows import MOUNT, Graph
 from tests.conftest import make_project, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect
-from tests.test_workflows import by_id, edge, make_workflow, node, run, runner, save, setup  # noqa: F401
+from tests.test_workflows import by_id, edge, make_workflow, node, run, save, setup
 
 
 def mount_edge(folder: str, agent: str) -> dict:
@@ -85,7 +85,7 @@ async def test_the_mount_point_is_kept_when_a_workflow_is_saved(client):
 # ----- running -----
 
 
-async def test_a_folder_handed_to_an_agent_is_mounted_and_changes_nothing_else(client, runner, cells, maker):  # noqa: F811
+async def test_a_folder_handed_to_an_agent_is_mounted_and_changes_nothing_else(client, runner, cells, maker):
     me, pid = await setup(client)
     await connect(maker, me["id"])
     out = await make_volume(client, pid, "out")
@@ -108,7 +108,7 @@ async def test_a_folder_handed_to_an_agent_is_mounted_and_changes_nothing_else(c
     assert "/workspace/docs (read only)" in spec.prompt
 
 
-async def test_a_folder_node_that_is_not_connected_is_simply_ignored(client, runner, cells):  # noqa: F811
+async def test_a_folder_node_that_is_not_connected_is_simply_ignored(client, runner, cells):
     _, pid = await setup(client)
     out = await make_volume(client, pid, "out")
     detail = await run(
@@ -117,7 +117,7 @@ async def test_a_folder_node_that_is_not_connected_is_simply_ignored(client, run
     assert detail["status"] == "succeeded" and [n["node_id"] for n in detail["nodes"]] == ["s", "e"]
 
 
-async def test_a_nodes_own_folder_list_wins_over_a_connected_folder(client, runner, cells, maker):  # noqa: F811
+async def test_a_nodes_own_folder_list_wins_over_a_connected_folder(client, runner, cells, maker):
     me, pid = await setup(client)
     await connect(maker, me["id"])
     a, b = await make_volume(client, pid, "alpha"), await make_volume(client, pid, "beta")
@@ -135,7 +135,7 @@ async def test_a_nodes_own_folder_list_wins_over_a_connected_folder(client, runn
     )  # both lines said read and write; the node's list said read only
 
 
-async def test_a_folder_node_with_no_folder_chosen_stops_the_agent_with_the_reason(client, runner, cells):  # noqa: F811
+async def test_a_folder_node_with_no_folder_chosen_stops_the_agent_with_the_reason(client, runner, cells):
     _, pid = await setup(client)
     detail = await run(
         client,
@@ -147,7 +147,7 @@ async def test_a_folder_node_with_no_folder_chosen_stops_the_agent_with_the_reas
     assert "no folder chosen" in by_id(detail)["a"]["error"] and "Empty folder" in by_id(detail)["a"]["error"]
 
 
-async def test_a_folder_that_was_removed_fails_the_agents_run_with_the_reason(client, runner, cells, maker):  # noqa: F811
+async def test_a_folder_that_was_removed_fails_the_agents_run_with_the_reason(client, runner, cells, maker):
     me, pid = await setup(client)
     await connect(maker, me["id"])
     gone = await make_volume(client, pid, "gone")
@@ -169,7 +169,7 @@ async def test_a_folder_that_was_removed_fails_the_agents_run_with_the_reason(cl
     )
 
 
-async def test_the_same_workflow_without_folders_runs_as_before(client, runner, cells, maker):  # noqa: F811
+async def test_the_same_workflow_without_folders_runs_as_before(client, runner, cells, maker):
     me, pid = await setup(client)
     await connect(maker, me["id"])
     detail = await run(

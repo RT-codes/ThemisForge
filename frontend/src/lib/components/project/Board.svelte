@@ -2,7 +2,13 @@
 	import type { PropertyDef, Task, TaskStatus } from '$lib/api'
 	import { applyView, type ColumnResult } from '$lib/boardView'
 	import type { BoardViewStore } from '$lib/boardView.svelte'
-	import { STATUSES } from '$lib/format'
+	import type { Board as BoardInfo } from '$lib/api'
+	import { statusTone, type ColumnInfo } from '$lib/boards'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js'
+	import InfoIcon from '@lucide/svelte/icons/info'
+	import StatusEditPopover from './StatusEditPopover.svelte'
+	import { dragTask } from '$lib/dragTask.svelte'
 	import { dropPosition } from '$lib/kanban'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import { router } from '$lib/router.svelte'
@@ -16,6 +22,8 @@
 
 	let {
 		tasks,
+		boardId,
+		columns,
 		defs,
 		now,
 		view,
@@ -26,8 +34,12 @@
 		ondelete,
 		onadd,
 		onmove,
+		onstatuschange,
 	}: {
 		tasks: Task[]
+		boardId: number
+		/** the board's columns left to right: the built-in statuses and its own */
+		columns: ColumnInfo[]
 		defs: PropertyDef[]
 		now: number
 		view: BoardViewStore
@@ -39,25 +51,29 @@
 		onopen: (task: Task) => void
 		ondelete: (task: Task) => void
 		onadd: (status: TaskStatus) => void
-		onmove: (task: Task, status: TaskStatus, position: number) => void
+		/** a card dropped here; it may come from another board (task.board_id differs from boardId) */
+		onmove: (task: Task, status: TaskStatus, position: number, boardId: number) => void
+		/** a status of this board was edited from its column: the board as it is now */
+		onstatuschange: (board: BoardInfo) => void
 	} = $props()
 
 	const byStatus = $derived(
 		Object.fromEntries(
-			STATUSES.map((s) => [s.id, tasks.filter((t) => t.status === s.id).sort((a, b) => a.position - b.position)])
+			columns.map((s) => [s.id, tasks.filter((t) => t.status === s.id).sort((a, b) => a.position - b.position)])
 		) as Record<TaskStatus, Task[]>
 	)
 
 	// each column as it is displayed: after the board's search and filters, its own, and the order
 	const results = $derived(
-		Object.fromEntries(STATUSES.map((s) => [s.id, applyView(byStatus[s.id], view.board, view.column(s.id))])) as Record<TaskStatus, ColumnResult>
+		Object.fromEntries(columns.map((s) => [s.id, applyView(byStatus[s.id], view.board, view.column(s.id))])) as Record<TaskStatus, ColumnResult>
 	)
 
-	let dragId = $state<number | null>(null)
 	let overColumn = $state<TaskStatus | null>(null)
 	let overIndex = $state(0)
 
-	const dragged = $derived(tasks.find((t) => t.id === dragId) ?? null)
+	// the card in hand may belong to another board of the page: it can be dropped here
+	const dragged = $derived(dragTask.task)
+	const dragId = $derived(dragged?.id ?? null)
 
 	function canDrop(status: TaskStatus) {
 		return dragged !== null && status !== 'running' // only the scheduler starts tasks
@@ -91,17 +107,18 @@
 		if (!task || !allowed) return
 		const siblings = byStatus[status].filter((t) => t.id !== task.id)
 		const reorderable = results[status].reorderable
-		if (status === task.status && !reorderable) return // a sorted or filtered column has no order of its own to change
-		if (status === task.status && byStatus[status].findIndex((t) => t.id === task.id) === index) return // same spot
+		const here = task.board_id === boardId
+		if (here && status === task.status && !reorderable) return // a sorted or filtered column has no order of its own to change
+		if (here && status === task.status && byStatus[status].findIndex((t) => t.id === task.id) === index) return // same spot
 		const position = dropPosition(
 			siblings.map((t) => t.position),
 			reorderable ? index : siblings.length // not in your order: to the end of the column
 		)
-		onmove(task, status, position)
+		onmove(task, status, position, boardId)
 	}
 
 	function reset() {
-		dragId = null
+		dragTask.end()
 		overColumn = null
 	}
 
@@ -169,7 +186,7 @@
 {/if}
 <div class="relative min-h-0 flex-1">
 <div bind:this={scroller} onscroll={measure} class="no-scrollbar flex h-full items-start gap-3 overflow-x-auto">
-	{#each STATUSES.filter((s) => !view.hidden.includes(s.id)) as column (column.id)}
+	{#each columns.filter((s) => !view.hidden.includes(s.id)) as column (column.id)}
 		{@const items = results[column.id].shown}
 		{@const target = overColumn === column.id}
 		{@const slots = new Map(items.filter((t) => t.id !== dragId).map((t, i) => [t.id, i]))}
@@ -187,15 +204,29 @@
 			}}
 			ondrop={(e) => (e.preventDefault(), drop(column.id))}
 		>
-			<header class="flex h-12 items-center gap-2 px-3 pt-1">
-				<h3 class="text-sm font-medium" title={column.hint}>{column.label}</h3>
+			<header class="flex h-12 items-center gap-1.5 px-3 pt-1">
+				<span class={cn('shrink-0', !column.color && statusTone(column.id).text)} style:color={column.color ?? undefined}>
+					<StatusIcon status={column.id} icon={column.icon} class="size-4" />
+				</span>
+				<h3 class="truncate text-sm font-medium">{column.label}</h3>
 				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums" title={results[column.id].filtered ? `${items.length} of ${byStatus[column.id].length} tasks match` : undefined}>
 					{results[column.id].filtered ? `${items.length} / ${byStatus[column.id].length}` : items.length}
 				</span>
+				<!-- what the status is for: fixed for the built-in ones, the owner's own words for a status of your own -->
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<button type="button" class="rounded-full p-0.5 text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:text-foreground" aria-label={`What ${column.label} is for`} {...props}>
+								<InfoIcon class="size-3.5" />
+							</button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom" class="max-w-64">{column.hint}</Tooltip.Content>
+				</Tooltip.Root>
 				{#if watchers[column.id]?.length}
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger
-							class="ms-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
+							class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
 							title="Moving a task here starts a workflow"
 						>
 							<ZapIcon class="size-3" />{watchers[column.id].length}
@@ -208,28 +239,31 @@
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
 				{/if}
-				<button
-					type="button"
-					class={cn('rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', !watchers[column.id]?.length && 'ms-auto')}
-					aria-label={`Hide ${column.label}`}
-					title={`Hide ${column.label} (bring it back with Statuses)`}
-					onclick={() => view.toggleHidden(column.id)}
-				>
-					<EyeOffIcon class="size-4" />
-				</button>
-				{#if column.id !== 'running'}
+				<div class="ms-auto flex items-center">
+					<StatusEditPopover {boardId} {column} onchange={onstatuschange} />
 					<button
 						type="button"
 						class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						aria-label={`Add task to ${column.label}`}
-						onclick={() => onadd(column.id)}
+						aria-label={`Hide ${column.label}`}
+						title={`Hide ${column.label} (bring it back with Statuses)`}
+						onclick={() => view.toggleHidden(column.id)}
 					>
-						<PlusIcon class="size-4" />
+						<EyeOffIcon class="size-4" />
 					</button>
-				{/if}
+					{#if column.id !== 'running'}
+						<button
+							type="button"
+							class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							aria-label={`Add task to ${column.label}`}
+							onclick={() => onadd(column.id)}
+						>
+							<PlusIcon class="size-4" />
+						</button>
+					{/if}
+				</div>
 			</header>
 			<ColumnBar {view} status={column.id} label={column.label} {defs} />
-			<div class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+			<div class="slim-scrollbar flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
 				{#each items as task (task.id)}
 					{@const slot = slots.get(task.id)}
 					{#if target && slot !== undefined && overIndex === slot}
@@ -245,7 +279,7 @@
 						onopen={() => onopen(task)}
 						ondelete={() => ondelete(task)}
 						ondragstart={(e: DragEvent) => {
-							dragId = task.id
+							dragTask.start(task)
 							e.dataTransfer?.setData('text/plain', String(task.id))
 							if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 						}}

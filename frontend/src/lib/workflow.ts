@@ -54,13 +54,19 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'type', label: 'Starts when', type: 'select', options: opts(['manual', 'I run it'], ['schedule', 'On a schedule'], ['task_status', 'A task moves into a status']) },
     { key: 'repeat', label: 'Repeats', type: 'select', options: opts(['day', 'Every day'], ['weekdays', 'Every weekday'], ['week', 'Every week'], ['month', 'Every month']), when: { key: 'type', oneOf: ['schedule'] } },
     { key: 'time', label: 'At', type: 'time', when: { key: 'type', oneOf: ['schedule'] } },
+    // the options of status and where are the project's statuses and boards: the panel adds them to these
     { key: 'status', label: 'The status', type: 'select', options: STATUSES, hint: 'Runs when a task is moved into this status, or created in it. Where it came from does not matter. The task that moved is available to the steps after it.', when: { key: 'type', oneOf: ['task_status'] } },
+    { key: 'where', label: 'Where', type: 'select', options: opts(['', 'Anywhere in the project']), hint: 'Only watch one workspace or one board. A status of your own belongs to one board and only fires there.', when: { key: 'type', oneOf: ['task_status'] } },
   ],
   task: [
     { key: 'action', label: 'Action', type: 'select', options: opts(['create', 'Create a task'], ['update', 'Update a task (by title)'], ['run', 'Run a task (by title)'], ['move_trigger', 'Move the task that started this run']) },
     { key: 'title', label: 'Task title', type: 'text', placeholder: 'What needs doing', when: { key: 'action', oneOf: ['create', 'update', 'run'] } },
     { key: 'description', label: 'Description', type: 'textarea', when: { key: 'action', oneOf: ['create'] } },
     { key: 'status', label: 'Move to', type: 'select', options: STATUSES, when: { key: 'action', oneOf: ['create', 'update', 'move_trigger'] } },
+    // the options of boardId are the project's boards: the panel fills them in
+    { key: 'boardId', label: 'On board', type: 'select', options: opts(['', 'Automatic']), hint: 'Automatic is the board of one of your own statuses, or the first board.', when: { key: 'action', oneOf: ['create'] } },
+    { key: 'boardId', label: 'Send to board', type: 'select', options: opts(['', 'Stay on its board']), when: { key: 'action', oneOf: ['update', 'move_trigger'] } },
+    { key: 'link', label: 'Follow up', type: 'select', options: opts(['', 'A separate task'], ['1', 'Follow up the task that started this run']), hint: 'A follow-up is linked to that task and takes its property values. Needs a Trigger that starts the run.', when: { key: 'action', oneOf: ['create'] } },
   ],
   agent: [
     // the options of agentId are the project's agents: the panel fills them in, this one is always there
@@ -101,15 +107,18 @@ export const visibleFields = (kind: NodeKind, config: NodeConfig) =>
 const optionLabel = (kind: NodeKind, key: string, config: NodeConfig) =>
   NODE_FIELDS[kind].find((f) => f.key === key)?.options?.find((o) => o.value === config[key])?.label ?? ''
 
+/** the status a node names; a custom one is a board's own and the canvas does not know its name, so it stays generic */
+const statusText = (kind: NodeKind, c: NodeConfig) => optionLabel(kind, 'status', c) || (c.status?.startsWith('custom:') ? 'a custom status' : c.status)
+
 /** one line shown on the node, so a canvas can be read without opening every node */
 export function summary(kind: NodeKind, c: NodeConfig): string {
   switch (kind) {
     case 'start':
       return 'Begins a run'
     case 'trigger':
-      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `A task moves into ${optionLabel('trigger', 'status', c) || c.status}` : 'Run by hand'
+      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `A task moves into ${statusText('trigger', c)}` : 'Run by hand'
     case 'task':
-      if (c.action === 'move_trigger') return `Move that task to ${optionLabel('task', 'status', c) || c.status}`
+      if (c.action === 'move_trigger') return `Move that task to ${statusText('task', c)}${c.boardId ? ' on another board' : ''}`
       return `${optionLabel('task', 'action', c)}${c.title ? `: ${c.title}` : ''}`
     case 'agent':
       return c.instructions.trim() ? c.instructions.trim().split('\n')[0] : 'No instructions yet'
@@ -164,10 +173,27 @@ export function mountsFromGraph(nodes: MountNodeLike[], edges: { source: string;
   return out
 }
 
-/** the workflows that start by themselves when a task moves into each status, for the badge on a board column */
-export function watchersByStatus(workflows: { id: number; name: string; watches: string[] }[]): Record<string, { id: number; name: string }[]> {
+/** Does a Trigger's "where" cover this board? Empty is anywhere, "w:<id>" a workspace, "b:<id>" a board. */
+export function coversBoard(where: string, board: { id: number; workspace_id: number }): boolean {
+  if (where.startsWith('b:')) return where.slice(2) === String(board.id)
+  if (where.startsWith('w:')) return where.slice(2) === String(board.workspace_id)
+  return true
+}
+
+/** the workflows that start by themselves when a task moves into each status, for the badge on a board column. With a
+ *  board, only those that watch that board count. */
+export function watchersByStatus(
+  workflows: { id: number; name: string; watches: { status: string; where: string }[] }[],
+  board?: { id: number; workspace_id: number }
+): Record<string, { id: number; name: string }[]> {
   const out: Record<string, { id: number; name: string }[]> = {}
-  for (const w of workflows) for (const status of w.watches) (out[status] ??= []).push({ id: w.id, name: w.name })
+  for (const w of workflows) {
+    for (const { status, where } of w.watches) {
+      if (board && !coversBoard(where, board)) continue
+      const list = (out[status] ??= [])
+      if (!list.some((x) => x.id === w.id)) list.push({ id: w.id, name: w.name })
+    }
+  }
   return out
 }
 

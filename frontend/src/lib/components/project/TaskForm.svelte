@@ -10,7 +10,8 @@
 	import * as Select from '$lib/components/ui/select/index.js'
 	import { Switch } from '$lib/components/ui/switch/index.js'
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
-	import { STATUSES, fromLocalInput, statusLabel, toLocalInput } from '$lib/format'
+	import { columnsOf, statusLabel } from '$lib/boards'
+	import { fromLocalInput, toLocalInput } from '$lib/format'
 	import { MINUTE_INTERVALS, REPEAT_KINDS, WEEKDAYS, defaultRecurrence, describeRecurrence, describeSchedule, fromCron, toCron, type RepeatKind, type Recurrence } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
 	import { onMount, untrack } from 'svelte'
@@ -56,6 +57,7 @@
 
 	let title = $state(initial.title)
 	let description = $state(initial.description)
+	const columns = $derived(columnsOf(board))
 	let status = $state<TaskStatus>(initial.status)
 	let kind = $state<ScheduleKind>(initial.kind)
 	// The repeat rule is edited as a sentence ("every weekday at 09:00"). A task whose stored schedule cannot be
@@ -229,15 +231,15 @@
 	<div class="grid gap-2">
 		<Label>Status</Label>
 		<Select.Root type="single" bind:value={status} disabled={running}>
-			<Select.Trigger class="w-full">{statusLabel(status)}</Select.Trigger>
+			<Select.Trigger class="w-full">{statusLabel(status, board)}</Select.Trigger>
 			<Select.Content>
-				{#each STATUSES.filter((s) => s.id !== 'running') as s (s.id)}
+				{#each columns.filter((s) => s.id !== 'running') as s (s.id)}
 					<Select.Item value={s.id} label={s.label}>{s.label}</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>
 		<p class="text-xs text-muted-foreground">
-			{running ? 'A cell is working on this task. Cancel it to change the status.' : STATUSES.find((s) => s.id === status)?.hint}
+			{running ? 'A cell is working on this task. Cancel it to change the status.' : columns.find((s) => s.id === status)?.hint}
 		</p>
 		<div class="flex items-center justify-between gap-3 pt-2">
 			<div>

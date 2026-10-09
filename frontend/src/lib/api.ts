@@ -6,7 +6,10 @@ export interface User {
   is_admin: boolean
 }
 
-export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'blocked' | 'failed'
+/** the seven statuses every board has, locked */
+export type BuiltinStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'blocked' | 'failed'
+/** a built-in status, or a custom one of the task's board: "custom:12" */
+export type TaskStatus = BuiltinStatus | `custom:${number}`
 export type ScheduleKind = 'none' | 'once' | 'cron'
 export type AttemptStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type PropertyType = 'text' | 'number' | 'select' | 'checkbox' | 'date'
@@ -558,6 +561,13 @@ export const api = {
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 
   workspaces: (projectId: number) => request<Workspace[]>(`/projects/${projectId}/workspaces`),
+  addStatus: (boardId: number, body: { name: string; color?: string | null; index?: number }) =>
+    request<Board>(`/boards/${boardId}/statuses`, send('POST', body)),
+  updateStatus: (boardId: number, statusId: number, patch: { name?: string; color?: string | null; index?: number }) =>
+    request<Board>(`/boards/${boardId}/statuses/${statusId}`, send('PATCH', patch)),
+  /** its tasks go to `moveTo` (a status of the board; the server defaults to Backlog) */
+  removeStatus: (boardId: number, statusId: number, moveTo?: TaskStatus) =>
+    request<Board>(`/boards/${boardId}/statuses/${statusId}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ''}`, send('DELETE')),
   tasks: (projectId: number, boardId?: number) =>
     request<Task[]>(`/projects/${projectId}/tasks${boardId === undefined ? '' : `?board_id=${boardId}`}`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),

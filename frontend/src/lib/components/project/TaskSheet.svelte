@@ -96,7 +96,7 @@
 		<header class="flex flex-col gap-0.5 p-4 pb-3">
 			<div class="flex items-center gap-2">
 				<h2 class="truncate text-base font-medium text-foreground">{task ? task.title : 'New task'}</h2>
-				{#if task}<StatusBadge status={task.status} />{/if}
+				{#if task}<StatusBadge status={task.status} {board} />{/if}
 			</div>
 			<p class="text-sm text-muted-foreground">
 				{#if !task}

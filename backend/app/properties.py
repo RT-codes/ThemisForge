@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 PropertyType = Literal["text", "number", "select", "checkbox", "date"]
-_HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 class PropertyDef(BaseModel):
@@ -31,7 +31,7 @@ class PropertyDef(BaseModel):
     @classmethod
     def valid_colors(cls, v: dict[str, str]) -> dict[str, str]:
         for option, color in v.items():
-            if not _HEX_COLOR.match(color):
+            if not HEX_COLOR.match(color):
                 raise ValueError(f"'{color}' is not a colour like #3b82f6 (option '{option}')")
         return {option: color.lower() for option, color in v.items()}
 

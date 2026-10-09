@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, type Agent, type CellDefaults, type ProfileOverrides, type Project, type Volume } from '$lib/api'
+	import { customStatusChoices } from '$lib/boards'
 	import { effectiveCell } from '$lib/cell'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
@@ -47,7 +48,13 @@
 	let project = $state<Project | null>(null)
 	let defaults = $state<CellDefaults | null>(null)
 	let volumes = $state<Volume[]>([])
+	// a status field offers the seven built-in statuses plus the custom ones of every board (each belongs to one board)
+	let customStatuses = $state<{ value: string; label: string }[]>([])
+	let statusesLoaded = $state(false)
 	onMount(async () => {
+		if (data.kind === 'trigger' || data.kind === 'task') {
+			api.workspaces(projectId).then((w) => ((customStatuses = customStatusChoices(w)), (statusesLoaded = true))).catch(() => {})
+		}
 		if (data.kind === 'agent' || data.kind === 'volume') api.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
 		if (data.kind !== 'agent') return
 		try {
@@ -91,12 +98,15 @@
 			? [...(f.options ?? []), ...agents.map((a) => ({ value: String(a.id), label: a.name }))]
 			: f.key === 'volumeId'
 				? [...(f.options ?? []), ...volumes.map((v) => ({ value: String(v.id), label: `/workspace/${v.name}` }))]
-				: (f.options ?? [])
+				: f.key === 'status'
+					? [...(f.options ?? []), ...customStatuses]
+					: (f.options ?? [])
 	function labelOf(f: FieldDef): string {
 		const value = data.config[f.key]
 		const found = optionsOf(f).find((o) => o.value === value)
 		if (found) return found.label
 		if (f.key === 'agentId' && agentsLoaded) return 'An agent that was deleted'
+		if (f.key === 'status' && statusesLoaded && value?.startsWith('custom:')) return 'A status that was deleted'
 		return f.key === 'volumeId' && volumes.length ? 'A folder that was removed' : ''
 	}
 

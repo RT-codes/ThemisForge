@@ -724,3 +724,31 @@ async def test_a_task_shows_the_run_it_started_while_it_is_going(client, runner,
         while not (current := (await client.get(f"/api/tasks/{task['id']}")).json()["workflow_run"]):
             await asyncio.sleep(0.01)
     assert current["workflow_id"] == wid and current["workflow_name"] == "Flow"
+
+
+async def test_a_task_node_can_create_a_task_in_a_boards_custom_status(client, runner):
+    _, pid = await setup(client)
+    [workspace] = (await client.get(f"/api/projects/{pid}/workspaces")).json()
+    board = workspace["boards"][0]
+    added = await client.post(f"/api/boards/{board['id']}/statuses", json={"name": "Parked"})
+    key = added.json()["columns"][-1]["key"]
+
+    detail = await run(
+        client,
+        pid,
+        [node("s", "start"), node("t", "task", title="Later", status=key)],
+        [edge("s", "t")],
+    )
+    assert detail["status"] == "succeeded"
+    [task] = (await client.get(f"/api/projects/{pid}/tasks")).json()
+    assert (task["status"], task["board_id"]) == (key, board["id"])
+
+    gone = await client.delete(f"/api/boards/{board['id']}/statuses/{key.removeprefix('custom:')}")
+    assert gone.status_code == 200
+    failed = await run(
+        client,
+        pid,
+        [node("s", "start"), node("t", "task", title="Again", status=key)],
+        [edge("s", "t")],
+    )
+    assert failed["status"] == "failed" and "not a status of this project" in by_id(failed)["t"]["error"]

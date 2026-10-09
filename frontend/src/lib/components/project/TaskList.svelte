@@ -1,15 +1,17 @@
 <script lang="ts">
-	import type { PropertyDef, Task } from '$lib/api'
+	import type { Board, PropertyDef, Task } from '$lib/api'
 	import StatusBadge from '$lib/components/StatusBadge.svelte'
 	import { chipStyle } from '$lib/colors'
 	import { dateTime, relative } from '$lib/format'
 	import { describeSchedule } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
 
-	let { tasks, defs, now, selectedId = null, onopen }: { tasks: Task[]; defs: PropertyDef[]; now: number; selectedId?: number | null; onopen: (task: Task) => void } = $props()
+	let { tasks, board, defs, now, selectedId = null, onopen }: { tasks: Task[]; board: Board; defs: PropertyDef[]; now: number; selectedId?: number | null; onopen: (task: Task) => void } = $props()
 
 	const order = ['running', 'ready', 'review', 'backlog', 'blocked', 'failed', 'done']
-	const sorted = $derived([...tasks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.position - b.position))
+	// a custom status is a parking column like Backlog, so its tasks are listed with the backlog
+	const rank = (status: string) => (order.includes(status) ? order.indexOf(status) : order.indexOf('backlog') + 0.5)
+	const sorted = $derived([...tasks].sort((a, b) => rank(a.status) - rank(b.status) || a.position - b.position))
 
 	function schedule(t: Task) {
 		if (t.schedule_kind === 'cron') return describeSchedule(t.cron)
@@ -41,7 +43,7 @@
 						<td class="max-w-72 truncate px-4 py-2.5 font-medium">
 							<button type="button" class="truncate text-start" onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>
 						</td>
-						<td class="px-4 py-2.5"><StatusBadge status={t.status} /></td>
+						<td class="px-4 py-2.5"><StatusBadge status={t.status} {board} /></td>
 						<td class="px-4 py-2.5 text-muted-foreground">{schedule(t)}</td>
 						<td class="px-4 py-2.5 text-muted-foreground">{t.status === 'ready' && t.next_run_at ? relative(t.next_run_at, now) : '-'}</td>
 						<td class="px-4 py-2.5 text-muted-foreground">{t.last_run_at ? relative(t.last_run_at, now) : '-'}</td>

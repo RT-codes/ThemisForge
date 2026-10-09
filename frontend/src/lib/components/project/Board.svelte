@@ -2,7 +2,7 @@
 	import type { PropertyDef, Task, TaskStatus } from '$lib/api'
 	import { applyView, type ColumnResult } from '$lib/boardView'
 	import type { BoardViewStore } from '$lib/boardView.svelte'
-	import { STATUSES } from '$lib/format'
+	import type { ColumnInfo } from '$lib/boards'
 	import { dropPosition } from '$lib/kanban'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import { router } from '$lib/router.svelte'
@@ -16,6 +16,7 @@
 
 	let {
 		tasks,
+		columns,
 		defs,
 		now,
 		view,
@@ -28,6 +29,8 @@
 		onmove,
 	}: {
 		tasks: Task[]
+		/** the board's columns left to right: the built-in statuses and its own */
+		columns: ColumnInfo[]
 		defs: PropertyDef[]
 		now: number
 		view: BoardViewStore
@@ -44,13 +47,13 @@
 
 	const byStatus = $derived(
 		Object.fromEntries(
-			STATUSES.map((s) => [s.id, tasks.filter((t) => t.status === s.id).sort((a, b) => a.position - b.position)])
+			columns.map((s) => [s.id, tasks.filter((t) => t.status === s.id).sort((a, b) => a.position - b.position)])
 		) as Record<TaskStatus, Task[]>
 	)
 
 	// each column as it is displayed: after the board's search and filters, its own, and the order
 	const results = $derived(
-		Object.fromEntries(STATUSES.map((s) => [s.id, applyView(byStatus[s.id], view.board, view.column(s.id))])) as Record<TaskStatus, ColumnResult>
+		Object.fromEntries(columns.map((s) => [s.id, applyView(byStatus[s.id], view.board, view.column(s.id))])) as Record<TaskStatus, ColumnResult>
 	)
 
 	let dragId = $state<number | null>(null)
@@ -169,7 +172,7 @@
 {/if}
 <div class="relative min-h-0 flex-1">
 <div bind:this={scroller} onscroll={measure} class="no-scrollbar flex h-full items-start gap-3 overflow-x-auto">
-	{#each STATUSES.filter((s) => !view.hidden.includes(s.id)) as column (column.id)}
+	{#each columns.filter((s) => !view.hidden.includes(s.id)) as column (column.id)}
 		{@const items = results[column.id].shown}
 		{@const target = overColumn === column.id}
 		{@const slots = new Map(items.filter((t) => t.id !== dragId).map((t, i) => [t.id, i]))}
@@ -188,7 +191,8 @@
 			ondrop={(e) => (e.preventDefault(), drop(column.id))}
 		>
 			<header class="flex h-12 items-center gap-2 px-3 pt-1">
-				<h3 class="text-sm font-medium" title={column.hint}>{column.label}</h3>
+				{#if column.color}<span class="size-2 shrink-0 rounded-full" style:background-color={column.color}></span>{/if}
+				<h3 class="truncate text-sm font-medium" title={column.hint}>{column.label}</h3>
 				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums" title={results[column.id].filtered ? `${items.length} of ${byStatus[column.id].length} tasks match` : undefined}>
 					{results[column.id].filtered ? `${items.length} / ${byStatus[column.id].length}` : items.length}
 				</span>

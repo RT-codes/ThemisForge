@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type Workspace, type WorkflowSummary } from '$lib/api'
-	import { defaultBoard } from '$lib/boards'
+	import { api, ApiError, type Board as BoardInfo, type Project, type SystemStatus, type Task, type TaskStatus, type Workspace, type WorkflowSummary } from '$lib/api'
+	import { columnsOf, defaultBoard } from '$lib/boards'
 	import { watchersByStatus } from '$lib/workflow'
 	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
@@ -10,6 +10,7 @@
 	import ScheduleTimeline from '$lib/components/project/ScheduleTimeline.svelte'
 	import TaskList from '$lib/components/project/TaskList.svelte'
 	import ProjectHistory from '$lib/components/project/ProjectHistory.svelte'
+	import StatusesDialog from '$lib/components/project/StatusesDialog.svelte'
 	import TaskSheet from '$lib/components/project/TaskSheet.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -41,6 +42,7 @@
 	let sheetTaskId = $state<number | null>(null)
 	let sheetStatus = $state<TaskStatus>('backlog')
 	let propsOpen = $state(false)
+	let statusesOpen = $state(false)
 	let editOpen = $state(false)
 	let deleteOpen = $state(false)
 	let deleteError = $state('')
@@ -49,6 +51,7 @@
 
 	// The page shows the project's first board; choosing between several boards comes with the workspace pages.
 	const board = $derived(defaultBoard(workspaces))
+	const columns = $derived(board ? columnsOf(board) : [])
 	const sheetTask = $derived(tasks.find((t) => t.id === sheetTaskId) ?? null)
 	const defs = $derived(project?.properties ?? [])
 	const counts = $derived({
@@ -77,6 +80,12 @@
 			if (e instanceof ApiError && e.status === 404) notFound = true
 			else loadError = e instanceof Error ? e.message : 'Could not load the project'
 		}
+	}
+
+	/** the board after its statuses changed: show its new columns, and fetch the tasks (deleting a status moves some) */
+	async function boardChanged(updated: BoardInfo) {
+		workspaces = workspaces.map((w) => ({ ...w, boards: w.boards.map((b) => (b.id === updated.id ? updated : b)) }))
+		tasks = await api.tasks(id, updated.id)
 	}
 
 	async function reload() {
@@ -217,14 +226,14 @@
 				</Tabs.List>
 				<!-- search, order and filters for the whole board; each status adds its own under its title -->
 				{#if tab === 'board'}
-					<div class="ms-auto"><BoardToolbar {view} {defs} /></div>
+					<div class="ms-auto"><BoardToolbar {view} {defs} {columns} onmanage={() => (statusesOpen = true)} /></div>
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} {defs} {now} {view} projectId={id} watchers={watchersByStatus(workflows)} selectedId={sheetOpen ? sheetTaskId : null} onopen={openTask} ondelete={askDeleteTask} onadd={addTask} onmove={move} />
+				<Board {tasks} {columns} {defs} {now} {view} projectId={id} watchers={watchersByStatus(workflows)} selectedId={sheetOpen ? sheetTaskId : null} onopen={openTask} ondelete={askDeleteTask} onadd={addTask} onmove={move} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
-				<TaskList {tasks} {defs} {now} selectedId={sheetOpen ? sheetTaskId : null} onopen={openTask} />
+				<TaskList {tasks} {board} {defs} {now} selectedId={sheetOpen ? sheetTaskId : null} onopen={openTask} />
 			</Tabs.Content>
 			<Tabs.Content value="schedule">
 				<ScheduleTimeline projectId={id} {now} timezone={system?.timezone ?? 'UTC'} {revision} />
@@ -262,6 +271,7 @@
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
 	</AlertDialog.Root>
+	<StatusesDialog bind:open={statusesOpen} {board} {tasks} onchange={boardChanged} />
 	<PropertiesDialog bind:open={propsOpen} projectId={id} {defs} onsaved={reload} />
 	<ProjectDialog bind:open={editOpen} {project} onsaved={reload} />
 

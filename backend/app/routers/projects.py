@@ -12,6 +12,7 @@ from ..models import (
     Agent,
     Attempt,
     AttemptStatus,
+    Board,
     NodeStatus,
     Project,
     ProjectEvent,
@@ -260,6 +261,7 @@ async def create_task(
             if body.board_id is not None
             else await boards.default_board(session, project.id)
         )
+        boards.check_status(board, body.status)
     except boards.BoardError as e:
         raise _bad(str(e)) from None
     task = Task(
@@ -333,6 +335,10 @@ async def update_task(
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:
+        try:
+            boards.check_status(await session.get(Board, task.board_id), body.status)
+        except boards.BoardError as e:
+            raise _bad(str(e)) from None
         task.status = body.status
         reschedule = True
         if "position" not in fields:

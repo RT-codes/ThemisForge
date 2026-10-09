@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, type ProjectEvent } from '$lib/api'
-	import { dateTime, relative, statusLabel } from '$lib/format'
+	import { statusLabel } from '$lib/boards'
+	import { dateTime, relative } from '$lib/format'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 
 	let { projectId, now, revision }: { projectId: number; now: number; revision: number } = $props()
@@ -19,7 +20,7 @@
 	/** a line of text for the event; unknown kinds (from a newer version) still show their title */
 	function describe(e: ProjectEvent): string {
 		if (e.kind === 'task_deleted') {
-			const was = typeof e.data.status === 'string' ? ` (was in ${statusLabel(e.data.status as never)})` : ''
+			const was = typeof e.data.status === 'string' ? ` (was in ${statusLabel(e.data.status)})` : ''
 			return `Deleted the task "${e.title}"${was}`
 		}
 		return e.title

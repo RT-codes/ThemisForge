@@ -5,7 +5,7 @@
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
-	import { STATUSES } from '$lib/format'
+	import type { ColumnInfo } from '$lib/boards'
 	import { cn } from '$lib/utils'
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down'
 	import EyeIcon from '@lucide/svelte/icons/eye'
@@ -16,11 +16,11 @@
 	import SortMenuItems from './SortMenuItems.svelte'
 
 	// The controls for the whole board: search, order and filters. Each status can add its own below its title.
-	let { view, defs }: { view: BoardViewStore; defs: PropertyDef[] } = $props()
+	let { view, defs, columns, onmanage }: { view: BoardViewStore; defs: PropertyDef[]; columns: ColumnInfo[]; onmanage: () => void } = $props()
 
 	const sorted = $derived(view.board.sort !== 'manual')
 	const filters = $derived(filterCount(view.board.filters))
-	const hiddenCount = $derived(STATUSES.filter((s) => view.hidden.includes(s.id)).length)
+	const hiddenCount = $derived(columns.filter((s) => view.hidden.includes(s.id)).length)
 	const anything = $derived(!isDefaultView(view.board) || Object.values(view.columns).some((c) => !isDefaultColumn(c)))
 </script>
 
@@ -82,13 +82,13 @@
 				<Button {...props} variant="outline" size="sm" class={cn('h-8 gap-1.5', hiddenCount > 0 && 'border-primary/50 text-primary')} aria-label="Choose which statuses to show">
 					<EyeIcon />
 					Statuses
-					{#if hiddenCount > 0}<span class="rounded-full bg-primary/20 px-1.5 text-xs tabular-nums">{STATUSES.length - hiddenCount}/{STATUSES.length}</span>{/if}
+					{#if hiddenCount > 0}<span class="rounded-full bg-primary/20 px-1.5 text-xs tabular-nums">{columns.length - hiddenCount}/{columns.length}</span>{/if}
 				</Button>
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="start" class="w-52">
 			<DropdownMenu.Label class="text-xs text-muted-foreground">Show these statuses</DropdownMenu.Label>
-			{#each STATUSES as s (s.id)}
+			{#each columns as s (s.id)}
 				<DropdownMenu.CheckboxItem checked={!view.hidden.includes(s.id)} onCheckedChange={() => view.toggleHidden(s.id)}>
 					{s.label}
 				</DropdownMenu.CheckboxItem>
@@ -97,6 +97,8 @@
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item closeOnSelect={false} onSelect={() => view.showAll()}>Show all</DropdownMenu.Item>
 			{/if}
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item onSelect={onmanage}>Add or edit statuses...</DropdownMenu.Item>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 

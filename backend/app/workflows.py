@@ -33,6 +33,7 @@ from .models import (
     Agent,
     Attempt,
     AttemptStatus,
+    Board,
     NodeStatus,
     RunStatus,
     Task,
@@ -666,12 +667,17 @@ class WorkflowRunner:
                 "'A task moves into a status' to start the workflow."
             )
         target = c.get("status", "backlog")
-        if target not in {s.value for s in TaskStatus} or target == TaskStatus.RUNNING:
+        if target == TaskStatus.RUNNING or (
+            target not in {s.value for s in TaskStatus} and boards.custom_id(target) is None
+        ):
             raise NodeError(f"'{target}' is not a status a workflow can move a task to")
         async with self.maker() as s:
             before = 0
             if action == "create":
-                board = await boards.default_board(s, ctx.project_id)
+                try:
+                    board = await boards.board_for_status(s, ctx.project_id, target)
+                except boards.BoardError as e:
+                    raise NodeError(str(e)) from None
                 task = Task(
                     project_id=ctx.project_id, board_id=board.id, title=title,
                     description=c.get("description", ""), status=target,
@@ -696,6 +702,11 @@ class WorkflowRunner:
                     raise NodeError(f'There is no task titled "{title}" in this project.')
                 if task.status == TaskStatus.RUNNING:
                     raise NodeError(f'The task "{title}" is already running.')
+                if action != "run":  # a custom status only exists on its own board
+                    try:
+                        boards.check_status(await s.get(Board, task.board_id), target)
+                    except boards.BoardError as e:
+                        raise NodeError(str(e)) from None
                 before = (
                     await s.scalar(
                         select(func.coalesce(func.max(Attempt.id), 0)).where(Attempt.task_id == task.id)

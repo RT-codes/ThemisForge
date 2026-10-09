@@ -33,6 +33,23 @@ whether the scheduler is on and how many cells are busy.
 
 Only the scheduler moves a task into **Running**. You start a task by making it Ready or by pressing **Run now**.
 
+### Your own statuses
+
+The seven statuses above are built in. They are the same on every board, in the same order, and cannot be renamed or
+removed. You can add statuses of your own around them, for example *Investigating* between Backlog and Ready, or *Waiting
+for client* before Done.
+
+Open **Statuses** in the board toolbar and choose **Add or edit statuses**. There you can:
+
+- **Add** a status by typing a name. It appears right after Backlog.
+- **Rename** it, give it a **colour**, and **move** it earlier or later among the other columns.
+- **Delete** it. If tasks are in it you choose where they go (any status except Ready and Running, which would start work).
+
+A status of your own is a **parking column**, like Backlog: Themis never starts a task that sits in it. A task waits there
+until you, or a [workflow](/docs/workflows), move it on, and when a task finishes it ends up in Done, Review, Failed or
+Blocked as usual. Workflow Trigger and Task nodes can use your statuses too, so a workflow can start when a task lands in
+*Investigating*. A status belongs to one board, and its name must differ from the other statuses of that board.
+
 ## What happens when an attempt ends
 
 | Task type | Succeeded | Failed | Cancelled |

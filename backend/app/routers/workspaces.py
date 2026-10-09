@@ -9,12 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import boards as rules
 from ..deps import CurrentUser, SessionDep
-from ..models import Board, Project, Workspace
+from ..models import Board, BoardStatus, Project, Workspace
 from ..schemas import (
     BoardIn,
     BoardOut,
     BoardPatch,
     ColumnOut,
+    StatusIn,
+    StatusPatch,
     WorkspaceIn,
     WorkspaceOut,
     WorkspacePatch,
@@ -191,3 +193,66 @@ async def delete_board(
     except rules.BoardError as e:
         raise _refused(e) from None
     await session.commit()
+
+
+# custom statuses. They answer with the whole board so the interface can swap in its new columns.
+
+
+async def _status(session: AsyncSession, board: Board, status_id: int) -> BoardStatus:
+    status_row = await session.get(BoardStatus, status_id)
+    if status_row is None or status_row.board_id != board.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Status not found")
+    return status_row
+
+
+@router.post("/boards/{board_id}/statuses", response_model=BoardOut, status_code=status.HTTP_201_CREATED)
+async def add_status(board_id: int, body: StatusIn, session: SessionDep, user: CurrentUser) -> BoardOut:
+    board = await _board(session, board_id, user)
+    try:
+        await rules.add_status(session, board, body.name, body.color, body.index)
+    except rules.BoardError as e:
+        raise _refused(e) from None
+    await session.commit()
+    return (await _boards_out(session, [board]))[0]
+
+
+@router.patch("/boards/{board_id}/statuses/{status_id}", response_model=BoardOut)
+async def update_status(
+    board_id: int, status_id: int, body: StatusPatch, session: SessionDep, user: CurrentUser
+) -> BoardOut:
+    board = await _board(session, board_id, user)
+    row = await _status(session, board, status_id)
+    try:
+        await rules.update_status(
+            session,
+            board,
+            row,
+            name=body.name,
+            color=body.color,
+            set_color="color" in body.model_fields_set,
+            index=body.index,
+        )
+    except rules.BoardError as e:
+        raise _refused(e) from None
+    await session.commit()
+    return (await _boards_out(session, [board]))[0]
+
+
+@router.delete("/boards/{board_id}/statuses/{status_id}", response_model=BoardOut)
+async def remove_status(
+    board_id: int,
+    status_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    move_to: Annotated[
+        str | None, Query(description="The status that takes over its tasks (default Backlog)")
+    ] = None,
+) -> BoardOut:
+    board = await _board(session, board_id, user)
+    row = await _status(session, board, status_id)
+    try:
+        await rules.remove_status(session, board, row, move_to)
+    except rules.BoardError as e:
+        raise _refused(e) from None
+    await session.commit()
+    return (await _boards_out(session, [board]))[0]

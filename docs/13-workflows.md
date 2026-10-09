@@ -35,7 +35,7 @@ move them all together. **Esc** lets go of the selection.
 | Node | What it does |
 | --- | --- |
 | **Start** | A run begins here. A workflow can have several Start nodes; a run begins at all of them. |
-| **Trigger** | Begins a run by itself. Set to **A task moves into a status**, it starts the workflow whenever a task of the project is moved into (or created in) that status, from the board, the API or another workflow. The steps after it can use that task. Schedules are not automatic yet; a Trigger set to anything else behaves like Start. |
+| **Trigger** | Begins a run by itself. Set to **A task moves into a status**, it starts the workflow whenever a task of the project is moved into (or created in) that status, from the board, the API or another workflow. The status can be one of the seven built-in ones or a [status you added](/docs/tasks#your-own-statuses) to a board. The steps after it can use that task. Schedules are not automatic yet; a Trigger set to anything else behaves like Start. |
 | **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). A task that becomes **Ready** runs like any other task and the node waits for it. |
 | **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task that started the run (its title and description). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |

@@ -5,7 +5,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, fiel
 
 from .models import AttemptStatus, ScheduleKind, TaskStatus
 from .profiles import ProfileOverrides
-from .properties import PropertyDef
+from .properties import HEX_COLOR, PropertyDef
 from .scheduling import validate_cron
 
 
@@ -149,6 +149,12 @@ def _name(v: str) -> str:
     return v
 
 
+def _color(v: str | None) -> str | None:
+    if v is not None and not HEX_COLOR.match(v):
+        raise ValueError(f"'{v}' is not a colour like #3b82f6")
+    return v.lower() if v else v
+
+
 class WorkspaceIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     purpose: str = Field(default="", max_length=200)
@@ -186,6 +192,30 @@ class BoardPatch(BaseModel):
     @classmethod
     def strip_name(cls, v: str | None) -> str | None:
         return None if v is None else _name(v)
+
+
+class StatusIn(BaseModel):
+    """A new custom status for a board."""
+
+    name: str = Field(min_length=1, max_length=40)
+    color: str | None = None
+    index: int | None = Field(default=None, ge=0)  # where among the columns; left out: at the end
+
+    _strip_name = field_validator("name")(_name)
+    _check_color = field_validator("color")(_color)
+
+
+class StatusPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=40)
+    color: str | None = None  # sent as null: no colour
+    index: int | None = Field(default=None, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        return None if v is None else _name(v)
+
+    _check_color = field_validator("color")(_color)
 
 
 class ColumnOut(BaseModel):
@@ -245,7 +275,7 @@ def check_schedule(
 class TaskIn(_ScheduleFields):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20_000)
-    status: TaskStatus = TaskStatus.BACKLOG
+    status: str = TaskStatus.BACKLOG  # a built-in status, or "custom:<id>" of the board (checked against it)
     board_id: int | None = None  # left out: the project's first board
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
@@ -262,7 +292,7 @@ class TaskIn(_ScheduleFields):
 
     @field_validator("status")
     @classmethod
-    def not_running(cls, v: TaskStatus) -> TaskStatus:
+    def not_running(cls, v: str) -> str:
         if v == TaskStatus.RUNNING:
             raise ValueError("Tasks start running through the scheduler (use 'Run now')")
         return v
@@ -276,7 +306,7 @@ class TaskIn(_ScheduleFields):
 class TaskPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=20_000)
-    status: TaskStatus | None = None
+    status: str | None = None
     position: float | None = None
     properties: dict[str, Any] | None = None
     schedule_kind: ScheduleKind | None = None
@@ -289,7 +319,7 @@ class TaskPatch(BaseModel):
 
     @field_validator("status")
     @classmethod
-    def not_running(cls, v: TaskStatus | None) -> TaskStatus | None:
+    def not_running(cls, v: str | None) -> str | None:
         if v == TaskStatus.RUNNING:
             raise ValueError("Tasks start running through the scheduler (use 'Run now')")
         return v
@@ -302,7 +332,7 @@ class TaskSnapshot(BaseModel):
 
     title: str
     description: str
-    status: TaskStatus
+    status: str
     properties: dict[str, Any]
     schedule_kind: ScheduleKind
     cron: str | None
@@ -341,7 +371,7 @@ class TaskOut(BaseModel):
     board_id: int
     title: str
     description: str
-    status: TaskStatus
+    status: str
     position: float
     properties: dict[str, Any]
     schedule_kind: ScheduleKind

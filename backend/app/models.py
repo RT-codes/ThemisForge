@@ -146,6 +146,23 @@ class Board(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
 
+class BoardStatus(Base):
+    """A custom status: a column a board added to the seven built-in ones (see app/boards.py).
+
+    A task in one is addressed by the key "custom:<id>", so renaming never touches tasks or workflow graphs. The
+    scheduler only reacts to Ready and Running, so a task parked in a custom status is simply never started."""
+
+    __tablename__ = "board_statuses"
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )  # a deleted status's key must never come back as another
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    board_id: Mapped[int] = mapped_column(ForeignKey("boards.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(40))
+    color: Mapped[str | None] = mapped_column(String(7), default=None)  # "#rrggbb"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -156,6 +173,7 @@ class Task(Base):
     board_id: Mapped[int] = mapped_column(ForeignKey("boards.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
+    # A built-in status ("backlog"...) or a custom one of its board ("custom:<id>", see BoardStatus).
     status: Mapped[str] = mapped_column(String(20), default=TaskStatus.BACKLOG, index=True)
     position: Mapped[float] = mapped_column(Float, default=0.0)
     properties: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

@@ -34,6 +34,7 @@ test('summaries read well', () => {
   assert.equal(summary('trigger', { type: 'schedule', repeat: 'weekdays', time: '08:30' }), 'Every weekday at 08:30')
   assert.equal(summary('task', { ...defaultConfig('task'), title: 'Write report' }), 'Create a task: Write report')
   assert.equal(summary('trigger', { type: 'task_status', status: 'review' }), 'A task moves into Review')
+  assert.equal(summary('trigger', { type: 'task_status', status: 'custom:12' }), 'A task moves into a custom status')
   assert.equal(summary('task', { ...defaultConfig('task'), action: 'move_trigger', status: 'done' }), 'Move that task to Done')
   assert.equal(summary('agent', { ...defaultConfig('agent'), instructions: ' Fix it\nthen test ' }), 'Fix it')
   assert.equal(summary('condition', { source: 'result', operator: 'contains', value: 'ok' }), 'The previous result contains ok')

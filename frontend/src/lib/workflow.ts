@@ -101,15 +101,18 @@ export const visibleFields = (kind: NodeKind, config: NodeConfig) =>
 const optionLabel = (kind: NodeKind, key: string, config: NodeConfig) =>
   NODE_FIELDS[kind].find((f) => f.key === key)?.options?.find((o) => o.value === config[key])?.label ?? ''
 
+/** the status a node names; a custom one is a board's own and the canvas does not know its name, so it stays generic */
+const statusText = (kind: NodeKind, c: NodeConfig) => optionLabel(kind, 'status', c) || (c.status?.startsWith('custom:') ? 'a custom status' : c.status)
+
 /** one line shown on the node, so a canvas can be read without opening every node */
 export function summary(kind: NodeKind, c: NodeConfig): string {
   switch (kind) {
     case 'start':
       return 'Begins a run'
     case 'trigger':
-      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `A task moves into ${optionLabel('trigger', 'status', c) || c.status}` : 'Run by hand'
+      return c.type === 'schedule' ? `${optionLabel('trigger', 'repeat', c)} at ${c.time || '09:00'}` : c.type === 'task_status' ? `A task moves into ${statusText('trigger', c)}` : 'Run by hand'
     case 'task':
-      if (c.action === 'move_trigger') return `Move that task to ${optionLabel('task', 'status', c) || c.status}`
+      if (c.action === 'move_trigger') return `Move that task to ${statusText('task', c)}`
       return `${optionLabel('task', 'action', c)}${c.title ? `: ${c.title}` : ''}`
     case 'agent':
       return c.instructions.trim() ? c.instructions.trim().split('\n')[0] : 'No instructions yet'

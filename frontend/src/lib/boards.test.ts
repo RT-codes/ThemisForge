@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Board, Column, Task, Workspace } from './api.ts'
-import { boardChoices, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, isSimple, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
+import { boardChoices, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null })
 const custom = (id: number, name: string, color: string | null = null): Column => ({ key: `custom:${id}`, name, builtin: false, color })
@@ -54,12 +54,6 @@ test('boards are found by id, with the workspace they sit in', () => {
   assert.equal(findBoard(ws, 5)?.id, 5)
   assert.equal(findBoard(ws, 9), null)
   assert.equal(workspaceOf(ws, 5)?.id, 2)
-})
-
-test('only a single workspace with a single board counts as simple', () => {
-  assert.equal(isSimple([workspace(1, [board(1)])]), true)
-  assert.equal(isSimple([workspace(1, [board(1), board(2)])]), false)
-  assert.equal(isSimple([workspace(1, [board(1)]), workspace(2, [])]), false)
 })
 
 test('a board is summed up by its columns, in order, skipping empty ones', () => {

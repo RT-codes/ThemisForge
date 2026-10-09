@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api, type Board as BoardInfo, type Workspace } from '$lib/api'
-	import { columnsOf, defaultBoard, findBoard, isSimple, workspaceOf } from '$lib/boards'
+	import { columnsOf, defaultBoard, findBoard, workspaceOf } from '$lib/boards'
 	import { watchersByStatus } from '$lib/workflow'
 	import { BoardViewStore } from '$lib/boardView.svelte'
 	import Board from '$lib/components/project/Board.svelte'
@@ -29,9 +29,8 @@
 	import { onMount, untrack } from 'svelte'
 	import { fade } from 'svelte/transition'
 
-	// One board on its own: its Board, List, Schedule and History. `boardId` null is the address /tasks, the project's
-	// first board.
-	let { id, boardId = null }: { id: number; boardId?: number | null } = $props()
+	// One board on its own: its Board, List, Schedule and History.
+	let { id, boardId }: { id: number; boardId: number } = $props()
 
 	const desk = new ProjectDesk(untrack(() => id)) // the page is rebuilt for every project, so the id does not change here
 	onMount(() => desk.start())
@@ -48,9 +47,8 @@
 	let removing = $state<{ kind: 'board'; board: BoardInfo } | null>(null)
 
 	const workspaces = $derived<Workspace[]>(structure.get(id) ?? [])
-	const board = $derived(boardId === null ? defaultBoard(workspaces) : findBoard(workspaces, boardId))
+	const board = $derived(findBoard(workspaces, boardId))
 	const workspace = $derived(board ? workspaceOf(workspaces, board.id) : null)
-	const simple = $derived(isSimple(workspaces))
 	const columns = $derived(board ? columnsOf(board) : [])
 	// what this board shows and remembers in this browser; rebuilt only when another board is opened
 	const boardKey = $derived(board?.id ?? null)
@@ -112,11 +110,11 @@
 	<div class="flex min-h-0 flex-1 flex-col gap-4 px-6 py-6" in:fade={{ duration: 350 }}>
 		<div class="flex flex-wrap items-start gap-x-6 gap-y-3">
 			<div class="min-w-0 flex-1">
-				{#if !simple && workspace}
+				{#if workspace}
 					<a href="/projects/{id}/workspaces/{workspace.id}" class="text-xs text-muted-foreground transition-colors hover:text-foreground">{workspace.name}</a>
 				{/if}
-				<h2 class="truncate text-2xl font-semibold tracking-tight">{simple ? 'Tasks' : board.name}</h2>
-				{#if !simple && board.purpose}<p class="mt-0.5 truncate text-sm text-muted-foreground">{board.purpose}</p>{/if}
+				<h2 class="truncate text-2xl font-semibold tracking-tight">{board.name}</h2>
+				{#if board.purpose}<p class="mt-0.5 truncate text-sm text-muted-foreground">{board.purpose}</p>{/if}
 			</div>
 			<div class="flex items-center gap-2">
 				<Button onclick={() => desk.addTask(board.id)}><PlusIcon /> New task</Button>

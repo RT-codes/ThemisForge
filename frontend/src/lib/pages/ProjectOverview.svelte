@@ -6,7 +6,6 @@
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
 	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
-	import { isSimple } from '$lib/boards'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
@@ -28,8 +27,6 @@
 	let revision = $state(0)
 	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
-	// one workspace with one board is how a project starts, and it keeps the single card it always had
-	const simple = $derived(workspaces.length === 0 || isSimple(workspaces))
 
 	async function load() {
 		try {
@@ -76,13 +73,12 @@
 			<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
 		</header>
 
-		<svelte:element this={simple ? 'a' : 'div'} href={simple ? `/projects/${id}/tasks` : undefined} class="mt-6 block rounded-xl border bg-card p-5 transition-colors {simple ? 'hover:border-primary/40' : ''}">
+		<div class="mt-6 block rounded-xl border bg-card p-5">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
 					<p class="text-xs text-muted-foreground">A quick pulse on work in this project</p>
 				</div>
-				{#if simple}<span class="text-xs font-medium text-primary">Open task board <span aria-hidden="true">↗</span></span>{/if}
 			</div>
 			<div class="mt-5 grid grid-cols-2 gap-4 border-t pt-4 sm:grid-cols-4">
 				{#each stats as s (s.label)}
@@ -92,9 +88,9 @@
 					</div>
 				{/each}
 			</div>
-		</svelte:element>
+		</div>
 
-		{#if !simple}<WorkspaceCards projectId={id} {workspaces} />{/if}
+		<WorkspaceCards projectId={id} {workspaces} />
 
 		<section class="mt-4 rounded-xl border bg-card p-5">
 			<div class="mb-3 flex items-center justify-between gap-3">

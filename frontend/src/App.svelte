@@ -21,7 +21,7 @@
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
-	import { findBoard, isSimple, workspaceOf } from '$lib/boards'
+	import { findBoard, workspaceOf } from '$lib/boards'
 	import { onMount } from 'svelte'
 	import { fade } from 'svelte/transition'
 
@@ -57,7 +57,6 @@
 			const project: Crumb = { label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }
 			const workspaces = structure.get(route.id) ?? []
 			if (route.page === 'workspace') return [project, { label: workspaces.find((w) => w.id === route.workspaceId)?.name ?? 'Workspace' }]
-			if (isSimple(workspaces)) return [project, { label: 'Tasks' }]
 			const workspace = workspaceOf(workspaces, route.boardId)
 			return [project, ...(workspace ? [{ label: workspace.name, href: `/projects/${route.id}/workspaces/${workspace.id}` }] : []), { label: findBoard(workspaces, route.boardId)?.name ?? 'Board' }]
 		}
@@ -115,7 +114,7 @@
 				{:else if route.name === 'project'}
 					{#key route.id}
 						{#if route.page === 'tasks'}
-							<BoardPage id={route.id} />
+							<WorkspacePage id={route.id} workspaceId={null} />
 						{:else if route.page === 'board'}
 							<BoardPage id={route.id} boardId={route.boardId} />
 						{:else if route.page === 'workspace'}

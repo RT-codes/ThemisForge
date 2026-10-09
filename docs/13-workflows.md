@@ -75,7 +75,7 @@ dashed and teal and has no arrow, because it is not a step: it only says "this a
 - Nodes run **one at a time**, in the order the lines lead.
 - A node that fails stops its path. An agent can be told to **carry on** instead.
 - A node that more than one path leads to runs once.
-- Task and Agent nodes create real tasks in the project, so they also show up on the Tasks page.
+- Task and Agent nodes create real tasks in the project, so they also show up on the project's first board.
 
 ### Watching a test run
 

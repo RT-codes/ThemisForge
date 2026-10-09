@@ -21,13 +21,17 @@
 	import { fade } from 'svelte/transition'
 
 	// A workspace: its boards stacked in the order the person chose, each one foldable and open on its own page.
-	let { id, workspaceId }: { id: number; workspaceId: number } = $props()
+	// `workspaceId` null is the old address /tasks: the project's first workspace, which it moves to.
+	let { id, workspaceId }: { id: number; workspaceId: number | null } = $props()
 
 	const desk = new ProjectDesk(untrack(() => id))
 	onMount(() => desk.start())
 
 	const workspaces = $derived<Workspace[]>(structure.get(id) ?? [])
-	const workspace = $derived(workspaces.find((w) => w.id === workspaceId) ?? null)
+	const workspace = $derived((workspaceId === null ? workspaces[0] : workspaces.find((w) => w.id === workspaceId)) ?? null)
+	$effect(() => {
+		if (workspaceId === null && workspace) router.replace(`/projects/${id}/workspaces/${workspace.id}`)
+	})
 	const allBoards = $derived(workspaces.flatMap((w) => w.boards))
 	const firstBoardId = $derived(defaultBoard(workspaces)?.id)
 
@@ -146,6 +150,7 @@
 				collapsed={folded.includes(board.id)}
 				canMoveUp={i > 0}
 				canMoveDown={i < workspace.boards.length - 1}
+				fill={workspace.boards.length === 1}
 				ontoggle={() => toggle(board.id)}
 				onmove={(step) => shift(board, step)}
 				onedit={() => edit(board)}

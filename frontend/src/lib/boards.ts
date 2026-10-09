@@ -90,10 +90,6 @@ export function findBoard(workspaces: Workspace[], boardId: number): Board | nul
 
 export const workspaceOf = (workspaces: Workspace[], boardId: number): Workspace | null => workspaces.find((w) => w.boards.some((b) => b.id === boardId)) ?? null
 
-/** One workspace with one board is how every project starts. It is shown the way tasks always were: a single "Tasks" page,
- *  with no workspace level in between. */
-export const isSimple = (workspaces: Workspace[]): boolean => workspaces.length === 1 && workspaces[0].boards.length === 1
-
 /** how many tasks a board holds, whatever their status */
 export const taskTotal = (board: Board): number => Object.values(board.task_counts).reduce<number>((sum, n) => sum + (n ?? 0), 0)
 

@@ -24,6 +24,7 @@
 		collapsed,
 		canMoveUp,
 		canMoveDown,
+		fill = false,
 		ontoggle,
 		onmove,
 		onedit,
@@ -38,6 +39,8 @@
 		collapsed: boolean
 		canMoveUp: boolean
 		canMoveDown: boolean
+		/** the only board of its workspace: it takes the height of the page, like a board page */
+		fill?: boolean
 		ontoggle: () => void
 		onmove: (step: -1 | 1) => void
 		onedit: () => void
@@ -89,7 +92,7 @@
 		</DropdownMenu.Root>
 	</header>
 	{#if !collapsed && desk.project}
-		<div class="h-[28rem] px-3 pb-3">
+		<div class={fill ? 'h-[max(28rem,calc(100svh-22rem))] px-3 pb-3' : 'h-[28rem] px-3 pb-3'}>
 			<Board
 				{tasks}
 				boardId={board.id}

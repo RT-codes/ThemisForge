@@ -9,8 +9,25 @@ summary: The project dashboard, task statuses, custom properties and the board.
 ## The project pages
 
 Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview shows how many
-tasks are ready and running, and how many are scheduled for today and the next 7 days. **Tasks** (at
-`/projects/<id>/tasks`) is the task manager, with a header and four views of the **same** tasks:
+tasks are ready and running, how many are scheduled for today and the next 7 days, a card for each workspace, and the
+recent activity. Your work lives in **workspaces**, listed in the sidebar under the project.
+
+## Workspaces and boards
+
+Every project starts with one workspace, **Main**, that holds one board, **Tasks**. Open it from the sidebar to see
+your tasks. When one board is not enough, for example because research, building and publishing have different steps,
+you can split the work up:
+
+- A **workspace** is a named area with a short line on what it is for. It holds one or more boards, shown stacked on
+  its page in the order you choose. It only organises: tasks, schedules, agents and shared folders stay shared across
+  the whole project. Create one with **New workspace** on the Overview or in a board's **...** menu, and rename or
+  delete it from its own **...** menu.
+- A **board** is one Kanban with its own [statuses](#your-own-statuses). Every task lives on exactly one board. Add one
+  with **New board** on a workspace page (or the plus beside the workspace in the sidebar). A board's **...** menu has
+  **Edit board**, **Duplicate** (the same statuses, without the tasks) and **Delete board**.
+
+On a workspace page, fold a board away with the arrow in its header, use **Move up** or **Move down** from its menu,
+and **Open** it to get its own page with a header and four views of the **same** tasks:
 
 - **Board**: columns by status, with drag and drop.
 - **List**: a table, handy when there are many tasks.
@@ -18,24 +35,8 @@ tasks are ready and running, and how many are scheduled for today and the next 7
 - **History**: what was done on this board: tasks created, moved, sent or deleted, and changes to its statuses.
 
 The header shows how many tasks are running, ready, waiting for review or failed, when the next run is due, and
-whether the scheduler is on and how many cells are busy.
-
-## Workspaces and boards
-
-A project starts with one board, and the Tasks page is that board. When one board is not enough, for example because
-research, building and publishing have different steps, you can split the work up:
-
-- A **board** is one Kanban with its own [statuses](#your-own-statuses). Every task lives on exactly one board.
-  Open the **...** menu on the Tasks page for **New board**, **Edit this board**, **Duplicate this board** (the same
-  statuses, without the tasks) and **Delete this board**.
-- A **workspace** is a named area that holds boards, with a short line on what it is for. Create one with **New
-  workspace** in that menu or on the project's Overview. It only organises: tasks, schedules, agents and shared folders
-  stay shared across the whole project.
-
-Once a project has more than one workspace or board, the sidebar lists its workspaces (the plus beside a workspace adds
-a board to it), and the Overview shows a card for each. A **workspace page** stacks its boards in the order you
-choose. Fold a board away with the arrow in its header, **Move up** or **Move down** from its menu, and **Open** it to
-get the full page with the toolbar, List, Schedule and History.
+whether the scheduler is on and how many cells are busy. A workspace page also has a **History** tab for the whole
+workspace.
 
 Deleting a board or a workspace never deletes its tasks: you choose the board they move to. A task whose status exists
 only on the deleted board lands in the Backlog of the board it moves to. A project always keeps at least one board.

@@ -20,7 +20,7 @@
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
-	import { isSimple, workspaceOf } from '$lib/boards'
+	import { workspaceOf } from '$lib/boards'
 	import BoardDialog from './project/BoardDialog.svelte'
 	import LayersIcon from '@lucide/svelte/icons/layers'
 	import Logo from './Logo.svelte'
@@ -112,21 +112,12 @@
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
 									{@const spaces = structure.get(p.id) ?? []}
-									{#if spaces.length === 0 || isSimple(spaces)}
-										<Sidebar.MenuSubItem class="tree-leaf">
-											<Sidebar.MenuSubButton isActive={route.name === 'project' && (route.page === 'tasks' || route.page === 'board')} class="me-2.5">
-												{#snippet child({ props })}
-													<a href="/projects/{p.id}/tasks" {...props}><ListChecksIcon /><span>Tasks</span></a>
-												{/snippet}
-											</Sidebar.MenuSubButton>
-										</Sidebar.MenuSubItem>
-									{:else}
-										<!-- several workspaces (or boards): each workspace opens its boards -->
+										<!-- each workspace opens its boards (a new project starts with one) -->
 										{#each spaces as w (w.id)}
 											<Sidebar.MenuSubItem class="tree-leaf">
 												<Sidebar.MenuSubButton
 													isActive={route.name === 'project' &&
-														((route.page === 'workspace' && route.workspaceId === w.id) || (route.page === 'board' && workspaceOf(spaces, route.boardId)?.id === w.id) || (route.page === 'tasks' && spaces[0].id === w.id))}
+														((route.page === 'workspace' && route.workspaceId === w.id) || (route.page === 'board' && workspaceOf(spaces, route.boardId)?.id === w.id))}
 													class="me-2.5"
 												>
 													{#snippet child({ props })}
@@ -136,7 +127,7 @@
 												<SidebarPlus label="New board in {w.name}" class="-end-[1.2rem] top-1/2 -translate-y-1/2" onclick={() => ((boardFor = { projectId: p.id, workspaceId: w.id }), (boardOpen = true))} />
 											</Sidebar.MenuSubItem>
 										{/each}
-									{/if}
+
 									<Sidebar.MenuSubItem class="tree-leaf">
 										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'files'} class="me-2.5">
 											{#snippet child({ props })}

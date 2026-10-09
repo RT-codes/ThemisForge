@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Board, Column, Task, Workspace } from './api.ts'
-import { boardChoices, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
+import { boardChoices, clampHeight, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null })
 const custom = (id: number, name: string, color: string | null = null): Column => ({ key: `custom:${id}`, name, builtin: false, color })
@@ -104,4 +104,11 @@ test('a step picks a board by id and a trigger a workspace or a board', () => {
   // knowing the board, its own statuses are listed without its name
   assert.deepEqual(customStatusChoices(ws, 1), [{ value: 'custom:5', label: 'Waiting' }])
   assert.deepEqual(customStatusChoices(ws, 2), [])
+})
+
+test('a dragged board height stays between a usable minimum and most of the window', () => {
+  assert.equal(clampHeight(100, 900), 256)
+  assert.equal(clampHeight(500.4, 900), 500)
+  assert.equal(clampHeight(5000, 900), 810)
+  assert.equal(clampHeight(5000, 200), 256) // a tiny window never makes it smaller than the minimum
 })

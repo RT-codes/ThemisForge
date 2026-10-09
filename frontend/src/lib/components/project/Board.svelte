@@ -239,7 +239,7 @@
 				{/if}
 			</header>
 			<ColumnBar {view} status={column.id} label={column.label} {defs} />
-			<div class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+			<div class="slim-scrollbar flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
 				{#each items as task (task.id)}
 					{@const slot = slots.get(task.id)}
 					{#if target && slot !== undefined && overIndex === slot}

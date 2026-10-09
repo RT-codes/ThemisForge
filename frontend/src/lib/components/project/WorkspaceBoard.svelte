@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Board as BoardInfo } from '$lib/api'
-	import { columnsOf } from '$lib/boards'
+	import { MIN_BOARD_HEIGHT, clampHeight, columnsOf } from '$lib/boards'
 	import { isDefaultView } from '$lib/boardView'
 	import { BoardViewStore } from '$lib/boardView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -83,6 +83,45 @@
 
 	const total = $derived(tasks.length)
 
+	// The height of the open board. Until the handle is used it is the default (set by classes); after that it is a number
+	// of pixels, kept per board in this browser.
+	const heightKey = `themis.boardHeight.b${untrack(() => board.id)}`
+	let height = $state<number | null>(readHeight())
+	function readHeight(): number | null {
+		try {
+			const n = Number(localStorage.getItem(heightKey))
+			return Number.isFinite(n) && n > 0 ? clampHeight(n, window.innerHeight) : null
+		} catch {
+			return null
+		}
+	}
+	function setHeight(px: number | null) {
+		height = px === null ? null : clampHeight(px, window.innerHeight)
+		try {
+			if (height === null) localStorage.removeItem(heightKey)
+			else localStorage.setItem(heightKey, String(height))
+		} catch {
+			// remembering is a convenience
+		}
+	}
+	let drag: { startY: number; startHeight: number } | null = null
+	function startResize(e: PointerEvent) {
+		const board = (e.currentTarget as HTMLElement).previousElementSibling as HTMLElement | null
+		if (!board) return
+		drag = { startY: e.clientY, startHeight: board.getBoundingClientRect().height }
+		;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+	}
+	function resize(e: PointerEvent) {
+		if (drag) setHeight(drag.startHeight + e.clientY - drag.startY)
+	}
+	const endResize = () => (drag = null)
+	function resizeByKey(e: KeyboardEvent) {
+		if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+		e.preventDefault()
+		const current = height ?? (e.currentTarget as HTMLElement).previousElementSibling?.getBoundingClientRect().height ?? 456
+		setHeight(current + (e.key === 'ArrowDown' ? 32 : -32))
+	}
+
 	// Whenever the numbers change after the board has loaded (a task moved, was made or deleted) the taskbar pulses once,
 	// so a folded board still says that something just happened on it.
 	let pulses = $state(0)
@@ -111,14 +150,15 @@
 		</div>
 		<div class="hidden h-7 w-px shrink-0 bg-border sm:block" aria-hidden="true"></div>
 		<!-- one segment per status with the number of tasks in it -->
-		<ul class="no-scrollbar order-last flex min-w-0 basis-full items-stretch divide-x divide-border/60 overflow-x-auto rounded-lg border bg-background/60 sm:order-none sm:basis-auto sm:flex-1" aria-label="Tasks per status">
+		<!-- a quarter of the taskbar: counts only (the name of a status is in its tooltip), the full words on a narrow screen -->
+		<ul class="no-scrollbar order-last flex min-w-0 basis-full items-stretch divide-x divide-border/60 overflow-x-auto rounded-lg border bg-background/60 sm:order-none sm:w-1/4 sm:min-w-64 sm:flex-none sm:basis-auto" aria-label="Tasks per status">
 			{#each segments as seg (seg.id)}
 				<li
-					class={cn('flex min-w-fit flex-1 items-center justify-center gap-1.5 px-3 py-1.5 text-xs transition-[opacity,background-color] hover:bg-accent/40', seg.count === 0 && 'opacity-40')}
+					class={cn('flex min-w-fit flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-xs transition-[opacity,background-color] hover:bg-accent/40', seg.count === 0 && 'opacity-40')}
 					title="{seg.label}: {seg.count} {seg.count === 1 ? 'task' : 'tasks'}"
 				>
 					<span class={cn('size-2 rounded-full', seg.tone.dot, seg.id === 'running' && seg.count > 0 && 'animate-pulse')} style:background-color={seg.color ?? undefined}></span>
-					<span class="hidden text-muted-foreground lg:inline">{seg.label}</span>
+					<span class="text-muted-foreground sm:hidden">{seg.label}</span>
 					<span class={cn('font-semibold tabular-nums', seg.count > 0 ? seg.tone.text : 'text-muted-foreground')}>{seg.count}</span>
 				</li>
 			{/each}
@@ -147,17 +187,12 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
-		<!-- the same numbers as a small proportional strip under the title: how the board is doing at a glance -->
-		{#if total > 0}
-			<div class="pointer-events-none absolute bottom-0 left-3 flex h-[3px] w-1/4 overflow-hidden rounded-full" aria-hidden="true">
-				{#each segments as seg (seg.id)}
-					{#if seg.count > 0}<span class={cn('h-full', seg.tone.dot)} style:flex="{seg.count} 1 0%" style:background-color={seg.color ?? undefined}></span>{/if}
-				{/each}
-			</div>
-		{/if}
 	</header>
 	{#if !collapsed && desk.project}
-		<div class={fill ? 'h-[max(29rem,calc(100svh-21rem))] p-3' : 'h-[29rem] p-3'}>
+		<div
+			class={cn('px-3 pt-3', height === null && (fill ? 'h-[max(28.25rem,calc(100svh-20rem))]' : 'h-[28.25rem]'))}
+			style:height={height === null ? undefined : `${height}px`}
+		>
 			<Board
 				{tasks}
 				boardId={board.id}
@@ -173,6 +208,26 @@
 				onadd={(status) => desk.addTask(board.id, status)}
 				onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)}
 			/>
+		</div>
+		<!-- drag this handle to make the board taller or shorter; the height is remembered for this board in this browser -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -- a focusable separator is the ARIA window splitter -->
+		<div
+			class="group flex h-4 cursor-ns-resize touch-none items-center justify-center outline-none"
+			role="separator"
+			aria-orientation="horizontal"
+			aria-label="Resize {board.name}"
+			aria-valuenow={height ?? undefined}
+			aria-valuemin={MIN_BOARD_HEIGHT}
+			tabindex="0"
+			onpointerdown={startResize}
+			onpointermove={resize}
+			onpointerup={endResize}
+			onpointercancel={endResize}
+			onkeydown={resizeByKey}
+			ondblclick={() => setHeight(null)}
+			title="Drag to resize, double-click to reset"
+		>
+			<span class="h-1 w-12 rounded-full bg-border transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary group-active:bg-primary"></span>
 		</div>
 	{/if}
 </section>

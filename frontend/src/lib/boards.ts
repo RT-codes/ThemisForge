@@ -106,6 +106,13 @@ export function boardSummary(board: Board): string {
   return parts.length ? parts.join(', ') : 'No tasks yet'
 }
 
+/** A board's height after the person dragged its handle: not too small to use, not taller than most of the window. */
+export function clampHeight(px: number, viewport: number): number {
+  const most = Math.max(MIN_BOARD_HEIGHT, Math.floor(viewport * 0.9))
+  return Math.round(Math.min(Math.max(px, MIN_BOARD_HEIGHT), most))
+}
+export const MIN_BOARD_HEIGHT = 256
+
 /** The boards a person folded away on a workspace page, kept in this browser. */
 export function parseCollapsed(raw: string | null): number[] {
   try {

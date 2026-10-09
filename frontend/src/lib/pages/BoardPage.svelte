@@ -7,15 +7,13 @@
 	import BoardDialog from '$lib/components/project/BoardDialog.svelte'
 	import BoardToolbar from '$lib/components/project/BoardToolbar.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
-	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
+	import ProjectDialogs from '$lib/components/project/ProjectDialogs.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
-	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import RemoveDialog from '$lib/components/project/RemoveDialog.svelte'
 	import ScheduleTimeline from '$lib/components/project/ScheduleTimeline.svelte'
 	import StatusesDialog from '$lib/components/project/StatusesDialog.svelte'
 	import TaskList from '$lib/components/project/TaskList.svelte'
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
@@ -40,7 +38,6 @@
 	let statusesOpen = $state(false)
 	let editProjectOpen = $state(false)
 	let deleteProjectOpen = $state(false)
-	let deleteProjectError = $state('')
 	let boardDialog = $state<'new' | 'edit'>('new')
 	let boardDialogOpen = $state(false)
 	let workspaceDialog = $state(false)
@@ -79,18 +76,6 @@
 		const copy = await api.duplicateBoard(board.id)
 		await desk.reload()
 		router.navigate(`/projects/${id}/boards/${copy.id}`)
-	}
-
-	async function deleteProject() {
-		deleteProjectError = ''
-		try {
-			await api.deleteProject(id)
-			await projects.refresh()
-			deleteProjectOpen = false
-			router.navigate('/')
-		} catch (e) {
-			deleteProjectError = e instanceof Error ? e.message : 'Could not delete the project'
-		}
 	}
 </script>
 
@@ -134,7 +119,7 @@
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Task properties</DropdownMenu.Item>
 						<DropdownMenu.Item onSelect={() => (editProjectOpen = true)}>Rename project</DropdownMenu.Item>
-						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => ((deleteProjectError = ''), (deleteProjectOpen = true))}>
+						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteProjectOpen = true)}>
 							Delete project
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
@@ -198,8 +183,7 @@
 
 	<DeskDialogs {desk} {workspaces} />
 	<StatusesDialog bind:open={statusesOpen} {board} {tasks} onchange={boardChanged} />
-	<PropertiesDialog bind:open={propsOpen} projectId={id} {defs} onsaved={() => desk.reload()} />
-	<ProjectDialog bind:open={editProjectOpen} project={desk.project} onsaved={() => desk.reload()} />
+	<ProjectDialogs project={desk.project} bind:editOpen={editProjectOpen} bind:propsOpen bind:deleteOpen={deleteProjectOpen} onchanged={() => desk.reload()} />
 	<BoardDialog
 		bind:open={boardDialogOpen}
 		workspaceId={board.workspace_id}
@@ -218,22 +202,6 @@
 		}}
 	/>
 	<RemoveDialog bind:target={removing} {workspaces} ondeleted={async () => (await desk.reload(), router.navigate(`/projects/${id}`))} />
-
-	<AlertDialog.Root bind:open={deleteProjectOpen}>
-		<AlertDialog.Content>
-			<AlertDialog.Header>
-				<AlertDialog.Title>Delete "{desk.project.name}"?</AlertDialog.Title>
-				<AlertDialog.Description>
-					All of its tasks and their history are removed permanently. The project's files on disk are kept.
-				</AlertDialog.Description>
-			</AlertDialog.Header>
-			{#if deleteProjectError}<p class="text-sm text-destructive" role="alert">{deleteProjectError}</p>{/if}
-			<AlertDialog.Footer>
-				<AlertDialog.Cancel>Keep it</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={(e) => (e.preventDefault(), deleteProject())}>Delete project</AlertDialog.Action>
-			</AlertDialog.Footer>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
 {:else if desk.loadError}
 	<p class="m-auto text-sm text-destructive">{desk.loadError}</p>
 {/if}

@@ -7,7 +7,10 @@
 	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
+	import ProjectDialogs from '$lib/components/project/ProjectDialogs.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
@@ -26,6 +29,9 @@
 	let now = $state(Date.now())
 	let loadError = $state('')
 	let workspaceOpen = $state(false)
+	let editOpen = $state(false)
+	let propsOpen = $state(false)
+	let deleteOpen = $state(false)
 	let revision = $state(0)
 	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
@@ -76,7 +82,22 @@
 					{/if}
 				</div>
 			</div>
-			<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
+			<div class="flex items-center gap-2">
+				<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button variant="outline" size="icon-sm" aria-label="Project menu" {...props}><EllipsisIcon /></Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-48">
+						<DropdownMenu.Item onSelect={() => (editOpen = true)}>Edit project</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Task properties</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteOpen = true)}>Delete project</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
 		</header>
 
 		<div class="mt-6 block rounded-xl border bg-card p-5">
@@ -120,6 +141,7 @@
 			<div class="lg:col-span-6"><ToolsSection projectId={id} /></div>
 		</div>
 	</div>
+	<ProjectDialogs {project} bind:editOpen bind:propsOpen bind:deleteOpen onchanged={async () => (await load(), await projects.refresh())} />
 	<WorkspaceDialog
 		bind:open={workspaceOpen}
 		projectId={id}

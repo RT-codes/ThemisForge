@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Board as BoardInfo } from '$lib/api'
-	import { MIN_BOARD_HEIGHT, clampHeight, columnsOf } from '$lib/boards'
+	import { MIN_BOARD_HEIGHT, clampHeight, columnsOf, statusTone } from '$lib/boards'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
+	import BoxesIcon from '@lucide/svelte/icons/boxes'
 	import { isDefaultView } from '$lib/boardView'
 	import { BoardViewStore } from '$lib/boardView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -59,24 +61,14 @@
 	const tasks = $derived(desk.tasks.filter((t) => t.board_id === board.id))
 	const filtered = $derived(!isDefaultView(view.board))
 
-	// How each status looks in the taskbar. Done is green, Blocked and Failed are red; a status of your own brings its colour.
-	const TONES: Record<string, { dot: string; text: string }> = {
-		backlog: { dot: 'bg-muted-foreground/60', text: 'text-foreground' },
-		ready: { dot: 'bg-sky-400', text: 'text-sky-300' },
-		running: { dot: 'bg-primary', text: 'text-primary' },
-		review: { dot: 'bg-violet-400', text: 'text-violet-300' },
-		done: { dot: 'bg-emerald-400', text: 'text-emerald-300' },
-		blocked: { dot: 'bg-red-400', text: 'text-red-300' },
-		failed: { dot: 'bg-rose-500', text: 'text-rose-400' },
-	}
-	const OWN_TONE = { dot: 'bg-muted-foreground/60', text: 'text-foreground' }
 	// counted from the live tasks (not the board's stored counts), so the bar follows every move within seconds
 	const segments = $derived(
 		columns.map((c) => ({
 			id: c.id,
 			label: c.label,
 			color: c.color,
-			tone: TONES[c.id] ?? OWN_TONE,
+			tone: statusTone(c.id),
+			icon: c.icon,
 			count: tasks.filter((t) => t.status === c.id).length,
 		}))
 	)
@@ -144,9 +136,12 @@
 			{#if collapsed}<ChevronRightIcon />{:else}<ChevronDownIcon />{/if}
 		</Button>
 		<!-- a fixed width, so the status bars of the boards in a workspace line up -->
-		<div class="min-w-0 flex-1 sm:w-52 sm:flex-none">
-			<h3 class="truncate text-sm font-semibold tracking-tight" title={board.name}>{board.name}</h3>
-			<p class="truncate text-xs text-muted-foreground" title={board.purpose || undefined}>{board.purpose || `${total} ${total === 1 ? 'task' : 'tasks'}`}</p>
+		<div class="flex min-w-0 flex-1 items-center gap-2.5 sm:w-56 sm:flex-none">
+			<BoxesIcon class="size-5 shrink-0 text-muted-foreground" />
+			<div class="min-w-0">
+				<h3 class="truncate text-sm font-semibold tracking-tight" title={board.name}>{board.name}</h3>
+				<p class="truncate text-xs text-muted-foreground" title={board.purpose || undefined}>{board.purpose || `${total} ${total === 1 ? 'task' : 'tasks'}`}</p>
+			</div>
 		</div>
 		<div class="hidden h-7 w-px shrink-0 bg-border sm:block" aria-hidden="true"></div>
 		<!-- one segment per status with the number of tasks in it -->
@@ -157,7 +152,9 @@
 					class={cn('flex min-w-fit flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-xs transition-[opacity,background-color] hover:bg-accent/40', seg.count === 0 && 'opacity-40')}
 					title="{seg.label}: {seg.count} {seg.count === 1 ? 'task' : 'tasks'}"
 				>
-					<span class={cn('size-2 rounded-full', seg.tone.dot, seg.id === 'running' && seg.count > 0 && 'animate-pulse')} style:background-color={seg.color ?? undefined}></span>
+					<span class={cn('shrink-0', !seg.color && seg.tone.text, seg.id === 'running' && seg.count > 0 && 'animate-pulse')} style:color={seg.color ?? undefined}>
+						<StatusIcon status={seg.id} icon={seg.icon} class="size-3.5" />
+					</span>
 					<span class="text-muted-foreground sm:hidden">{seg.label}</span>
 					<span class={cn('font-semibold tabular-nums', seg.count > 0 ? seg.tone.text : 'text-muted-foreground')}>{seg.count}</span>
 				</li>
@@ -207,6 +204,7 @@
 				ondelete={(t) => desk.askDelete(t)}
 				onadd={(status) => desk.addTask(board.id, status)}
 				onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)}
+				onstatuschange={() => desk.reload()}
 			/>
 		</div>
 		<!-- drag this handle to make the board taller or shorter; the height is remembered for this board in this browser -->

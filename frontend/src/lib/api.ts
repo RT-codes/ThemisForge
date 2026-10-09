@@ -57,6 +57,8 @@ export interface Column {
   name: string
   builtin: boolean
   color: string | null // custom statuses only
+  icon: string // custom statuses only: a Lucide icon name (the built-in ones have theirs in the interface)
+  description: string // custom statuses only: what it is for, in its owner's words
 }
 
 export interface Board {
@@ -602,9 +604,9 @@ export const api = {
     request<Board>(`/boards/${id}`, send('PATCH', patch)),
   duplicateBoard: (id: number) => request<Board>(`/boards/${id}/duplicate`, send('POST')),
   deleteBoard: (id: number, moveTo?: number) => request<void>(`/boards/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),
-  addStatus: (boardId: number, body: { name: string; color?: string | null; index?: number }) =>
+  addStatus: (boardId: number, body: { name: string; color?: string | null; index?: number; icon?: string; description?: string }) =>
     request<Board>(`/boards/${boardId}/statuses`, send('POST', body)),
-  updateStatus: (boardId: number, statusId: number, patch: { name?: string; color?: string | null; index?: number }) =>
+  updateStatus: (boardId: number, statusId: number, patch: { name?: string; color?: string | null; index?: number; icon?: string; description?: string }) =>
     request<Board>(`/boards/${boardId}/statuses/${statusId}`, send('PATCH', patch)),
   /** its tasks go to `moveTo` (a status of the board; the server defaults to Backlog) */
   removeStatus: (boardId: number, statusId: number, moveTo?: TaskStatus) =>

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Board, Column, Task, Workspace } from './api.ts'
-import { boardChoices, clampHeight, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
+import { boardChoices, clampHeight, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, statusTone, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
 
-const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null })
-const custom = (id: number, name: string, color: string | null = null): Column => ({ key: `custom:${id}`, name, builtin: false, color })
+const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null, icon: '', description: '' })
+const custom = (id: number, name: string, color: string | null = null, description = ''): Column => ({ key: `custom:${id}`, name, builtin: false, color, icon: 'box', description })
 const board = (id: number, columns: Column[] = []): Board => ({ id, project_id: 1, workspace_id: 1, name: `B${id}`, purpose: '', position: id, columns, task_counts: {}, created_at: '' })
 const workspace = (id: number, boards: Board[]): Workspace => ({ id, project_id: 1, name: `W${id}`, purpose: '', description: '', position: id, created_at: '', boards })
 
@@ -111,4 +111,19 @@ test('a dragged board height stays between a usable minimum and most of the wind
   assert.equal(clampHeight(500.4, 900), 500)
   assert.equal(clampHeight(5000, 900), 810)
   assert.equal(clampHeight(5000, 200), 256) // a tiny window never makes it smaller than the minimum
+})
+
+test('a custom status tells what it is for in its own words, or in a generic line', () => {
+  const columns = columnsOf(board(1, [builtin('ready'), custom(1, 'Waiting', null, 'Waiting for the client'), custom(2, 'Parked')]))
+  assert.equal(columns[1].hint, 'Waiting for the client')
+  assert.equal(columns[1].description, 'Waiting for the client')
+  assert.match(columns[2].hint, /wait here/)
+  assert.equal(columns[2].description, '')
+  assert.equal(columns[1].icon, 'box')
+})
+
+test('every built-in status has a tone, and an unknown one falls back to the plain one', () => {
+  assert.match(statusTone('done').text, /emerald/)
+  assert.match(statusTone('blocked').text, /red/)
+  assert.equal(statusTone('custom:4'), statusTone('backlog'))
 })

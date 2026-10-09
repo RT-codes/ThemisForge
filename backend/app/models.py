@@ -180,6 +180,9 @@ class BoardStatus(Base):
     board_id: Mapped[int] = mapped_column(ForeignKey("boards.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(40))
     color: Mapped[str | None] = mapped_column(String(7), default=None)  # "#rrggbb"
+    icon: Mapped[str] = mapped_column(String(40), default="box", server_default="box")  # a Lucide icon name
+    # What the status is for, shown in the tooltip of its column: the owner's words, empty for a generic line
+    description: Mapped[str] = mapped_column(String(300), default="", server_default="")
 
 
 class Task(Base):

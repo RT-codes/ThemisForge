@@ -237,7 +237,16 @@ async def _status(session: AsyncSession, board: Board, status_id: int) -> BoardS
 async def add_status(board_id: int, body: StatusIn, session: SessionDep, user: CurrentUser) -> BoardOut:
     board = await _board(session, board_id, user)
     try:
-        await rules.add_status(session, board, body.name, body.color, body.index, user.name)
+        await rules.add_status(
+            session,
+            board,
+            body.name,
+            body.color,
+            body.index,
+            user.name,
+            icon=body.icon,
+            description=body.description,
+        )
     except rules.BoardError as e:
         raise _refused(e) from None
     await session.commit()
@@ -259,6 +268,8 @@ async def update_status(
             color=body.color,
             set_color="color" in body.model_fields_set,
             index=body.index,
+            icon=body.icon,
+            description=body.description,
             actor=user.name,
         )
     except rules.BoardError as e:

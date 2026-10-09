@@ -22,6 +22,7 @@ from .models import Board, BoardStatus, ProjectEvent, Task, TaskStatus, Workspac
 
 DEFAULT_WORKSPACE_NAME = "Main"
 DEFAULT_BOARD_NAME = "Tasks"
+DEFAULT_STATUS_ICON = "box"  # what a new custom status shows until its owner picks another
 MAX_CUSTOM_STATUSES = 20  # per board: a board with more columns than that stops being readable
 CUSTOM_PREFIX = "custom:"
 
@@ -47,6 +48,8 @@ class Column:
     name: str
     builtin: bool
     color: str | None = None
+    icon: str = ""  # a custom status's Lucide icon; the built-in ones have theirs in the interface
+    description: str = ""  # a custom status's own words about what it is for
 
 
 def record(
@@ -231,7 +234,14 @@ async def columns_for(session: AsyncSession, boards: list[Board]) -> dict[int, l
         out[board.id] = [
             Column(key, BUILTIN_NAMES[key], builtin=True)
             if key in BUILTIN_NAMES
-            else Column(key, custom[key].name, builtin=False, color=custom[key].color)
+            else Column(
+                key,
+                custom[key].name,
+                builtin=False,
+                color=custom[key].color,
+                icon=custom[key].icon,
+                description=custom[key].description,
+            )
             for key in board.columns
             if key in BUILTIN_NAMES or key in custom
         ]
@@ -270,7 +280,9 @@ async def duplicate_board(session: AsyncSession, board: Board, actor: str) -> Bo
     )
     renamed: dict[str, str] = {}
     for row in await _customs(session, board):
-        fresh = BoardStatus(board_id=copy.id, name=row.name, color=row.color)
+        fresh = BoardStatus(
+            board_id=copy.id, name=row.name, color=row.color, icon=row.icon, description=row.description
+        )
         session.add(fresh)
         await session.flush()
         renamed[custom_key(row.id)] = custom_key(fresh.id)
@@ -394,12 +406,26 @@ def _record_status(session: AsyncSession, kind: str, board: Board, name: str, ac
 
 
 async def add_status(
-    session: AsyncSession, board: Board, name: str, color: str | None, index: int | None, actor: str
+    session: AsyncSession,
+    board: Board,
+    name: str,
+    color: str | None,
+    index: int | None,
+    actor: str,
+    *,
+    icon: str = DEFAULT_STATUS_ICON,
+    description: str = "",
 ) -> BoardStatus:
     customs = await _customs(session, board)
     if len(customs) >= MAX_CUSTOM_STATUSES:
         raise BoardError(f"A board can have at most {MAX_CUSTOM_STATUSES} custom statuses", conflict=True)
-    status = BoardStatus(board_id=board.id, name=_status_name(board, name, customs), color=color)
+    status = BoardStatus(
+        board_id=board.id,
+        name=_status_name(board, name, customs),
+        color=color,
+        icon=icon or DEFAULT_STATUS_ICON,
+        description=description.strip(),
+    )
     session.add(status)
     await session.flush()  # the id is the key
     board.columns = _place(board.columns, custom_key(status.id), index)
@@ -416,6 +442,8 @@ async def update_status(
     color: str | None = None,
     set_color: bool = False,
     index: int | None = None,
+    icon: str | None = None,
+    description: str | None = None,
     actor: str = "",
 ) -> BoardStatus:
     if name is not None:
@@ -425,6 +453,10 @@ async def update_status(
         status.name = new_name
     if set_color:  # separate flag: None is a real value here ("no colour")
         status.color = color
+    if icon is not None:
+        status.icon = icon or DEFAULT_STATUS_ICON
+    if description is not None:
+        status.description = description.strip()
     if index is not None:
         board.columns = _place(board.columns, custom_key(status.id), index)
     return status

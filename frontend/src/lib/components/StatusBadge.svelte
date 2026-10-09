@@ -2,6 +2,7 @@
 	import type { Board, BuiltinStatus } from '$lib/api'
 	import { statusLabel } from '$lib/boards'
 	import { chipStyle } from '$lib/colors'
+	import StatusIcon from './StatusIcon.svelte'
 	import { cn } from '$lib/utils'
 
 	// `board` names a custom status and gives it its colour; the built-in ones need nothing
@@ -17,7 +18,8 @@
 		failed: 'bg-destructive/15 text-destructive',
 	}
 	const builtin = $derived(styles[status as BuiltinStatus])
-	const color = $derived(board?.columns.find((c) => c.key === status)?.color ?? undefined)
+	const column = $derived(board?.columns.find((c) => c.key === status))
+	const color = $derived(column?.color ?? undefined)
 </script>
 
 <span
@@ -28,8 +30,6 @@
 	)}
 	style={builtin ? undefined : chipStyle(color)}
 >
-	{#if status === 'running'}
-		<span class="size-1.5 animate-pulse rounded-full bg-current"></span>
-	{/if}
+	<StatusIcon {status} icon={column?.icon ?? ''} class={cn('size-3', status === 'running' && 'animate-pulse')} />
 	{statusLabel(status, board)}
 </span>

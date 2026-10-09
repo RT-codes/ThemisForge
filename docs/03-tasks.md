@@ -72,6 +72,13 @@ Open **Statuses** in the board toolbar and choose **Add or edit statuses**. Ther
 - **Rename** it, give it a **colour**, and **move** it earlier or later among the other columns.
 - **Delete** it. If tasks are in it you choose where they go (any status except Ready and Running, which would start work).
 
+Every status has an **icon** in front of its name (Backlog is a stack of boxes, Ready a package, Running an open package,
+Review a package with a magnifier, Done a ticked package, Blocked and Failed a package with a minus or a cross) and an
+**(i)** beside its title: point at it to read what the status is for. A new status of your own starts with a plain box.
+The **pencil** in a column's header edits it. For a status of your own you can change its **icon**, **name**, **colour**
+and the text of its **(i)**, which is what you write it is for. For a built-in status the pencil only shows it, locked,
+because the seven are the same on every board.
+
 A status of your own is a **parking column**, like Backlog: Themis never starts a task that sits in it. A task waits there
 until you, or a [workflow](/docs/workflows), move it on, and when a task finishes it ends up in Done, Review, Failed or
 Blocked as usual. Workflow Trigger and Task nodes can use your statuses too, so a workflow can start when a task lands in

@@ -12,6 +12,7 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
 	import { columnsOf, statusLabel } from '$lib/boards'
 	import GuardFields from '$lib/components/GuardFields.svelte'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
 	import { fromLocalInput, toLocalInput } from '$lib/format'
 	import { MINUTE_INTERVALS, REPEAT_KINDS, WEEKDAYS, defaultRecurrence, describeRecurrence, describeSchedule, fromCron, toCron, type RepeatKind, type Recurrence } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
@@ -243,7 +244,7 @@
 			<Select.Trigger class="w-full">{statusLabel(status, board)}</Select.Trigger>
 			<Select.Content>
 				{#each columns.filter((s) => s.id !== 'running') as s (s.id)}
-					<Select.Item value={s.id} label={s.label}>{s.label}</Select.Item>
+					<Select.Item value={s.id} label={s.label}><StatusIcon status={s.id} icon={s.icon} class="size-4 text-muted-foreground" />{s.label}</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>

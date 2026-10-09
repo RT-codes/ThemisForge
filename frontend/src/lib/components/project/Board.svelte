@@ -2,7 +2,12 @@
 	import type { PropertyDef, Task, TaskStatus } from '$lib/api'
 	import { applyView, type ColumnResult } from '$lib/boardView'
 	import type { BoardViewStore } from '$lib/boardView.svelte'
-	import type { ColumnInfo } from '$lib/boards'
+	import type { Board as BoardInfo } from '$lib/api'
+	import { statusTone, type ColumnInfo } from '$lib/boards'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js'
+	import InfoIcon from '@lucide/svelte/icons/info'
+	import StatusEditPopover from './StatusEditPopover.svelte'
 	import { dragTask } from '$lib/dragTask.svelte'
 	import { dropPosition } from '$lib/kanban'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
@@ -29,6 +34,7 @@
 		ondelete,
 		onadd,
 		onmove,
+		onstatuschange,
 	}: {
 		tasks: Task[]
 		boardId: number
@@ -47,6 +53,8 @@
 		onadd: (status: TaskStatus) => void
 		/** a card dropped here; it may come from another board (task.board_id differs from boardId) */
 		onmove: (task: Task, status: TaskStatus, position: number, boardId: number) => void
+		/** a status of this board was edited from its column: the board as it is now */
+		onstatuschange: (board: BoardInfo) => void
 	} = $props()
 
 	const byStatus = $derived(
@@ -196,16 +204,29 @@
 			}}
 			ondrop={(e) => (e.preventDefault(), drop(column.id))}
 		>
-			<header class="flex h-12 items-center gap-2 px-3 pt-1">
-				{#if column.color}<span class="size-2 shrink-0 rounded-full" style:background-color={column.color}></span>{/if}
-				<h3 class="truncate text-sm font-medium" title={column.hint}>{column.label}</h3>
+			<header class="flex h-12 items-center gap-1.5 px-3 pt-1">
+				<span class={cn('shrink-0', !column.color && statusTone(column.id).text)} style:color={column.color ?? undefined}>
+					<StatusIcon status={column.id} icon={column.icon} class="size-4" />
+				</span>
+				<h3 class="truncate text-sm font-medium">{column.label}</h3>
 				<span class="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums" title={results[column.id].filtered ? `${items.length} of ${byStatus[column.id].length} tasks match` : undefined}>
 					{results[column.id].filtered ? `${items.length} / ${byStatus[column.id].length}` : items.length}
 				</span>
+				<!-- what the status is for: fixed for the built-in ones, the owner's own words for a status of your own -->
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<button type="button" class="rounded-full p-0.5 text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:text-foreground" aria-label={`What ${column.label} is for`} {...props}>
+								<InfoIcon class="size-3.5" />
+							</button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content side="bottom" class="max-w-64">{column.hint}</Tooltip.Content>
+				</Tooltip.Root>
 				{#if watchers[column.id]?.length}
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger
-							class="ms-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
+							class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-primary transition-colors hover:bg-primary/10"
 							title="Moving a task here starts a workflow"
 						>
 							<ZapIcon class="size-3" />{watchers[column.id].length}
@@ -218,25 +239,28 @@
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
 				{/if}
-				<button
-					type="button"
-					class={cn('rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', !watchers[column.id]?.length && 'ms-auto')}
-					aria-label={`Hide ${column.label}`}
-					title={`Hide ${column.label} (bring it back with Statuses)`}
-					onclick={() => view.toggleHidden(column.id)}
-				>
-					<EyeOffIcon class="size-4" />
-				</button>
-				{#if column.id !== 'running'}
+				<div class="ms-auto flex items-center">
+					<StatusEditPopover {boardId} {column} onchange={onstatuschange} />
 					<button
 						type="button"
 						class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						aria-label={`Add task to ${column.label}`}
-						onclick={() => onadd(column.id)}
+						aria-label={`Hide ${column.label}`}
+						title={`Hide ${column.label} (bring it back with Statuses)`}
+						onclick={() => view.toggleHidden(column.id)}
 					>
-						<PlusIcon class="size-4" />
+						<EyeOffIcon class="size-4" />
 					</button>
-				{/if}
+					{#if column.id !== 'running'}
+						<button
+							type="button"
+							class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							aria-label={`Add task to ${column.label}`}
+							onclick={() => onadd(column.id)}
+						>
+							<PlusIcon class="size-4" />
+						</button>
+					{/if}
+				</div>
 			</header>
 			<ColumnBar {view} status={column.id} label={column.label} {defs} />
 			<div class="slim-scrollbar flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">

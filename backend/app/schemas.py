@@ -232,15 +232,22 @@ class StatusIn(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     color: str | None = None
     index: int | None = Field(default=None, ge=0)  # where among the columns; left out: at the end
+    icon: str = Field(default="box", max_length=40)
+    description: str = Field(default="", max_length=300)  # what it is for, shown in its tooltip
 
     _strip_name = field_validator("name")(_name)
     _check_color = field_validator("color")(_color)
+    _check_icon = field_validator("icon")(_icon)
 
 
 class StatusPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=40)
     color: str | None = None  # sent as null: no colour
     index: int | None = Field(default=None, ge=0)
+    icon: str | None = Field(default=None, max_length=40)  # empty: the default icon
+    description: str | None = Field(default=None, max_length=300)
+
+    _check_icon = field_validator("icon")(_icon)
 
     @field_validator("name")
     @classmethod
@@ -257,6 +264,8 @@ class ColumnOut(BaseModel):
     name: str
     builtin: bool
     color: str | None = None  # custom statuses only; built-ins have their own colors in the interface
+    icon: str = ""  # custom statuses only: a Lucide icon name
+    description: str = ""  # custom statuses only: what it is for
 
 
 class BoardOut(BaseModel):

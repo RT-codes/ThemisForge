@@ -583,3 +583,38 @@ async def test_a_workspace_can_have_an_icon(client):
     assert (r.json()["icon"], r.json()["purpose"]) == ("factory", "Run things")
     assert (await client.patch(f"/api/workspaces/{made['id']}", json={"icon": "No Good"})).status_code == 422
     assert (await _workspaces(client, pid))[0]["icon"] == ""  # the starting workspace has the default
+
+
+async def test_a_custom_status_has_an_icon_and_says_what_it_is_for(client):
+    await register(client)
+    board = await _board(client, (await make_project(client))["id"])
+    made = await _add_status(client, board["id"], "Waiting")
+    waiting = made["columns"][-1]
+    assert (waiting["icon"], waiting["description"]) == ("box", "")  # a new status starts with the box
+    assert all(
+        c["icon"] == "" for c in made["columns"] if c["builtin"]
+    )  # the built-in ones keep theirs in the interface
+
+    sid = waiting["key"].removeprefix("custom:")
+    r = await client.patch(
+        f"/api/boards/{board['id']}/statuses/{sid}",
+        json={"icon": "hourglass", "description": "  Waiting on a reply  "},
+    )
+    column = r.json()["columns"][-1]
+    assert (column["icon"], column["description"]) == ("hourglass", "Waiting on a reply")
+    back = await client.patch(f"/api/boards/{board['id']}/statuses/{sid}", json={"icon": ""})
+    assert back.json()["columns"][-1]["icon"] == "box"
+    bad = await client.patch(f"/api/boards/{board['id']}/statuses/{sid}", json={"icon": "No Good"})
+    assert bad.status_code == 422
+    too_long = await client.patch(
+        f"/api/boards/{board['id']}/statuses/{sid}", json={"description": "x" * 301}
+    )
+    assert too_long.status_code == 422
+
+    full = await _add_status(client, board["id"], "Full", icon="star", description="Everything at once")
+    assert (full["columns"][-1]["icon"], full["columns"][-1]["description"]) == ("star", "Everything at once")
+    copy = (await client.post(f"/api/boards/{board['id']}/duplicate")).json()
+    assert [(c["icon"], c["description"]) for c in copy["columns"] if not c["builtin"]][-1] == (
+        "star",
+        "Everything at once",
+    )

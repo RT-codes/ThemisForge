@@ -2,6 +2,7 @@
 	import { api, ApiError, type Board, type Task, type TaskStatus } from '$lib/api'
 	import { columnsOf, customId } from '$lib/boards'
 	import ColorPicker from '$lib/components/ColorPicker.svelte'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -112,10 +113,12 @@
 					<div class="flex items-center gap-2 px-2.5 py-1.5">
 						{#if c.builtin}
 							<LockIcon class="size-3.5 shrink-0 text-muted-foreground/60" aria-label="Built-in" />
+							<StatusIcon status={c.id} class="size-4 shrink-0 text-muted-foreground" />
 							<span class="flex-1 text-sm">{c.label}</span>
 							<span class="hidden truncate text-xs text-muted-foreground sm:block">{c.hint}</span>
 						{:else}
 							<ColorPicker value={c.color ?? undefined} label={`Colour of ${c.label}`} onchange={(colour) => recolor(c.id, colour)} />
+							<StatusIcon status={c.id} icon={c.icon} class="size-4 shrink-0 text-muted-foreground" />
 							<Input
 								class="h-8 flex-1"
 								value={c.label}

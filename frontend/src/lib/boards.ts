@@ -19,15 +19,33 @@ export const BUILTIN_HINTS: Record<BuiltinStatus, string> = {
   failed: 'The last attempt failed.',
 }
 
+/** what a status of your own says about itself until its owner writes something */
 export const CUSTOM_HINT = 'A status of this board. Tasks wait here until you move them on.'
+
+/** How each built-in status looks (Tailwind classes for its dot and its figures). Done is green, Blocked and Failed are
+ *  red. A status of your own has no tone: it brings its own colour, or this one. */
+const TONES: Record<string, { dot: string; text: string }> = {
+  backlog: { dot: 'bg-muted-foreground/60', text: 'text-foreground' },
+  ready: { dot: 'bg-sky-400', text: 'text-sky-300' },
+  running: { dot: 'bg-primary', text: 'text-primary' },
+  review: { dot: 'bg-violet-400', text: 'text-violet-300' },
+  done: { dot: 'bg-emerald-400', text: 'text-emerald-300' },
+  blocked: { dot: 'bg-red-400', text: 'text-red-300' },
+  failed: { dot: 'bg-rose-500', text: 'text-rose-400' },
+}
+export const statusTone = (key: string) => TONES[key] ?? TONES.backlog
 
 /** One column of a board as the interface shows it */
 export interface ColumnInfo {
   id: TaskStatus
   label: string
+  /** what the status is for, as the tooltip says it: the fixed text of a built-in status, or its owner's own words */
   hint: string
   builtin: boolean
   color: string | null // custom statuses only
+  icon: string // custom statuses only: a Lucide icon name
+  /** the owner's own words, "" when there are none (a custom status only; the form edits this one) */
+  description: string
 }
 
 /** A board's columns left to right: the built-in statuses with the custom ones placed among them. */
@@ -35,9 +53,11 @@ export function columnsOf(board: Board): ColumnInfo[] {
   return board.columns.map((c) => ({
     id: c.key as TaskStatus,
     label: c.name,
-    hint: c.builtin ? BUILTIN_HINTS[c.key as BuiltinStatus] : CUSTOM_HINT,
+    hint: c.builtin ? BUILTIN_HINTS[c.key as BuiltinStatus] : c.description || CUSTOM_HINT,
     builtin: c.builtin,
     color: c.color,
+    icon: c.icon,
+    description: c.description,
   }))
 }
 

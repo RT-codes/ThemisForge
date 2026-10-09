@@ -167,7 +167,7 @@
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} ondelete={(t) => desk.askDelete(t)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} />
+				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} ondelete={(t) => desk.askDelete(t)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} onstatuschange={boardChanged} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
 				<TaskList {tasks} {board} {defs} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />

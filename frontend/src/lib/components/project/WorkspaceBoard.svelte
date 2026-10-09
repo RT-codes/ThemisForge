@@ -2,7 +2,7 @@
 	import type { Board as BoardInfo } from '$lib/api'
 	import { MIN_BOARD_HEIGHT, clampHeight, columnsOf, statusTone } from '$lib/boards'
 	import StatusIcon from '$lib/components/StatusIcon.svelte'
-	import BoxesIcon from '@lucide/svelte/icons/boxes'
+	import AnvilIcon from '@lucide/svelte/icons/anvil'
 	import { isDefaultView } from '$lib/boardView'
 	import { BoardViewStore } from '$lib/boardView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -135,9 +135,8 @@
 		<Button variant="ghost" size="icon-sm" aria-label={collapsed ? `Show ${board.name}` : `Fold ${board.name}`} aria-expanded={!collapsed} onclick={ontoggle}>
 			{#if collapsed}<ChevronRightIcon />{:else}<ChevronDownIcon />{/if}
 		</Button>
-		<!-- a fixed width, so the status bars of the boards in a workspace line up -->
-		<div class="flex min-w-0 flex-1 items-center gap-2.5 sm:w-56 sm:flex-none">
-			<BoxesIcon class="size-5 shrink-0 text-muted-foreground" />
+		<div class="flex min-w-0 flex-1 items-center gap-2.5 sm:max-w-64 sm:flex-none">
+			<AnvilIcon class="size-5 shrink-0 text-muted-foreground" />
 			<div class="min-w-0">
 				<h3 class="truncate text-sm font-semibold tracking-tight" title={board.name}>{board.name}</h3>
 				<p class="truncate text-xs text-muted-foreground" title={board.purpose || undefined}>{board.purpose || `${total} ${total === 1 ? 'task' : 'tasks'}`}</p>
@@ -149,7 +148,7 @@
 		<ul class="no-scrollbar order-last flex min-w-0 basis-full items-stretch divide-x divide-border/60 overflow-x-auto rounded-lg border bg-background/60 sm:order-none sm:w-1/4 sm:min-w-64 sm:flex-none sm:basis-auto" aria-label="Tasks per status">
 			{#each segments as seg (seg.id)}
 				<li
-					class={cn('flex min-w-fit flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-xs transition-[opacity,background-color] hover:bg-accent/40', seg.count === 0 && 'opacity-40')}
+					class={cn('flex min-w-fit flex-1 items-center justify-center gap-1.5 px-2 py-1.5 text-xs transition-[opacity,background-color] first:ps-2.5 last:pe-2.5 hover:bg-accent/40', seg.count === 0 && 'opacity-40')}
 					title="{seg.label}: {seg.count} {seg.count === 1 ? 'task' : 'tasks'}"
 				>
 					<span class={cn('shrink-0', !seg.color && seg.tone.text, seg.id === 'running' && seg.count > 0 && 'animate-pulse')} style:color={seg.color ?? undefined}>

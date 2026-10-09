@@ -34,7 +34,7 @@ Themis is deliberately small: **one server process** that does everything, plus 
 
 1. A task becomes **Ready** and is due.
 2. The scheduler creates an **attempt**, marks the task **Running** and builds the cell's settings.
-3. The cell manager writes `/cell/input.json` and runs `docker run` with the workspace and cell folder mounted.
+3. The cell manager writes `/cell/input.json` and runs `docker run` with the work folder and cell folder mounted.
 4. Output streams into the attempt's log, saved about once a second.
 5. The cell exits. The result file and exit code are read, the container is removed.
 6. The attempt is closed (succeeded, failed or cancelled) and the task moves on: recurring tasks back to Ready with the
@@ -64,7 +64,7 @@ tasks are marked Failed so a human decides whether to retry.
 - **Invite only accounts**, with a single administrator who manages access, Docker and keys.
 - **Sessions** are signed cookies (`HttpOnly`, `SameSite=Lax`, optionally `Secure`). Passwords use Argon2.
 - **Keys** are encrypted at rest with a key derived from `THEMIS_SECRET_KEY` and never shown again after saving.
-- **Isolation**: tasks run in containers with limited CPU and memory and only the workspace mounted. Cell names and
+- **Isolation**: tasks run in containers with limited CPU and memory and only the work folder mounted. Cell names and
   mount paths come from numeric ids, never from user input.
 - **Docker access** is the sensitive part: the server's user can control Docker. Run it on a machine you trust, keep it
   behind HTTPS, and keep the administrator account safe.

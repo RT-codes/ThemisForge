@@ -6,6 +6,12 @@ test('a project path opens the overview', () => assert.deepEqual(parse('/project
 test('a trailing slash is fine', () => assert.deepEqual(parse('/projects/3/'), { name: 'project', id: 3, page: 'overview' }))
 test('the tasks sub page', () => assert.deepEqual(parse('/projects/3/tasks'), { name: 'project', id: 3, page: 'tasks' }))
 test('the files sub page', () => assert.deepEqual(parse('/projects/3/files/'), { name: 'project', id: 3, page: 'files' }))
+test('a workspace and a board have their own addresses', () => {
+  assert.deepEqual(parse('/projects/3/workspaces/5'), { name: 'project', id: 3, page: 'workspace', workspaceId: 5 })
+  assert.deepEqual(parse('/projects/3/boards/8/'), { name: 'project', id: 3, page: 'board', boardId: 8 })
+  assert.deepEqual(parse('/projects/3/boards'), { name: 'not-found' })
+  assert.deepEqual(parse('/projects/3/boards/x'), { name: 'not-found' })
+})
 test('a workflow opens in the editor, optionally on one of its runs', () => {
   assert.deepEqual(parse('/projects/3/workflows/7'), { name: 'workflow', id: 3, workflowId: 7, run: null, resume: false })
   assert.deepEqual(parse('/projects/3/workflows/7/runs/12/'), { name: 'workflow', id: 3, workflowId: 7, run: 12, resume: false })

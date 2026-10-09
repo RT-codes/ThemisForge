@@ -235,6 +235,7 @@ class BoardOut(BaseModel):
     purpose: str
     position: float
     columns: list[ColumnOut]
+    task_counts: dict[str, int]  # tasks per status key, for summaries
     created_at: datetime
 
 

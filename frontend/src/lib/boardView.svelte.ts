@@ -1,6 +1,6 @@
 import { emptyColumn, emptyView, parseStored, toggled, type BoardView, type ColumnView } from './boardView'
 
-/** what one project's board is showing, kept in this browser so it is still there after a reload */
+/** what one board is showing, kept in this browser so it is still there after a reload */
 export class BoardViewStore {
   board = $state<BoardView>(emptyView())
   columns = $state<Record<string, ColumnView>>({})
@@ -8,10 +8,11 @@ export class BoardViewStore {
   hidden = $state<string[]>([])
   private key: string
 
-  constructor(projectId: number) {
-    this.key = `themis.board.${projectId}`
+  /** `legacyProjectId`: boards used to be remembered per project; the project's first board takes that over once */
+  constructor(boardId: number, legacyProjectId?: number) {
+    this.key = `themis.board.b${boardId}`
     try {
-      const stored = parseStored(localStorage.getItem(this.key))
+      const stored = parseStored(localStorage.getItem(this.key) ?? (legacyProjectId === undefined ? null : localStorage.getItem(`themis.board.${legacyProjectId}`)))
       this.board = stored.board
       this.columns = stored.columns
       this.hidden = stored.hidden

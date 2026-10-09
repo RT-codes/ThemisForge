@@ -262,3 +262,33 @@ async def test_a_custom_status_does_not_follow_a_task_to_another_board(client):
         "backlog",
         "done",
     ]
+
+
+async def test_boards_report_their_task_counts(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    await make_task(client, pid, status="done")
+    await make_task(client, pid, status="done")
+    await make_task(client, pid)
+    assert (await _board(client, pid))["task_counts"] == {"done": 2, "backlog": 1}
+
+
+async def test_duplicating_a_board_copies_its_statuses_but_not_its_tasks(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    board = await _board(client, pid)
+    board = await _add_status(client, board["id"], "Parked", color="#112233", index=2)
+    await make_task(client, pid)
+
+    r = await client.post(f"/api/boards/{board['id']}/duplicate")
+    assert r.status_code == 201
+    copy = r.json()
+    assert copy["name"] == "Tasks copy" and copy["workspace_id"] == board["workspace_id"]
+    assert copy["task_counts"] == {}
+    assert [c["name"] for c in copy["columns"]] == [c["name"] for c in board["columns"]]
+    # its own statuses, not the original's: renaming one must not touch the other
+    assert _keys(copy) != _keys(board) and [k for k in _keys(copy) if not k.startswith("custom:")] == [
+        k for k in _keys(board) if not k.startswith("custom:")
+    ]
+    custom = next(c for c in copy["columns"] if not c["builtin"])
+    assert custom["color"] == "#112233"

@@ -50,10 +50,12 @@ async def _board(session: AsyncSession, board_id: int, user: CurrentUser) -> Boa
 
 async def _boards_out(session: AsyncSession, boards: list[Board]) -> list[BoardOut]:
     columns = await rules.columns_for(session, boards)
+    counts = await rules.task_counts(session, boards)
     return [
         BoardOut(
-            **{f: getattr(b, f) for f in BoardOut.model_fields if f != "columns"},
+            **{f: getattr(b, f) for f in BoardOut.model_fields if f not in ("columns", "task_counts")},
             columns=[ColumnOut(**asdict(c)) for c in columns[b.id]],
+            task_counts=counts[b.id],
         )
         for b in boards
     ]
@@ -177,6 +179,15 @@ async def update_board(board_id: int, body: BoardPatch, session: SessionDep, use
         board.position = body.position
     await session.commit()
     return (await _boards_out(session, [board]))[0]
+
+
+@router.post("/boards/{board_id}/duplicate", response_model=BoardOut, status_code=status.HTTP_201_CREATED)
+async def duplicate_board(board_id: int, session: SessionDep, user: CurrentUser) -> BoardOut:
+    """The same board again (name, purpose and statuses); its tasks stay where they are."""
+    board = await _board(session, board_id, user)
+    copy = await rules.duplicate_board(session, board)
+    await session.commit()
+    return (await _boards_out(session, [copy]))[0]
 
 
 @router.delete("/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)

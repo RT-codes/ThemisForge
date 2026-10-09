@@ -56,6 +56,7 @@ export interface Board {
   purpose: string
   position: number
   columns: Column[]
+  task_counts: Partial<Record<TaskStatus, number>>
   created_at: string
 }
 
@@ -561,6 +562,18 @@ export const api = {
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 
   workspaces: (projectId: number) => request<Workspace[]>(`/projects/${projectId}/workspaces`),
+  createWorkspace: (projectId: number, body: { name: string; purpose?: string; description?: string }) =>
+    request<Workspace>(`/projects/${projectId}/workspaces`, send('POST', body)),
+  updateWorkspace: (id: number, patch: { name?: string; purpose?: string; description?: string; position?: number }) =>
+    request<Workspace>(`/workspaces/${id}`, send('PATCH', patch)),
+  /** `moveTo`: the board that takes over the tasks of its boards (needed when there are any) */
+  deleteWorkspace: (id: number, moveTo?: number) => request<void>(`/workspaces/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),
+  createBoard: (workspaceId: number, body: { name: string; purpose?: string }) =>
+    request<Board>(`/workspaces/${workspaceId}/boards`, send('POST', body)),
+  updateBoard: (id: number, patch: { name?: string; purpose?: string; position?: number; workspace_id?: number }) =>
+    request<Board>(`/boards/${id}`, send('PATCH', patch)),
+  duplicateBoard: (id: number) => request<Board>(`/boards/${id}/duplicate`, send('POST')),
+  deleteBoard: (id: number, moveTo?: number) => request<void>(`/boards/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),
   addStatus: (boardId: number, body: { name: string; color?: string | null; index?: number }) =>
     request<Board>(`/boards/${boardId}/statuses`, send('POST', body)),
   updateStatus: (boardId: number, statusId: number, patch: { name?: string; color?: string | null; index?: number }) =>
@@ -568,8 +581,7 @@ export const api = {
   /** its tasks go to `moveTo` (a status of the board; the server defaults to Backlog) */
   removeStatus: (boardId: number, statusId: number, moveTo?: TaskStatus) =>
     request<Board>(`/boards/${boardId}/statuses/${statusId}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ''}`, send('DELETE')),
-  tasks: (projectId: number, boardId?: number) =>
-    request<Task[]>(`/projects/${projectId}/tasks${boardId === undefined ? '' : `?board_id=${boardId}`}`),
+  tasks: (projectId: number) => request<Task[]>(`/projects/${projectId}/tasks`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),
   updateTask: (id: number, patch: TaskPatch) => request<Task>(`/tasks/${id}`, send('PATCH', patch)),
   projectHistory: (projectId: number) => request<ProjectEvent[]>(`/projects/${projectId}/history`),

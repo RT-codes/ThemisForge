@@ -34,7 +34,7 @@ Leave **Docker host** empty to use the Docker on this machine. To use another ma
 | Unix socket | `unix:///var/run/docker.sock` |
 
 Press **Test** to check a value before saving it. This is how a project can run its cells on a different, stronger
-machine than the one hosting Themis. Note that cell workspaces are mounted from the Themis machine, so
+machine than the one hosting Themis. Note that cell work folders are mounted from the Themis machine, so
 a remote host needs the same paths available.
 
 > [!WARNING]
@@ -59,7 +59,7 @@ number is turned into the same number of cells of the configured size.
 ## Cells
 
 Defaults for every cell: image, CPUs, memory, time limit and how long working folders are kept. See
-[Cells and workspaces](/docs/cells). Saving applies the change to the next cell that starts.
+[Cells and work folders](/docs/cells). Saving applies the change to the next cell that starts.
 
 ## Mount roots
 

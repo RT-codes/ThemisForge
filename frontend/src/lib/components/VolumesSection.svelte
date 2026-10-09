@@ -74,7 +74,7 @@
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold tracking-tight">Shared folders</h3>
 			<p class="text-sm text-muted-foreground">
-				Folders that outlive a run. Cells see them inside their workspace, so one agent can hand files to the next.
+				Folders that outlive a run. Cells see them inside their work folder, so one agent can hand files to the next.
 			</p>
 		</div>
 		{#if !adding}<Button size="sm" onclick={startAdding}><PlusIcon /> New folder</Button>{/if}

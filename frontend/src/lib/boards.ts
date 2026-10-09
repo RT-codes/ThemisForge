@@ -63,3 +63,43 @@ export function customStatusChoices(workspaces: Workspace[]): { value: string; l
     w.boards.flatMap((b) => b.columns.filter((c) => !c.builtin).map((c) => ({ value: c.key, label: `${b.name}: ${c.name}` })))
   )
 }
+
+export function findBoard(workspaces: Workspace[], boardId: number): Board | null {
+  for (const workspace of workspaces) {
+    const board = workspace.boards.find((b) => b.id === boardId)
+    if (board) return board
+  }
+  return null
+}
+
+export const workspaceOf = (workspaces: Workspace[], boardId: number): Workspace | null => workspaces.find((w) => w.boards.some((b) => b.id === boardId)) ?? null
+
+/** One workspace with one board is how every project starts. It is shown the way tasks always were: a single "Tasks" page,
+ *  with no workspace level in between. */
+export const isSimple = (workspaces: Workspace[]): boolean => workspaces.length === 1 && workspaces[0].boards.length === 1
+
+/** how many tasks a board holds, whatever their status */
+export const taskTotal = (board: Board): number => Object.values(board.task_counts).reduce<number>((sum, n) => sum + (n ?? 0), 0)
+
+/** The boards that can take over the tasks of a board or workspace that is being deleted. */
+export function survivingBoards(workspaces: Workspace[], leaving: { board?: number; workspace?: number }): Board[] {
+  return workspaces.flatMap((w) => w.boards.filter((b) => b.id !== leaving.board && b.workspace_id !== leaving.workspace))
+}
+
+/** A one-line summary of a board for a collapsed card or an overview: "3 ready, 1 running, 5 done". */
+export function boardSummary(board: Board): string {
+  const parts = board.columns
+    .filter((c) => (board.task_counts[c.key as keyof typeof board.task_counts] ?? 0) > 0)
+    .map((c) => `${board.task_counts[c.key as keyof typeof board.task_counts]} ${c.name.toLowerCase()}`)
+  return parts.length ? parts.join(', ') : 'No tasks yet'
+}
+
+/** The boards a person folded away on a workspace page, kept in this browser. */
+export function parseCollapsed(raw: string | null): number[] {
+  try {
+    const value = JSON.parse(raw ?? '[]')
+    return Array.isArray(value) ? value.filter((n): n is number => Number.isInteger(n)) : []
+  } catch {
+    return []
+  }
+}

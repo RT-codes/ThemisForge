@@ -158,10 +158,39 @@ async def columns_for(session: AsyncSession, boards: list[Board]) -> dict[int, l
     return out
 
 
+async def task_counts(session: AsyncSession, boards: list[Board]) -> dict[int, dict[str, int]]:
+    """How many tasks each board has per status (a status without tasks is left out)."""
+    counts: dict[int, dict[str, int]] = {b.id: {} for b in boards}
+    rows = await session.execute(
+        select(Task.board_id, Task.status, func.count())
+        .where(Task.board_id.in_([b.id for b in boards]))
+        .group_by(Task.board_id, Task.status)
+    )
+    for board_id, status, n in rows:
+        counts[board_id][status] = n
+    return counts
+
+
 def check_status(board: Board, status: str) -> None:
     """Refuse a status the board does not have (a custom one of another board, or one that was deleted)."""
     if status not in board.columns:
         raise BoardError(f"'{status}' is not a status of the board '{board.name}'")
+
+
+async def duplicate_board(session: AsyncSession, board: Board) -> Board:
+    """A new board in the same workspace with the same purpose and the same custom statuses, in the same places.
+    Tasks are not copied: a task is one piece of work, and copying it would make two."""
+    copy = await add_board(
+        session, await session.get_one(Workspace, board.workspace_id), f"{board.name} copy", board.purpose
+    )
+    renamed: dict[str, str] = {}
+    for row in await _customs(session, board):
+        fresh = BoardStatus(board_id=copy.id, name=row.name, color=row.color)
+        session.add(fresh)
+        await session.flush()
+        renamed[custom_key(row.id)] = custom_key(fresh.id)
+    copy.columns = [renamed.get(key, key) for key in board.columns]
+    return copy
 
 
 # where tasks sit inside a board

@@ -56,7 +56,7 @@
 		<Dialog.Header>
 			<Dialog.Title>{project ? 'Edit project' : 'New project'}</Dialog.Title>
 			<Dialog.Description>
-				{project ? 'Rename the project or change what it is about.' : 'A project is one agentic system: its tasks, schedules and workspace.'}
+				{project ? 'Rename the project or change what it is about.' : 'A project is one agentic system: its tasks, boards and schedules.'}
 			</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={save} class="grid gap-4">

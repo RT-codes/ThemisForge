@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Board, Column, Workspace } from './api.ts'
-import { columnsOf, customId, customStatusChoices, defaultBoard, statusLabel } from './boards.ts'
+import { boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, findBoard, isSimple, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null })
 const custom = (id: number, name: string, color: string | null = null): Column => ({ key: `custom:${id}`, name, builtin: false, color })
-const board = (id: number, columns: Column[] = []): Board => ({ id, project_id: 1, workspace_id: 1, name: `B${id}`, purpose: '', position: id, columns, created_at: '' })
+const board = (id: number, columns: Column[] = []): Board => ({ id, project_id: 1, workspace_id: 1, name: `B${id}`, purpose: '', position: id, columns, task_counts: {}, created_at: '' })
 const workspace = (id: number, boards: Board[]): Workspace => ({ id, project_id: 1, name: `W${id}`, purpose: '', description: '', position: id, created_at: '', boards })
 
 test('the default board is the first board of the first workspace that has one', () => {
@@ -45,4 +45,40 @@ test('workflow steps are offered the custom statuses of every board, named by bo
     { value: 'custom:1', label: 'B1: Peer review' },
     { value: 'custom:4', label: 'B3: Verified' },
   ])
+})
+
+const withCounts = (b: Board, counts: Board['task_counts']): Board => ({ ...b, task_counts: counts })
+
+test('boards are found by id, with the workspace they sit in', () => {
+  const ws = [workspace(1, [board(3)]), workspace(2, [board(5)])]
+  assert.equal(findBoard(ws, 5)?.id, 5)
+  assert.equal(findBoard(ws, 9), null)
+  assert.equal(workspaceOf(ws, 5)?.id, 2)
+})
+
+test('only a single workspace with a single board counts as simple', () => {
+  assert.equal(isSimple([workspace(1, [board(1)])]), true)
+  assert.equal(isSimple([workspace(1, [board(1), board(2)])]), false)
+  assert.equal(isSimple([workspace(1, [board(1)]), workspace(2, [])]), false)
+})
+
+test('a board is summed up by its columns, in order, skipping empty ones', () => {
+  const b = withCounts(board(1, [builtin('backlog'), custom(4, 'Waiting'), builtin('ready'), builtin('done')]), { done: 5, ready: 3, 'custom:4': 1 })
+  assert.equal(taskTotal(b), 9)
+  assert.equal(boardSummary(b), '1 waiting, 3 ready, 5 done')
+  assert.equal(boardSummary(withCounts(board(2, [builtin('ready')]), {})), 'No tasks yet')
+})
+
+test('a deleted board or workspace leaves out its own boards as destinations', () => {
+  const ws = [workspace(1, [{ ...board(1), workspace_id: 1 }, { ...board(2), workspace_id: 1 }]), workspace(2, [{ ...board(3), workspace_id: 2 }])]
+  assert.deepEqual(survivingBoards(ws, { board: 1 }).map((b) => b.id), [2, 3])
+  assert.deepEqual(survivingBoards(ws, { workspace: 1 }).map((b) => b.id), [3])
+})
+
+test('folded boards are read back, and bad storage is ignored', () => {
+  assert.deepEqual(parseCollapsed('[1,2]'), [1, 2])
+  assert.deepEqual(parseCollapsed(null), [])
+  assert.deepEqual(parseCollapsed('nope'), [])
+  assert.deepEqual(parseCollapsed('{"a":1}'), [])
+  assert.deepEqual(parseCollapsed('[1,"x",2.5]'), [1])
 })

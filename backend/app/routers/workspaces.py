@@ -3,25 +3,30 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import boards as rules
+from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
-from ..models import Board, BoardStatus, Project, Workspace
+from ..models import Board, BoardStatus, Project, TaskStatus, Workspace, utcnow
+from ..scheduling import refresh_next_run
 from ..schemas import (
     BoardIn,
     BoardOut,
     BoardPatch,
     ColumnOut,
+    MoveIn,
+    SpawnIn,
     StatusIn,
     StatusPatch,
+    TaskOut,
     WorkspaceIn,
     WorkspaceOut,
     WorkspacePatch,
 )
-from .projects import _project
+from .projects import _project, _task, _task_out
 
 router = APIRouter(tags=["workspaces"])
 
@@ -267,3 +272,47 @@ async def remove_status(
         raise _refused(e) from None
     await session.commit()
     return (await _boards_out(session, [board]))[0]
+
+
+# moving and spawning tasks between boards
+
+
+@router.post("/tasks/{task_id}/move", response_model=TaskOut)
+async def move_task(
+    task_id: int, body: MoveIn, request: Request, session: SessionDep, user: CurrentUser
+) -> TaskOut:
+    """The same task continues on another board (or another status of this one)."""
+    task = await _task(session, task_id, user)
+    try:
+        destination = await rules.project_board(session, task.project_id, body.board_id)
+        await rules.move_task(session, task, destination, user.name, body.status, body.position)
+    except rules.BoardError as e:
+        raise _refused(e) from None
+    refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
+    await session.commit()
+    if task.status == TaskStatus.READY:
+        request.app.state.scheduler.wake()
+    return (await _task_out(session, [task]))[0]
+
+
+@router.post("/tasks/{task_id}/spawn", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
+async def spawn_task(
+    task_id: int, body: SpawnIn, request: Request, session: SessionDep, user: CurrentUser
+) -> TaskOut:
+    """A new task on another board, linked to this one. This task stays where it is."""
+    origin = await _task(session, task_id, user)
+    try:
+        destination = await rules.project_board(session, origin.project_id, body.board_id)
+        task = await rules.spawn_task(
+            session,
+            origin,
+            destination,
+            user.name,
+            body.title or f"Follow-up: {origin.title}"[:200],
+            body.description,
+            body.status,
+        )
+    except rules.BoardError as e:
+        raise _refused(e) from None
+    await session.commit()
+    return (await _task_out(session, [task]))[0]

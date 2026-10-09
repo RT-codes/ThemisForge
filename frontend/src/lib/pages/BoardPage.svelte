@@ -52,7 +52,6 @@
 	const workspace = $derived(board ? workspaceOf(workspaces, board.id) : null)
 	const simple = $derived(isSimple(workspaces))
 	const columns = $derived(board ? columnsOf(board) : [])
-	const allBoards = $derived(workspaces.flatMap((w) => w.boards))
 	// what this board shows and remembers in this browser; rebuilt only when another board is opened
 	const boardKey = $derived(board?.id ?? null)
 	const view = $derived.by(() => (boardKey === null ? null : new BoardViewStore(boardKey, boardKey === defaultBoard(workspaces)?.id ? id : undefined)))
@@ -185,7 +184,7 @@
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} ondelete={(t) => desk.askDelete(t)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position) => desk.moveTask(t, status, position)} />
+				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} ondelete={(t) => desk.askDelete(t)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
 				<TaskList {tasks} {board} {defs} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />
@@ -199,7 +198,7 @@
 		</Tabs.Root>
 	</div>
 
-	<DeskDialogs {desk} boards={allBoards} />
+	<DeskDialogs {desk} {workspaces} />
 	<StatusesDialog bind:open={statusesOpen} {board} {tasks} onchange={boardChanged} />
 	<PropertiesDialog bind:open={propsOpen} projectId={id} {defs} onsaved={() => desk.reload()} />
 	<ProjectDialog bind:open={editProjectOpen} project={desk.project} onsaved={() => desk.reload()} />

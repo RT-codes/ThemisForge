@@ -154,7 +154,7 @@
 		{/each}
 	</div>
 
-	<DeskDialogs {desk} boards={allBoards} />
+	<DeskDialogs {desk} {workspaces} />
 	{#if statusesBoard}
 		<StatusesDialog bind:open={statusesOpen} board={allBoards.find((b) => b.id === statusesBoard!.id) ?? statusesBoard} tasks={desk.tasks} onchange={() => desk.reload()} />
 	{/if}

@@ -368,14 +368,13 @@ async def delete_task(task_id: int, session: SessionDep, user: CurrentUser) -> N
     if task.status == TaskStatus.RUNNING:
         raise HTTPException(status.HTTP_409_CONFLICT, "This task is running. Cancel it first.")
     # the history keeps its own copy, so a deleted task can still be looked at (and put back by hand) afterwards
-    session.add(
-        ProjectEvent(
-            project_id=task.project_id,
-            kind="task_deleted",
-            title=task.title,
-            actor=user.name,
-            data=TaskSnapshot.model_validate(task).model_dump(mode="json"),
-        )
+    boards.record(
+        session,
+        "task_deleted",
+        task,
+        user.name,
+        await session.get(Board, task.board_id),
+        TaskSnapshot.model_validate(task).model_dump(mode="json"),
     )
     await session.delete(task)
     await session.commit()

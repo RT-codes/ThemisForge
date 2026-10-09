@@ -199,6 +199,12 @@ def _failed_message(exit_code: int | None) -> str:
     return f"The task failed {how}. The log shows what happened."
 
 
+def _changed(obj: Task, attribute: str) -> bool:
+    """Did this flush give the attribute a new value (or its first one, for a new row)?"""
+    history = inspect(obj).attrs[attribute].history
+    return bool(history.added) and history.added != history.deleted
+
+
 class WorkflowRunner:
     """Runs workflows in the background and records every node of every run."""
 
@@ -316,12 +322,9 @@ class WorkflowRunner:
         if not self._ours(session):
             return
         for obj in (*session.new, *session.dirty):
-            if (
-                isinstance(obj, Task)
-                and (h := inspect(obj).attrs.status.history).added
-                and h.added != h.deleted
-            ):
-                session.info.setdefault("status_moves", []).append((obj.project_id, obj.id, h.added[0]))
+            # arriving on another board counts too: the card lands in a column there
+            if isinstance(obj, Task) and (_changed(obj, "status") or _changed(obj, "board_id")):
+                session.info.setdefault("status_moves", []).append((obj.project_id, obj.id, obj.status))
 
     def _drop_moves(self, session: Session) -> None:
         if self._ours(session):

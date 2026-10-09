@@ -92,6 +92,7 @@
 		<div class="h-[28rem] px-3 pb-3">
 			<Board
 				{tasks}
+				boardId={board.id}
 				{columns}
 				defs={desk.project.properties}
 				now={desk.now}
@@ -102,7 +103,7 @@
 				onopen={(t) => desk.openTask(t)}
 				ondelete={(t) => desk.askDelete(t)}
 				onadd={(status) => desk.addTask(board.id, status)}
-				onmove={(t, status, position) => desk.moveTask(t, status, position)}
+				onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)}
 			/>
 		</div>
 	{/if}

@@ -752,3 +752,19 @@ async def test_a_task_node_can_create_a_task_in_a_boards_custom_status(client, r
         [edge("s", "t")],
     )
     assert failed["status"] == "failed" and "not a status of this project" in by_id(failed)["t"]["error"]
+
+
+async def test_a_task_arriving_on_a_board_in_the_trigger_status_starts_the_workflow(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(client, wid, [status_trigger("review"), node("e", "end")], [edge("t", "e")])
+    [workspace] = (await client.get(f"/api/projects/{pid}/workspaces")).json()
+    other = (await client.post(f"/api/workspaces/{workspace['id']}/boards", json={"name": "QA"})).json()
+    task = await make_task(client, pid, status="backlog")
+    await client.post(f"/api/tasks/{task['id']}/move", json={"board_id": other["id"]})
+    assert await runs_of(client, wid) == []  # still in the Backlog
+
+    parked = await make_task(client, pid, status="review")
+    await wait_for_runs(client, wid, 1)  # created in Review
+    await client.post(f"/api/tasks/{parked['id']}/move", json={"board_id": other["id"]})
+    assert len(await wait_for_runs(client, wid, 2)) == 2  # the same status, but on a new board

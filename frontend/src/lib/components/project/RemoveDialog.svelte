@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api, ApiError, type Board, type Workspace } from '$lib/api'
-	import { survivingBoards, taskTotal } from '$lib/boards'
+	import { destinationLabel, survivingBoards, taskTotal } from '$lib/boards'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
 
@@ -26,7 +26,7 @@
 		target === null ? [] : survivingBoards(workspaces, target.kind === 'board' ? { board: target.board.id } : { workspace: target.workspace.id })
 	)
 
-	const where = (b: Board) => `${workspaces.find((w) => w.id === b.workspace_id)?.name}: ${b.name}`
+	const where = (b: Board) => destinationLabel(workspaces, b)
 
 	$effect(() => {
 		if (target) {

@@ -102,9 +102,13 @@ class ProjectEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(30))  # "task_deleted"
+    kind: Mapped[str] = mapped_column(String(30))  # "task_deleted", "task_moved", "task_spawned"
     title: Mapped[str] = mapped_column(String(200), default="")
     actor: Mapped[str] = mapped_column(String(100), default="")  # the user's name at the time
+    # Where it happened. Plain numbers, not foreign keys: the history outlives the task and the board it names.
+    workspace_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    board_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    task_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
@@ -185,6 +189,10 @@ class Task(Base):
     next_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None, index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     review_on_success: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # The task this one was spawned from (a follow-up made on another board); the link survives a move of either task.
+    origin_task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), default=None, index=True
+    )
     # What runs: "" = the placeholder program in a cell, "codex" = Codex in a cell (see app/harness.py),
     # "workflow" = play the workflow below instead of running a cell.
     harness: Mapped[str] = mapped_column(String(20), default="", server_default="")

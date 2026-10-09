@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Board, BoardStatus, Task, TaskStatus, Workspace
+from .models import Board, BoardStatus, ProjectEvent, Task, TaskStatus, Workspace
 
 DEFAULT_WORKSPACE_NAME = "Main"
 DEFAULT_BOARD_NAME = "Tasks"
@@ -47,6 +47,30 @@ class Column:
     name: str
     builtin: bool
     color: str | None = None
+
+
+def record(
+    session: AsyncSession,
+    kind: str,
+    task: Task,
+    actor: str,
+    board: Board | None = None,
+    data: dict | None = None,
+) -> None:
+    """Add a line to the project's history about a task. It keeps its own copy of the names it mentions: the history
+    outlives the task and the boards."""
+    session.add(
+        ProjectEvent(
+            project_id=task.project_id,
+            kind=kind,
+            title=task.title,
+            actor=actor,
+            workspace_id=board.workspace_id if board else None,
+            board_id=board.id if board else None,
+            task_id=task.id,
+            data=data or {},
+        )
+    )
 
 
 class BoardError(Exception):
@@ -341,3 +365,99 @@ async def remove_status(session: AsyncSession, board: Board, status: BoardStatus
     board.columns = [k for k in board.columns if k != key]
     await session.delete(status)
     return len(tasks)
+
+
+# moving and spawning: the two ways work gets from one board to another
+
+
+def _landing_status(destination: Board, status: str | None, current: str | None) -> str:
+    """The status a task lands in: the one asked for, else the one it has when the destination also has it (the
+    built-in statuses are on every board), else the Backlog."""
+    wanted = status or (current if current in destination.columns else TaskStatus.BACKLOG.value)
+    if wanted == TaskStatus.RUNNING:
+        raise BoardError("Only the scheduler starts tasks. Use Run now.")
+    check_status(destination, wanted)
+    return wanted
+
+
+async def move_task(
+    session: AsyncSession,
+    task: Task,
+    destination: Board,
+    actor: str,
+    status: str | None = None,
+    position: float | None = None,
+) -> None:
+    """The same task continues on another board: same id, attempts, schedule and properties, new place. Callers
+    refresh the schedule afterwards (a task that falls back to the Backlog is paused, like any task parked there)."""
+    if task.status == TaskStatus.RUNNING:
+        raise BoardError("This task is running. Cancel it first.", conflict=True)
+    if destination.project_id != task.project_id:
+        raise BoardError("That board does not exist in this project")
+    source = await session.get_one(Board, task.board_id)
+    landing = _landing_status(destination, status, task.status)
+    came_from = {"board_id": source.id, "board": source.name, "status": task.status}
+    task.board_id = destination.id
+    task.status = landing
+    task.position = (
+        position if position is not None else await next_position(session, destination.id, landing)
+    )
+    if source.id != destination.id:
+        record(
+            session,
+            "task_moved",
+            task,
+            actor,
+            destination,
+            {
+                "from": came_from,
+                "to": {"board_id": destination.id, "board": destination.name, "status": landing},
+            },
+        )
+
+
+async def spawn_task(
+    session: AsyncSession,
+    origin: Task,
+    destination: Board,
+    actor: str,
+    title: str,
+    description: str,
+    status: str | None = None,
+) -> Task:
+    """A new task on another board, linked to the one it follows. It has its own identity and history; it takes the
+    origin's property values (they are project wide) but not its schedule or what runs it, which the follow-up's own
+    work decides."""
+    if destination.project_id != origin.project_id:
+        raise BoardError("That board does not exist in this project")
+    landing = _landing_status(destination, status, None)
+    task = Task(
+        project_id=origin.project_id,
+        board_id=destination.id,
+        title=title,
+        description=description,
+        status=landing,
+        position=await next_position(session, destination.id, landing),
+        properties=dict(origin.properties),
+        origin_task_id=origin.id,
+    )
+    session.add(task)
+    await session.flush()
+    origin_board = await session.get_one(Board, origin.board_id)
+    record(
+        session,
+        "task_spawned",
+        task,
+        actor,
+        destination,
+        {
+            "origin": {
+                "task_id": origin.id,
+                "title": origin.title,
+                "board_id": origin_board.id,
+                "board": origin_board.name,
+            },
+            "to": {"board_id": destination.id, "board": destination.name, "status": landing},
+        },
+    )
+    return task

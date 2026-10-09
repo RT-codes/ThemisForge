@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Board, Column, Workspace } from './api.ts'
-import { boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, findBoard, isSimple, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
+import type { Board, Column, Task, Workspace } from './api.ts'
+import { boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, isSimple, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null })
 const custom = (id: number, name: string, color: string | null = null): Column => ({ key: `custom:${id}`, name, builtin: false, color })
@@ -81,4 +81,21 @@ test('folded boards are read back, and bad storage is ignored', () => {
   assert.deepEqual(parseCollapsed('nope'), [])
   assert.deepEqual(parseCollapsed('{"a":1}'), [])
   assert.deepEqual(parseCollapsed('[1,"x",2.5]'), [1])
+})
+
+const taskOf = (id: number, origin: number | null = null) => ({ id, origin_task_id: origin }) as Task
+
+test('a board is named with its workspace only when the project has several', () => {
+  const one = [workspace(1, [{ ...board(1), workspace_id: 1 }])]
+  const two = [...one, workspace(2, [{ ...board(2), workspace_id: 2 }])]
+  assert.equal(destinationLabel(one, one[0].boards[0]), 'B1')
+  assert.equal(destinationLabel(two, two[1].boards[0]), 'W2: B2')
+})
+
+test('a task knows what it follows and what followed it', () => {
+  const tasks = [taskOf(1), taskOf(2, 1), taskOf(3, 1), taskOf(4, 99)]
+  assert.deepEqual(lineage(tasks, tasks[0]).followUps.map((t) => t.id), [2, 3])
+  assert.equal(lineage(tasks, tasks[1]).origin?.id, 1)
+  assert.equal(lineage(tasks, tasks[0]).origin, null)
+  assert.equal(lineage(tasks, tasks[3]).origin, null) // the task it followed was deleted
 })

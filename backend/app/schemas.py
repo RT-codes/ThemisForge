@@ -304,6 +304,25 @@ class TaskIn(_ScheduleFields):
         return self
 
 
+class MoveIn(BaseModel):
+    """Send a task to a board (and a status on it)."""
+
+    board_id: int
+    status: str | None = None  # left out: the same status when the board has it, else Backlog
+    position: float | None = None  # left out: the end of the column
+
+
+class SpawnIn(BaseModel):
+    """Create a follow-up of a task on a board."""
+
+    board_id: int
+    title: str | None = Field(
+        default=None, min_length=1, max_length=200
+    )  # left out: "Follow-up: <its title>"
+    description: str = Field(default="", max_length=20_000)
+    status: str | None = None  # left out: Backlog
+
+
 class TaskPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=20_000)
@@ -351,6 +370,9 @@ class ProjectEventOut(BaseModel):
     kind: str
     title: str
     actor: str
+    workspace_id: int | None
+    board_id: int | None
+    task_id: int | None
     data: dict[str, Any]
     created_at: datetime
 
@@ -370,6 +392,7 @@ class TaskOut(BaseModel):
     id: int
     project_id: int
     board_id: int
+    origin_task_id: int | None  # the task this one was spawned from
     title: str
     description: str
     status: str

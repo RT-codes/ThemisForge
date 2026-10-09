@@ -1,6 +1,6 @@
 // Workspaces and boards: pure helpers for picking boards and describing their columns (the pages do the loading).
 
-import type { Board, BuiltinStatus, TaskStatus, Workspace } from './api'
+import type { Board, BuiltinStatus, Task, TaskStatus, Workspace } from './api'
 
 /** The project's first board: first workspace, first board in it (the server sends both in display order). */
 export function defaultBoard(workspaces: Workspace[]): Board | null {
@@ -101,5 +101,19 @@ export function parseCollapsed(raw: string | null): number[] {
     return Array.isArray(value) ? value.filter((n): n is number => Number.isInteger(n)) : []
   } catch {
     return []
+  }
+}
+
+/** A board as a choice: "Workspace: Board", or just the board's name while the project has a single workspace. */
+export function destinationLabel(workspaces: Workspace[], board: Board): string {
+  const workspace = workspaces.find((w) => w.id === board.workspace_id)
+  return workspaces.length > 1 && workspace ? `${workspace.name}: ${board.name}` : board.name
+}
+
+/** The follow-ups of a task and the task it follows, from the tasks of the project. */
+export function lineage(tasks: Task[], task: Task): { origin: Task | null; followUps: Task[] } {
+  return {
+    origin: task.origin_task_id === null ? null : (tasks.find((t) => t.id === task.origin_task_id) ?? null),
+    followUps: tasks.filter((t) => t.origin_task_id === task.id),
   }
 }

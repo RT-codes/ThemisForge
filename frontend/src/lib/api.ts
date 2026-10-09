@@ -83,6 +83,8 @@ export interface Task {
   id: number
   project_id: number
   board_id: number
+  /** the task this one was spawned from, as a follow-up */
+  origin_task_id: number | null
   title: string
   description: string
   status: TaskStatus
@@ -106,9 +108,12 @@ export interface Task {
 
 export interface ProjectEvent {
   id: number
-  kind: 'task_deleted' | string
+  kind: 'task_deleted' | 'task_moved' | 'task_spawned' | string
   title: string
   actor: string
+  workspace_id: number | null
+  board_id: number | null
+  task_id: number | null
   /** a copy of the thing as it was (for a deleted task: its description, status, schedule...) */
   data: Record<string, unknown>
   created_at: string
@@ -584,6 +589,12 @@ export const api = {
   tasks: (projectId: number) => request<Task[]>(`/projects/${projectId}/tasks`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),
   updateTask: (id: number, patch: TaskPatch) => request<Task>(`/tasks/${id}`, send('PATCH', patch)),
+  /** the same task continues on another board (and status) */
+  moveTask: (id: number, body: { board_id: number; status?: TaskStatus; position?: number }) =>
+    request<Task>(`/tasks/${id}/move`, send('POST', body)),
+  /** a new task on a board, linked to this one; this one stays where it is */
+  spawnTask: (id: number, body: { board_id: number; title?: string; description?: string; status?: TaskStatus }) =>
+    request<Task>(`/tasks/${id}/spawn`, send('POST', body)),
   projectHistory: (projectId: number) => request<ProjectEvent[]>(`/projects/${projectId}/history`),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, send('DELETE')),
   runTask: (id: number) => request<Task>(`/tasks/${id}/run`, send('POST')),

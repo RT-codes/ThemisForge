@@ -47,7 +47,7 @@ Themis is deliberately small: **one server process** that does everything, plus 
 | `users` | Accounts, with an administrator flag. |
 | `projects` | Name, description and the custom property definitions. Owned by one user. |
 | `workspaces` and `boards` | A project holds workspaces, a workspace holds boards. Organisation only: tasks, the scheduler and cells stay project wide. Not the `/workspace` folder inside a cell. |
-| `tasks` | Title, description, board, status, position, property values, schedule and next run time. |
+| `tasks` | Title, description, board, status, position, property values, schedule and next run time, and the task it was spawned from. |
 | `attempts` | One row per execution: status, times, exit code, log and result. |
 | `secrets` | Named credentials, encrypted. |
 | `app_settings` | The operator settings edited on the Settings page. |

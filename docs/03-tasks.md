@@ -116,6 +116,21 @@ Drag a card to another column or to a new place in a column. A few rules keep th
 - A running task cannot be edited or deleted. Press **Cancel run** first.
 - Moving a task to **Ready** makes it eligible to run. For a task with no schedule that means *now*.
 
+### Between boards
+
+When a project has several boards, work can move from one to another in two ways. Both are in the task's details panel,
+under **On board**:
+
+- **Send to...** moves the **same task** to another board. Its history, attempts, schedule and properties go with it.
+  On a workspace page you can also drag a card from one board and drop it on a column of another. It keeps its status
+  when the new board has it, and otherwise lands in that board's Backlog. A running task cannot be sent; cancel it first.
+- **Follow-up...** creates a **new task** on another board that is linked to this one, which stays where it is. Use it
+  when one finished piece of work feeds another, for example approved research that becomes a build task. The details
+  panel of each shows what it follows and what followed it, and the card carries a small branch mark.
+
+Both are written to the project's **History** with who did it. A workflow whose Trigger watches a status also starts when
+a task arrives in that status on another board.
+
 ## Run now, cancel and delete
 
 Open a task to find the actions:

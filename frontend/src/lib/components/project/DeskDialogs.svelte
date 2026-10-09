@@ -1,13 +1,15 @@
 <script lang="ts">
-	import type { Board } from '$lib/api'
+	import type { Board, Workspace } from '$lib/api'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import type { ProjectDesk } from '$lib/projectDesk.svelte'
 	import TaskSheet from './TaskSheet.svelte'
 
 	// The task panel and the "delete this task?" question that every page working on tasks shows.
-	let { desk, boards }: { desk: ProjectDesk; boards: Board[] } = $props()
+	let { desk, workspaces }: { desk: ProjectDesk; workspaces: Workspace[] } = $props()
 
-	const sheetBoard = $derived(boards.find((b) => b.id === desk.sheetBoardId) ?? boards[0] ?? null)
+	const boards = $derived(workspaces.flatMap((w) => w.boards))
+	// an open task is on the board it is on now (it may just have been sent elsewhere); a new task goes to the board asked for
+	const sheetBoard = $derived(boards.find((b) => b.id === (desk.sheetTask?.board_id ?? desk.sheetBoardId)) ?? boards[0] ?? null)
 </script>
 
 {#if desk.project && sheetBoard}
@@ -16,12 +18,15 @@
 		projectId={desk.projectId}
 		task={desk.sheetTask}
 		board={sheetBoard}
+		tasks={desk.tasks}
+		{workspaces}
 		defaultStatus={desk.sheetStatus}
 		defs={desk.project.properties}
 		timezone={desk.system?.timezone ?? 'UTC'}
 		now={desk.now}
 		onchange={() => desk.reload()}
 		ondelete={(task) => desk.askDelete(task)}
+		onopen={(task) => desk.openTask(task)}
 	/>
 {/if}
 <AlertDialog.Root open={desk.taskToDelete !== null} onOpenChange={(o) => !o && (desk.taskToDelete = null)}>

@@ -80,11 +80,13 @@ export class ProjectDesk {
     this.sheetOpen = true
   }
 
-  async moveTask(task: Task, status: TaskStatus, position: number) {
+  /** `boardId`: the board the card was dropped on; a different one than the task's sends the task there */
+  async moveTask(task: Task, status: TaskStatus, position: number, boardId: number = task.board_id) {
     const before = this.tasks
-    this.tasks = this.tasks.map((t) => (t.id === task.id ? { ...t, status, position } : t)) // optimistic
+    this.tasks = this.tasks.map((t) => (t.id === task.id ? { ...t, status, position, board_id: boardId } : t)) // optimistic
     try {
-      await api.updateTask(task.id, { status, position })
+      if (boardId === task.board_id) await api.updateTask(task.id, { status, position })
+      else await api.moveTask(task.id, { board_id: boardId, status, position })
       await this.load()
     } catch (e) {
       this.tasks = before

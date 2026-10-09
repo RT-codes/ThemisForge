@@ -570,3 +570,16 @@ async def test_history_is_paged_newest_first_and_survives_deleted_boards(client)
         e["kind"] == "board_created" and e["title"] == "QA" for e in await _history(client, pid, limit=200)
     )
     assert first["id"]
+
+
+async def test_a_workspace_can_have_an_icon(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    made = (
+        await client.post(f"/api/projects/{pid}/workspaces", json={"name": "Ops", "icon": "wrench"})
+    ).json()
+    assert made["icon"] == "wrench"
+    r = await client.patch(f"/api/workspaces/{made['id']}", json={"icon": "factory", "purpose": "Run things"})
+    assert (r.json()["icon"], r.json()["purpose"]) == ("factory", "Run things")
+    assert (await client.patch(f"/api/workspaces/{made['id']}", json={"icon": "No Good"})).status_code == 422
+    assert (await _workspaces(client, pid))[0]["icon"] == ""  # the starting workspace has the default

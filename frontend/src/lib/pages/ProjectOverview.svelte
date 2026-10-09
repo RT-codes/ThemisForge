@@ -5,6 +5,8 @@
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
 	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
+	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
@@ -64,11 +66,15 @@
 {#if project}
 	<div class="px-6 pt-8 pb-6" in:fade={{ duration: 350 }}>
 		<header class="flex flex-wrap items-start justify-between gap-3">
-			<div>
-				<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
-				{#if project.description}
-					<p class="mt-1 text-sm text-muted-foreground">{project.description}</p>
-				{/if}
+			<div class="flex min-w-0 items-start gap-3">
+				<DynamicIcon name={project.icon} fallback={FolderKanbanIcon} class="mt-1 size-7 shrink-0 text-primary" />
+				<div class="min-w-0">
+					<h2 class="text-2xl font-semibold tracking-tight">{project.name}</h2>
+					{#if project.purpose}<p class="mt-0.5 text-sm">{project.purpose}</p>{/if}
+					{#if project.description}
+						<p class="mt-1 text-sm whitespace-pre-line text-muted-foreground">{project.description}</p>
+					{/if}
+				</div>
 			</div>
 			<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
 		</header>

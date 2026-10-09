@@ -181,7 +181,9 @@ async def create_project(body: ProjectIn, session: SessionDep, user: CurrentUser
     project = Project(
         owner_id=user.id,
         name=body.name,
+        purpose=body.purpose,
         description=body.description,
+        icon=body.icon,
         properties=[],
         cell_profile=body.cell_profile.clean() if body.cell_profile else None,
         automation=body.automation.clean() if body.automation else None,
@@ -205,8 +207,12 @@ async def update_project(
     project = await _project(session, project_id, user)
     if body.name is not None:
         project.name = body.name.strip() or project.name
+    if body.purpose is not None:
+        project.purpose = body.purpose
     if body.description is not None:
         project.description = body.description
+    if body.icon is not None:
+        project.icon = body.icon
     if "cell_profile" in body.model_fields_set:
         project.cell_profile = body.cell_profile.clean() if body.cell_profile else None
     if "automation" in body.model_fields_set:

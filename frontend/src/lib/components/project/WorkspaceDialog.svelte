@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { api, ApiError, type Workspace } from '$lib/api'
+	import IconField from '$lib/components/IconField.svelte'
+	import LayersIcon from '@lucide/svelte/icons/layers'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -17,6 +19,7 @@
 	let name = $state('')
 	let purpose = $state('')
 	let description = $state('')
+	let icon = $state('')
 	let error = $state('')
 	let saving = $state(false)
 
@@ -25,6 +28,7 @@
 			name = workspace?.name ?? ''
 			purpose = workspace?.purpose ?? ''
 			description = workspace?.description ?? ''
+			icon = workspace?.icon ?? ''
 			error = ''
 		}
 	})
@@ -34,7 +38,7 @@
 		error = ''
 		saving = true
 		try {
-			const body = { name, purpose, description }
+			const body = { name, purpose, description, icon }
 			onsaved(workspace ? await api.updateWorkspace(workspace.id, body) : await api.createWorkspace(projectId, body))
 			open = false
 		} catch (err) {
@@ -54,6 +58,10 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={save} class="grid gap-4">
+			<div class="grid gap-2">
+				<Label>Icon</Label>
+				<IconField bind:value={icon} fallback={LayersIcon} />
+			</div>
 			<div class="grid gap-2">
 				<Label for="workspace-name">Name</Label>
 				<Input id="workspace-name" bind:value={name} required maxlength={60} placeholder="Product factory" />

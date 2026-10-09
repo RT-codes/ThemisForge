@@ -136,6 +136,7 @@ async def add_workspace(
     purpose: str = "",
     description: str = "",
     actor: str | None = None,
+    icon: str = "",
 ) -> Workspace:
     """`actor`: who is doing it, for the history. Left out for the workspace a new project starts with."""
     workspace = Workspace(
@@ -143,6 +144,7 @@ async def add_workspace(
         name=name,
         purpose=purpose,
         description=description,
+        icon=icon,
         position=await _next_workspace_position(session, project_id),
     )
     session.add(workspace)

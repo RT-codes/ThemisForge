@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Workspace } from '$lib/api'
 	import { boardSummary, taskTotal } from '$lib/boards'
+	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
+	import LayersIcon from '@lucide/svelte/icons/layers'
 
 	// The project's workspaces on its overview: what each is for and how busy its boards are.
 	let { projectId, workspaces }: { projectId: number; workspaces: Workspace[] } = $props()
@@ -10,7 +12,9 @@
 	{#each workspaces as w (w.id)}
 		<section class="rounded-xl border bg-card p-5">
 			<a href="/projects/{projectId}/workspaces/{w.id}" class="group block">
-				<h3 class="text-base font-semibold tracking-tight group-hover:text-primary">{w.name}</h3>
+				<h3 class="flex items-center gap-2 text-base font-semibold tracking-tight group-hover:text-primary">
+					<DynamicIcon name={w.icon} fallback={LayersIcon} class="size-4 shrink-0 text-muted-foreground" />{w.name}
+				</h3>
 				<p class="text-xs text-muted-foreground">{w.purpose || `${w.boards.length} ${w.boards.length === 1 ? 'board' : 'boards'}`}</p>
 			</a>
 			<ul class="mt-4 grid gap-1 border-t pt-3">

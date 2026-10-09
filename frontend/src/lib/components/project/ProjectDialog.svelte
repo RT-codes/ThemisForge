@@ -2,6 +2,8 @@
 	import { api, ApiError, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import GuardFields from '$lib/components/GuardFields.svelte'
+	import IconField from '$lib/components/IconField.svelte'
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -16,7 +18,9 @@
 	}: { open: boolean; project?: Project | null; onsaved: (project: Project) => void } = $props()
 
 	let name = $state('')
+	let purpose = $state('')
 	let description = $state('')
+	let icon = $state('')
 	let profile = $state<ProfileOverrides | null>(null)
 	let cooldown = $state<number | null>(null)
 	let hops = $state<number | null>(null)
@@ -28,7 +32,9 @@
 	$effect(() => {
 		if (open) {
 			name = project?.name ?? ''
+			purpose = project?.purpose ?? ''
 			description = project?.description ?? ''
+			icon = project?.icon ?? ''
 			profile = project?.cell_profile ? { ...project.cell_profile } : null
 			cooldown = project?.automation?.start_cooldown_seconds ?? null
 			hops = project?.automation?.max_hops ?? null
@@ -44,8 +50,8 @@
 		saving = true
 		try {
 			const saved = project
-				? await api.updateProject(project.id, { name, description, cell_profile: profile, automation: cooldown === null && hops === null ? null : { start_cooldown_seconds: cooldown, max_hops: hops } })
-				: await api.createProject(name, description, profile)
+				? await api.updateProject(project.id, { name, purpose, description, icon, cell_profile: profile, automation: cooldown === null && hops === null ? null : { start_cooldown_seconds: cooldown, max_hops: hops } })
+				: await api.createProject({ name, purpose, description, icon, cell_profile: profile })
 			onsaved(saved)
 			open = false
 		} catch (err) {
@@ -66,8 +72,16 @@
 		</Dialog.Header>
 		<form onsubmit={save} class="grid gap-4">
 			<div class="grid gap-2">
+				<Label>Icon</Label>
+				<IconField bind:value={icon} fallback={FolderKanbanIcon} />
+			</div>
+			<div class="grid gap-2">
 				<Label for="project-name">Name</Label>
 				<Input id="project-name" bind:value={name} required maxlength={100} placeholder="e.g. Market research" />
+			</div>
+			<div class="grid gap-2">
+				<Label for="project-purpose">What it is for</Label>
+				<Input id="project-purpose" bind:value={purpose} maxlength={200} placeholder="One line, e.g. Find out what customers want" />
 			</div>
 			<div class="grid gap-2">
 				<Label for="project-desc">Description</Label>

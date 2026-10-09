@@ -20,6 +20,9 @@
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
+	import { api } from '$lib/api'
+	import DynamicIcon from './DynamicIcon.svelte'
+	import EditPopover, { type Details } from './EditPopover.svelte'
 	import { workspaceOf } from '$lib/boards'
 	import BoardDialog from './project/BoardDialog.svelte'
 	import LayersIcon from '@lucide/svelte/icons/layers'
@@ -27,6 +30,15 @@
 	import ProjectDialog from './project/ProjectDialog.svelte'
 
 	let createOpen = $state(false)
+
+	async function saveProject(id: number, d: Details) {
+		await api.updateProject(id, { name: d.name, purpose: d.purpose, description: d.description, icon: d.icon })
+		await projects.refresh()
+	}
+	async function saveWorkspace(projectId: number, id: number, d: Details) {
+		await api.updateWorkspace(id, { name: d.name, purpose: d.purpose, description: d.description, icon: d.icon })
+		await structure.refresh(projectId)
+	}
 	// the workspace that is getting a new board (the plus beside it)
 	let boardFor = $state<{ projectId: number; workspaceId: number } | null>(null)
 	let boardOpen = $state(false)
@@ -96,12 +108,20 @@
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton>
 								{#snippet child({ props })}
-									<a href="/projects/{p.id}" {...props}><FolderKanbanIcon /><span>{p.name}</span></a>
+									<a href="/projects/{p.id}" {...props}><DynamicIcon name={p.icon} fallback={FolderKanbanIcon} /><span>{p.name}</span></a>
 								{/snippet}
 							</Sidebar.MenuButton>
 							{#if (p.task_counts.running ?? 0) > 0}
-								<Sidebar.MenuBadge>{p.task_counts.running}</Sidebar.MenuBadge>
+								<!-- steps aside for the pencil while the pointer is on the row -->
+								<Sidebar.MenuBadge class="transition-opacity group-hover/menu-item:opacity-0 group-has-data-[state=open]/menu-item:opacity-0">{p.task_counts.running}</Sidebar.MenuBadge>
 							{/if}
+							<EditPopover
+								kind="project"
+								current={{ name: p.name, purpose: p.purpose, description: p.description, icon: p.icon }}
+								fallback={FolderKanbanIcon}
+								onsave={(d) => saveProject(p.id, d)}
+								class="end-1 top-1.5 group-hover/menu-item:opacity-100"
+							/>
 							{#if open}
 								<Sidebar.MenuSub class="tree-branch">
 									<Sidebar.MenuSubItem class="tree-leaf">
@@ -121,9 +141,16 @@
 													class="me-2.5"
 												>
 													{#snippet child({ props })}
-														<a href="/projects/{p.id}/workspaces/{w.id}" {...props}><LayersIcon /><span>{w.name}</span></a>
+														<a href="/projects/{p.id}/workspaces/{w.id}" {...props}><DynamicIcon name={w.icon} fallback={LayersIcon} /><span>{w.name}</span></a>
 													{/snippet}
 												</Sidebar.MenuSubButton>
+												<EditPopover
+													kind="workspace"
+													current={{ name: w.name, purpose: w.purpose, description: w.description, icon: w.icon }}
+													fallback={LayersIcon}
+													onsave={(d) => saveWorkspace(p.id, w.id, d)}
+													class="end-0.5 top-1/2 -translate-y-1/2 group-hover/menu-sub-item:opacity-100"
+												/>
 												<SidebarPlus label="New board in {w.name}" class="-end-[1.2rem] top-1/2 -translate-y-1/2" onclick={() => ((boardFor = { projectId: p.id, workspaceId: w.id }), (boardOpen = true))} />
 											</Sidebar.MenuSubItem>
 										{/each}

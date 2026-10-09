@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any, Literal, Self
 
@@ -104,10 +105,24 @@ class AcceptInviteIn(BaseModel):
 
 # projects
 
+_ICON_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def _icon(v: str | None) -> str | None:
+    """A Lucide icon name such as "folder-kanban", or empty for the default. Whether the name exists is up to the
+    interface, which falls back to the default icon for one it does not know."""
+    if v is None:
+        return None
+    if v and not _ICON_NAME.match(v):
+        raise ValueError("An icon is named like 'folder-kanban'")
+    return v
+
 
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    purpose: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=2000)
+    icon: str = Field(default="", max_length=40)
     cell_profile: ProfileOverrides | None = None  # overrides of the global cell defaults
     automation: AutomationOverrides | None = None  # overrides of the global automation guard
 
@@ -118,13 +133,19 @@ class ProjectIn(BaseModel):
             raise ValueError("Name cannot be empty")
         return v
 
+    _check_icon = field_validator("icon")(_icon)
+
 
 class ProjectPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
+    purpose: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
+    icon: str | None = Field(default=None, max_length=40)
     properties: list[PropertyDef] | None = None
     cell_profile: ProfileOverrides | None = None  # sent as null: back to the global defaults
     automation: AutomationOverrides | None = None  # sent as null: back to the global guard
+
+    _check_icon = field_validator("icon")(_icon)
 
 
 class ProjectOut(BaseModel):
@@ -132,7 +153,9 @@ class ProjectOut(BaseModel):
 
     id: int
     name: str
+    purpose: str
     description: str
+    icon: str
     properties: list[PropertyDef]
     cell_profile: dict[str, Any] | None
     automation: dict[str, Any] | None
@@ -163,15 +186,20 @@ class WorkspaceIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     purpose: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=5000)
+    icon: str = Field(default="", max_length=40)
 
     _strip_name = field_validator("name")(_name)
+    _check_icon = field_validator("icon")(_icon)
 
 
 class WorkspacePatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
     purpose: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
+    icon: str | None = Field(default=None, max_length=40)
     position: float | None = None
+
+    _check_icon = field_validator("icon")(_icon)
 
     @field_validator("name")
     @classmethod
@@ -249,6 +277,7 @@ class WorkspaceOut(BaseModel):
     name: str
     purpose: str
     description: str
+    icon: str
     position: float
     created_at: datetime
     boards: list[BoardOut]

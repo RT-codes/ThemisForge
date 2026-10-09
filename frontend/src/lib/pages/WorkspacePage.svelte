@@ -8,6 +8,8 @@
 	import StatusesDialog from '$lib/components/project/StatusesDialog.svelte'
 	import WorkspaceBoard from '$lib/components/project/WorkspaceBoard.svelte'
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
+	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
+	import LayersIcon from '@lucide/svelte/icons/layers'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
@@ -110,7 +112,9 @@
 	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-6" in:fade={{ duration: 350 }}>
 		<div class="flex flex-wrap items-start gap-x-6 gap-y-3">
 			<div class="min-w-0 flex-1">
-				<h2 class="truncate text-2xl font-semibold tracking-tight">{workspace.name}</h2>
+				<h2 class="flex items-center gap-2.5 truncate text-2xl font-semibold tracking-tight">
+					<DynamicIcon name={workspace.icon} fallback={LayersIcon} class="size-6 shrink-0 text-primary" />{workspace.name}
+				</h2>
 				{#if workspace.purpose}<p class="mt-0.5 text-sm text-muted-foreground">{workspace.purpose}</p>{/if}
 				{#if workspace.description}<p class="mt-2 max-w-3xl text-sm whitespace-pre-line text-muted-foreground/80">{workspace.description}</p>{/if}
 			</div>

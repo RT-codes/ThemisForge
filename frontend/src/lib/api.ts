@@ -40,7 +40,11 @@ export interface AutomationOverrides {
 export interface Project {
   id: number
   name: string
+  /** one line on what it is for */
+  purpose: string
   description: string
+  /** a Lucide icon name such as "folder-kanban"; empty is the default icon */
+  icon: string
   properties: PropertyDef[]
   cell_profile: ProfileOverrides | null
   automation: AutomationOverrides | null
@@ -74,6 +78,7 @@ export interface Workspace {
   name: string
   purpose: string
   description: string
+  icon: string
   position: number
   created_at: string
   boards: Board[]
@@ -578,16 +583,16 @@ export const api = {
 
   projects: () => request<ProjectSummary[]>('/projects'),
   project: (id: number) => request<Project>(`/projects/${id}`),
-  createProject: (name: string, description = '', cell_profile: ProfileOverrides | null = null) =>
-    request<Project>('/projects', send('POST', { name, description, cell_profile })),
-  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'description' | 'properties' | 'cell_profile' | 'automation'>>) =>
+  createProject: (body: { name: string; purpose?: string; description?: string; icon?: string; cell_profile?: ProfileOverrides | null }) =>
+    request<Project>('/projects', send('POST', body)),
+  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'purpose' | 'description' | 'icon' | 'properties' | 'cell_profile' | 'automation'>>) =>
     request<Project>(`/projects/${id}`, send('PATCH', patch)),
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 
   workspaces: (projectId: number) => request<Workspace[]>(`/projects/${projectId}/workspaces`),
-  createWorkspace: (projectId: number, body: { name: string; purpose?: string; description?: string }) =>
+  createWorkspace: (projectId: number, body: { name: string; purpose?: string; description?: string; icon?: string }) =>
     request<Workspace>(`/projects/${projectId}/workspaces`, send('POST', body)),
-  updateWorkspace: (id: number, patch: { name?: string; purpose?: string; description?: string; position?: number }) =>
+  updateWorkspace: (id: number, patch: { name?: string; purpose?: string; description?: string; icon?: string; position?: number }) =>
     request<Workspace>(`/workspaces/${id}`, send('PATCH', patch)),
   /** `moveTo`: the board that takes over the tasks of its boards (needed when there are any) */
   deleteWorkspace: (id: number, moveTo?: number) => request<void>(`/workspaces/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),

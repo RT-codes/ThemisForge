@@ -83,7 +83,12 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(100))
+    purpose: Mapped[str] = mapped_column(
+        String(200), default="", server_default=""
+    )  # one line: what it is for
     description: Mapped[str] = mapped_column(Text, default="")
+    # The name of a Lucide icon ("folder-kanban") shown beside the project; empty = the default icon.
+    icon: Mapped[str] = mapped_column(String(40), default="", server_default="")
     # Custom Kanban properties: [{"key", "name", "type", "options"}], see app/properties.py.
     properties: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     # Overrides of the global cell defaults for this project's cells: {"image", "cpus", "memory_mb", "timeout_seconds"},
@@ -135,6 +140,9 @@ class Workspace(Base):
     name: Mapped[str] = mapped_column(String(60))
     purpose: Mapped[str] = mapped_column(String(200), default="")  # one line: what this area is for
     description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str] = mapped_column(
+        String(40), default="", server_default=""
+    )  # a Lucide icon name, see Project
     position: Mapped[float] = mapped_column(Float, default=0.0)  # order among the project's workspaces
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 

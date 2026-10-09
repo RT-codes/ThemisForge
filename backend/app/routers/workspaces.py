@@ -121,7 +121,7 @@ async def create_workspace(
 ) -> WorkspaceOut:
     await _project(session, project_id, user)
     workspace = await rules.add_workspace(
-        session, project_id, body.name, body.purpose, body.description, user.name
+        session, project_id, body.name, body.purpose, body.description, user.name, body.icon
     )
     await session.commit()
     return (await _workspaces_out(session, [workspace]))[0]

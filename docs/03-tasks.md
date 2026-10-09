@@ -26,6 +26,11 @@ you can split the work up:
   with **New board** on a workspace page (or the plus beside the workspace in the sidebar). A board's **...** menu has
   **Edit board**, **Duplicate** (the same statuses, without the tasks) and **Delete board**.
 
+Point at a project or a workspace in the sidebar and a **pencil** appears beside it (before the plus). It opens a small
+popup right there where you can change its **icon** (click it, then search the Lucide icon set by name), its **name**,
+a one-line note on **what it is for**, and its **description**. The same fields are in the **Edit project** and **Edit
+workspace** dialogs.
+
 On a workspace page, fold a board away with the arrow in its header, use **Move up** or **Move down** from its menu,
 and **Open** it to get its own page with a header and four views of the **same** tasks:
 

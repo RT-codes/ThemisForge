@@ -421,7 +421,12 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 	box-shadow: 0 0 0 4px color-mix(in oklab, #2dd4bf 30%, transparent);
 }
 
-/* Sidebar tree: a branch line that reaches every sub page (like the `tree` command) and ends at the last one. */
+/* Sidebar tree: a branch line that reaches every sub page (like the `tree` command) and ends at the last one. A sub page
+   row is 1.75rem (28px) high with a 0.25rem (4px) gap between rows. The sidebar's border colour is see-through in the
+   dark theme, so no two pieces may cover the same pixel or the overlap shows as a darker dash: each row draws its own
+   height plus half of each gap (2px), so neighbours meet exactly, and the little horizontal arm starts one pixel in,
+   where the vertical line ends. A row can hold a list of its own (the workspaces), so the last row's line stops at the
+   middle of its own first row (14px), not at the middle of everything inside it. */
 .tree-branch {
 	border-left-width: 0;
 }
@@ -429,21 +434,23 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 .tree-leaf::after {
 	content: '';
 	position: absolute;
-	left: -0.625rem; /* the left edge of the list, where a border used to run */
 	background: var(--sidebar-border);
 	pointer-events: none;
 }
 .tree-leaf::before {
-	top: -0.25rem; /* up into the gap above, so the line stays unbroken */
-	bottom: -0.25rem;
+	left: -0.625rem; /* the left edge of the list, where a border used to run */
+	top: -2px;
+	bottom: -2px;
 	width: 1px;
 }
 .tree-leaf:last-child::before {
-	bottom: 50%; /* the last branch turns off here instead of running on */
+	bottom: auto;
+	height: 17px; /* 2px up, to the middle of the row (14px), and the pixel of the corner */
 }
 .tree-leaf::after {
-	top: 50%;
-	width: 0.5rem;
+	left: calc(-0.625rem + 1px);
+	top: 14px;
+	width: calc(0.5rem - 1px);
 	height: 1px;
 }
 
@@ -456,22 +463,23 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 .file-leaf::after {
 	content: '';
 	position: absolute;
-	left: -0.625rem; /* the left edge of the list this row belongs to */
 	background: var(--border);
 	pointer-events: none;
 }
 .file-leaf::before {
-	top: -0.25rem; /* up into the gap above, so the line stays unbroken */
-	bottom: -0.25rem;
+	left: -0.625rem; /* the left edge of the list this row belongs to */
+	top: -2px; /* half of the 4px gap above and below: neighbours meet without covering the same pixel */
+	bottom: -2px;
 	width: 1px;
 }
 .file-leaf:last-child::before {
 	bottom: auto;
-	height: 1.25rem;
+	height: 19px; /* 2px up, to the middle of the row (16px), and the pixel of the corner */
 }
 .file-leaf::after {
+	left: calc(-0.625rem + 1px);
 	top: 1rem;
-	width: 0.5rem;
+	width: calc(0.5rem - 1px);
 	height: 1px;
 }
 

@@ -11,7 +11,7 @@ summary: The project dashboard, task statuses, custom properties and the board.
 Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview shows how many
 tasks are ready and running, how many are scheduled for today and the next 7 days, a card for each workspace, and the
 recent activity. Under a project the sidebar lists its pages (**Overview**, **Files**, **Agents** and the **Workflow
-editor**), and below a divider its **Workspaces**, where your work lives. The small plus buttons beside a page or a workspace
+editor**) and then **Workspaces**, with the workspaces themselves indented below it, where your work lives. The small plus buttons beside a page or a workspace
 (a new agent, workflow or board) appear when you point at its row; the one beside **Workspaces** adds a workspace.
 
 ## Workspaces and boards

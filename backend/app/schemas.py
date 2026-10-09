@@ -140,6 +140,85 @@ class ProjectSummary(ProjectOut):
     next_run_at: datetime | None
 
 
+# workspaces and boards
+
+
+def _name(v: str) -> str:
+    if not (v := v.strip()):
+        raise ValueError("Name cannot be empty")
+    return v
+
+
+class WorkspaceIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    purpose: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=5000)
+
+    _strip_name = field_validator("name")(_name)
+
+
+class WorkspacePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    purpose: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    position: float | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        return None if v is None else _name(v)
+
+
+class BoardIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    purpose: str = Field(default="", max_length=200)
+
+    _strip_name = field_validator("name")(_name)
+
+
+class BoardPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    purpose: str | None = Field(default=None, max_length=200)
+    position: float | None = None
+    workspace_id: int | None = None  # move the board to another workspace of the project
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        return None if v is None else _name(v)
+
+
+class ColumnOut(BaseModel):
+    """One column of a board: a built-in status or a custom one (see app/boards.py)."""
+
+    key: str  # "ready", or "custom:12"
+    name: str
+    builtin: bool
+    color: str | None = None  # custom statuses only; built-ins have their own colors in the interface
+
+
+class BoardOut(BaseModel):
+    id: int
+    project_id: int
+    workspace_id: int
+    name: str
+    purpose: str
+    position: float
+    columns: list[ColumnOut]
+    created_at: datetime
+
+
+class WorkspaceOut(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    purpose: str
+    description: str
+    position: float
+    created_at: datetime
+    boards: list[BoardOut]
+
+
 # tasks
 
 
@@ -167,6 +246,7 @@ class TaskIn(_ScheduleFields):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20_000)
     status: TaskStatus = TaskStatus.BACKLOG
+    board_id: int | None = None  # left out: the project's first board
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
     harness: Literal["", "codex", "workflow"] = ""
@@ -258,6 +338,7 @@ class TaskOut(BaseModel):
 
     id: int
     project_id: int
+    board_id: int
     title: str
     description: str
     status: TaskStatus

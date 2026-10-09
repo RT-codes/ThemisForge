@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-	import { api, ApiError, type Agent, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Agent, type Board, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
@@ -19,6 +19,7 @@
 	let {
 		projectId,
 		task,
+		board,
 		defaultStatus,
 		defs,
 		timezone,
@@ -28,6 +29,8 @@
 	}: {
 		projectId: number
 		task: Task | null
+		/** the board a new task is created on */
+		board: Board
 		defaultStatus: TaskStatus
 		defs: PropertyDef[]
 		timezone: string
@@ -134,6 +137,7 @@
 						title,
 						description,
 						status,
+						board_id: board.id,
 						properties,
 						review_on_success: review,
 						harness,

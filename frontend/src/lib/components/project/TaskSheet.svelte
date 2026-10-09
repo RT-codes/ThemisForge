@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, ApiError, type PropertyDef, type Task, type TaskStatus } from '$lib/api'
+	import { api, ApiError, type Board, type PropertyDef, type Task, type TaskStatus } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import XIcon from '@lucide/svelte/icons/x'
 	import { fly } from 'svelte/transition'
@@ -17,6 +17,7 @@
 		open = $bindable(false),
 		projectId,
 		task,
+		board,
 		defaultStatus,
 		defs,
 		timezone,
@@ -27,6 +28,8 @@
 		open: boolean
 		projectId: number
 		task: Task | null
+		/** the board a new task is created on */
+		board: Board
 		defaultStatus: TaskStatus
 		defs: PropertyDef[]
 		timezone: string
@@ -142,7 +145,7 @@
 				</Tabs.List>
 				<Tabs.Content value="details">
 					{#key formKey}
-						<TaskForm {projectId} {task} {defaultStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} onsaved={() => (onchange(), (open = false))} />
+						<TaskForm {projectId} {task} {board} {defaultStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} onsaved={() => (onchange(), (open = false))} />
 					{/key}
 				</Tabs.Content>
 				<Tabs.Content value="history">
@@ -152,7 +155,7 @@
 			</Tabs.Root>
 		{:else}
 			{#key formKey}
-				<TaskForm {projectId} task={null} {defaultStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} onsaved={() => (onchange(), (open = false))} />
+				<TaskForm {projectId} task={null} {board} {defaultStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} onsaved={() => (onchange(), (open = false))} />
 			{/key}
 		{/if}
 	</aside>

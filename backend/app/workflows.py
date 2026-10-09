@@ -27,6 +27,7 @@ from sqlalchemy import event, func, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload
 
+from . import boards
 from .app_settings import load_settings
 from .models import (
     Agent,
@@ -612,11 +613,14 @@ class WorkflowRunner:
                     raise NodeError(
                         "The agent of this node no longer exists. Open the node and choose another."
                     )
+            board = await boards.default_board(
+                s, ctx.project_id
+            )  # the task an Agent node makes shows on the board
             task = Task(
-                project_id=ctx.project_id, title=title, description=instructions, status=TaskStatus.READY,
-                harness=agent.harness if agent else c.get("harness", "codex"),
+                project_id=ctx.project_id, board_id=board.id, title=title, description=instructions,
+                status=TaskStatus.READY, harness=agent.harness if agent else c.get("harness", "codex"),
                 agent_id=agent.id if agent else None, run_options=run_options,
-                position=await self._next_position(s, ctx.project_id, TaskStatus.READY),
+                position=await boards.next_position(s, board.id, TaskStatus.READY),
             )  # fmt: skip
             s.add(task)
             await s.flush()
@@ -667,9 +671,11 @@ class WorkflowRunner:
         async with self.maker() as s:
             before = 0
             if action == "create":
+                board = await boards.default_board(s, ctx.project_id)
                 task = Task(
-                    project_id=ctx.project_id, title=title, description=c.get("description", ""), status=target,
-                    position=await self._next_position(s, ctx.project_id, target),
+                    project_id=ctx.project_id, board_id=board.id, title=title,
+                    description=c.get("description", ""), status=target,
+                    position=await boards.next_position(s, board.id, target),
                 )  # fmt: skip
                 s.add(task)
                 note = f'Created task "{title}" in {target}.'
@@ -703,7 +709,7 @@ class WorkflowRunner:
                     if (
                         task.status != target
                     ):  # lands at the bottom of its new column, like a card dropped there
-                        task.position = await self._next_position(s, ctx.project_id, target)
+                        task.position = await boards.next_position(s, task.board_id, target)
                     task.status = target
                     task.next_run_at = None
                     if c.get("description", "").strip():
@@ -759,13 +765,6 @@ class WorkflowRunner:
                 raise NodeError("Timed out waiting for the task to run.")
 
     # records
-
-    @staticmethod
-    async def _next_position(s: AsyncSession, project_id: int, status: str) -> float:
-        top = await s.scalar(
-            select(func.max(Task.position)).where(Task.project_id == project_id, Task.status == status)
-        )
-        return (top or 0.0) + 1.0
 
     async def _update_node(self, nr_id: int, **fields) -> None:
         async with self.maker() as s:

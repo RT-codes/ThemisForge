@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import boards
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import (
@@ -117,13 +118,6 @@ async def _running_workflow_runs(session: AsyncSession, task_ids: list[int]) -> 
     }
 
 
-async def _next_position(session: AsyncSession, project_id: int, status_: str) -> float:
-    top = await session.scalar(
-        select(func.max(Task.position)).where(Task.project_id == project_id, Task.status == status_)
-    )
-    return (top or 0.0) + 1.0
-
-
 def _bad(detail: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
 
@@ -191,6 +185,8 @@ async def create_project(body: ProjectIn, session: SessionDep, user: CurrentUser
         cell_profile=body.cell_profile.clean() if body.cell_profile else None,
     )
     session.add(project)
+    await session.flush()
+    await boards.create_defaults(session, project.id)  # every project has a board to put tasks on
     await session.commit()
     return project
 
@@ -236,14 +232,17 @@ async def delete_project(project_id: int, session: SessionDep, user: CurrentUser
 
 
 @router.get("/projects/{project_id}/tasks", response_model=list[TaskOut])
-async def list_tasks(project_id: int, session: SessionDep, user: CurrentUser) -> list[TaskOut]:
+async def list_tasks(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    board_id: Annotated[int | None, Query(description="Only the tasks of this board")] = None,
+) -> list[TaskOut]:
     await _project(session, project_id, user)
-    tasks = (
-        await session.scalars(
-            select(Task).where(Task.project_id == project_id).order_by(Task.position, Task.id)
-        )
-    ).all()
-    return await _task_out(session, list(tasks))
+    query = select(Task).where(Task.project_id == project_id).order_by(Task.position, Task.id)
+    if board_id is not None:
+        query = query.where(Task.board_id == board_id)
+    return await _task_out(session, list((await session.scalars(query)).all()))
 
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -255,12 +254,21 @@ async def create_task(
         props = clean_values(project.properties, body.properties)
     except ValueError as e:
         raise _bad(str(e)) from None
+    try:
+        board = (
+            await boards.project_board(session, project.id, body.board_id)
+            if body.board_id is not None
+            else await boards.default_board(session, project.id)
+        )
+    except boards.BoardError as e:
+        raise _bad(str(e)) from None
     task = Task(
         project_id=project.id,
+        board_id=board.id,
         title=body.title,
         description=body.description,
         status=body.status,
-        position=await _next_position(session, project.id, body.status),
+        position=await boards.next_position(session, board.id, body.status),
         properties=props,
         schedule_kind=body.schedule_kind,
         cron=body.cron,
@@ -328,7 +336,7 @@ async def update_task(
         task.status = body.status
         reschedule = True
         if "position" not in fields:
-            task.position = await _next_position(session, project.id, body.status)
+            task.position = await boards.next_position(session, task.board_id, body.status)
     if fields & {"schedule_kind", "cron", "run_at"}:
         kind = body.schedule_kind if "schedule_kind" in fields and body.schedule_kind else task.schedule_kind
         cron = body.cron if "cron" in fields else task.cron

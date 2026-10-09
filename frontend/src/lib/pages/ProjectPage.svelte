@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type WorkflowSummary } from '$lib/api'
+	import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type Workspace, type WorkflowSummary } from '$lib/api'
+	import { defaultBoard } from '$lib/boards'
 	import { watchersByStatus } from '$lib/workflow'
 	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
@@ -25,6 +26,7 @@
 	let { id }: { id: number } = $props()
 
 	let project = $state<Project | null>(null)
+	let workspaces = $state<Workspace[]>([])
 	let tasks = $state<Task[]>([])
 	let workflows = $state<WorkflowSummary[]>([])
 	let system = $state<SystemStatus | null>(null)
@@ -45,6 +47,8 @@
 	let taskToDelete = $state<Task | null>(null)
 	let taskDeleteError = $state('')
 
+	// The page shows the project's first board; choosing between several boards comes with the workspace pages.
+	const board = $derived(defaultBoard(workspaces))
 	const sheetTask = $derived(tasks.find((t) => t.id === sheetTaskId) ?? null)
 	const defs = $derived(project?.properties ?? [])
 	const counts = $derived({
@@ -62,7 +66,10 @@
 
 	async function load() {
 		try {
-			;[project, tasks, workflows] = await Promise.all([api.project(id), api.tasks(id), api.workflows(id)])
+			let boards: Workspace[]
+			;[project, boards, workflows] = await Promise.all([api.project(id), api.workspaces(id), api.workflows(id)])
+			workspaces = boards
+			tasks = await api.tasks(id, defaultBoard(boards)?.id)
 			system = await api.systemStatus()
 			loadError = ''
 			revision++
@@ -80,7 +87,7 @@
 		load()
 		const poll = setInterval(() => {
 			if (document.hidden) return
-			api.tasks(id).then((t) => (tasks = t)).catch(() => {})
+			api.tasks(id, board?.id).then((t) => (tasks = t)).catch(() => {})
 			api.workflows(id).then((w) => (workflows = w)).catch(() => {})
 			api.systemStatus().then((s) => (system = s)).catch(() => {})
 		}, 3000)
@@ -148,7 +155,7 @@
 		<p class="mt-1 text-sm text-muted-foreground">It may have been deleted.</p>
 		<Button class="mt-4" onclick={() => router.navigate('/')}>Back home</Button>
 	</div>
-{:else if project}
+{:else if project && board}
 	<div class="flex min-h-0 flex-1 flex-col gap-4 px-6 py-6" in:fade={{ duration: 350 }}>
 		<div class="flex flex-wrap items-start gap-x-6 gap-y-3">
 			<div class="min-w-0 flex-1">
@@ -232,6 +239,7 @@
 		bind:open={sheetOpen}
 		projectId={id}
 		task={sheetTask}
+		{board}
 		defaultStatus={sheetStatus}
 		{defs}
 		timezone={system?.timezone ?? 'UTC'}

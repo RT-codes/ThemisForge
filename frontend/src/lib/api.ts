@@ -37,6 +37,37 @@ export interface Project {
   created_at: string
 }
 
+/** A column of a board: one of the seven built-in statuses, or a custom one the board added */
+export interface Column {
+  key: string // "ready", or "custom:12"
+  name: string
+  builtin: boolean
+  color: string | null // custom statuses only
+}
+
+export interface Board {
+  id: number
+  project_id: number
+  workspace_id: number
+  name: string
+  purpose: string
+  position: number
+  columns: Column[]
+  created_at: string
+}
+
+/** A named area of a project that holds boards (not the /workspace folder inside a cell) */
+export interface Workspace {
+  id: number
+  project_id: number
+  name: string
+  purpose: string
+  description: string
+  position: number
+  created_at: string
+  boards: Board[]
+}
+
 export interface ProjectSummary extends Project {
   task_counts: Partial<Record<TaskStatus, number>>
   next_run_at: string | null
@@ -47,6 +78,7 @@ export type Harness = '' | 'codex' | 'workflow'
 export interface Task {
   id: number
   project_id: number
+  board_id: number
   title: string
   description: string
   status: TaskStatus
@@ -82,6 +114,7 @@ export interface TaskInput {
   title: string
   description?: string
   status?: TaskStatus
+  board_id?: number // left out: the project's first board
   properties?: Record<string, PropertyValue>
   schedule_kind?: ScheduleKind
   cron?: string | null
@@ -524,7 +557,9 @@ export const api = {
     request<Project>(`/projects/${id}`, send('PATCH', patch)),
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 
-  tasks: (projectId: number) => request<Task[]>(`/projects/${projectId}/tasks`),
+  workspaces: (projectId: number) => request<Workspace[]>(`/projects/${projectId}/workspaces`),
+  tasks: (projectId: number, boardId?: number) =>
+    request<Task[]>(`/projects/${projectId}/tasks${boardId === undefined ? '' : `?board_id=${boardId}`}`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),
   updateTask: (id: number, patch: TaskPatch) => request<Task>(`/tasks/${id}`, send('PATCH', patch)),
   projectHistory: (projectId: number) => request<ProjectEvent[]>(`/projects/${projectId}/history`),

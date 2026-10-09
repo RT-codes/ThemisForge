@@ -109,11 +109,51 @@ class ProjectEvent(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
 
+class Workspace(Base):
+    """A named, purposeful area of a project that holds boards (see app/boards.py).
+
+    Organisation only: tasks, the scheduler, agents and cells stay project-wide. Not to be confused with the
+    `/workspace` folder inside a cell."""
+
+    __tablename__ = "workspaces"
+    # ids are never reused: workflow nodes refer to workspaces and boards by id (same reasoning as Volume)
+    __table_args__ = ({"sqlite_autoincrement": True},)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    purpose: Mapped[str] = mapped_column(String(200), default="")  # one line: what this area is for
+    description: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[float] = mapped_column(Float, default=0.0)  # order among the project's workspaces
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
+class Board(Base):
+    """One Kanban of a workspace. Its columns are the seven built-in statuses plus any custom ones (BoardStatus)."""
+
+    __tablename__ = "boards"
+    __table_args__ = ({"sqlite_autoincrement": True},)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    purpose: Mapped[str] = mapped_column(String(200), default="")
+    position: Mapped[float] = mapped_column(Float, default=0.0)  # order within the workspace
+    # The board's columns left to right, as status keys: built-in values ("backlog"...) and custom "custom:<id>"
+    # keys. The built-ins are always all here, in their fixed order; only custom keys move around them.
+    columns: Mapped[list[str]] = mapped_column(JSON, default=lambda: [s.value for s in TaskStatus])
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    # The board the task lives on. Boards with tasks are never deleted outright (the API moves the tasks first), the
+    # cascade only serves deleting a whole project.
+    board_id: Mapped[int] = mapped_column(ForeignKey("boards.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default=TaskStatus.BACKLOG, index=True)

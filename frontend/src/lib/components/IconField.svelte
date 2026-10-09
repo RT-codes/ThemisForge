@@ -53,7 +53,7 @@
 				<SearchIcon class="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 				<Input bind:value={query} placeholder="Search {iconNames.length} icons" class="h-8 ps-8" aria-label="Search icons" autofocus />
 			</div>
-			<div class="grid max-h-48 grid-cols-8 content-start gap-1 overflow-y-auto" role="listbox" aria-label="Icons">
+			<div class="slim-scrollbar grid max-h-72 grid-cols-8 content-start gap-1 overflow-y-auto pe-1" role="listbox" aria-label="Icons">
 				{#each matches.slice(0, shown) as name (name)}
 					<button
 						type="button"

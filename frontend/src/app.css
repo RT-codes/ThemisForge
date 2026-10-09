@@ -135,6 +135,13 @@
 }
 
 @layer base {
+  /* Every Lucide icon a little larger and bolder than its box. It sits in the base layer so a utility that sets its own
+     scale or stroke (the sidebar's plus grows on hover) still wins. */
+  svg.lucide-icon {
+    scale: 1.12;
+    stroke-width: 2.2;
+  }
+
 	* {
 		@apply border-border outline-ring/50;
 	}

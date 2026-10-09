@@ -27,3 +27,8 @@ test('structure events name what changed and what happened to the tasks', () => 
 })
 
 test('a kind this version does not know still shows its title', () => assert.equal(describeEvent(event('from_the_future', 'Something')), 'Something'))
+
+test('a stopped loop says why, without the long beginning', () => {
+  const e = event('automation_stopped', 'Ship', { reason: 'Stopped to keep automation from looping: it was moved 10 times.' })
+  assert.equal(describeEvent(e), 'Stopped automation on the task "Ship": it was moved 10 times.')
+})

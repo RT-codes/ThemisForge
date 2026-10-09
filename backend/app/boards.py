@@ -60,6 +60,7 @@ def record(
     board_id: int | None = None,
     task_id: int | None = None,
     data: dict | None = None,
+    cause: str = "",
 ) -> None:
     """Add a line to the project's history. It keeps its own copy of the names it mentions: the history outlives the
     tasks, boards and workspaces it is about, so it stores plain numbers and names, never relations."""
@@ -73,6 +74,7 @@ def record(
             board_id=board_id,
             task_id=task_id,
             data=data or {},
+            cause=cause,
         )
     )
 
@@ -84,6 +86,7 @@ def record_task(
     actor: str,
     board: Board | None = None,
     data: dict | None = None,
+    cause: str = "",
 ) -> None:
     record(
         session,
@@ -95,6 +98,7 @@ def record_task(
         board_id=board.id if board else None,
         task_id=task.id,
         data=data,
+        cause=cause,
     )
 
 
@@ -471,6 +475,7 @@ async def move_task(
     actor: str,
     status: str | None = None,
     position: float | None = None,
+    cause: str = "",
 ) -> None:
     """The same task continues on another board: same id, attempts, schedule and properties, new place. Callers
     refresh the schedule afterwards (a task that falls back to the Backlog is paused, like any task parked there)."""
@@ -481,6 +486,7 @@ async def move_task(
     source = await session.get_one(Board, task.board_id)
     landing = _landing_status(destination, status, task.status)
     came_from = place(source, task.status)
+    was = task.status
     task.board_id = destination.id
     task.status = landing
     task.position = (
@@ -494,7 +500,10 @@ async def move_task(
             actor,
             destination,
             {"from": came_from, "to": place(destination, landing)},
+            cause,
         )
+    elif landing != was:
+        record_status_change(session, task, destination, actor, was, cause)
 
 
 async def spawn_task(
@@ -505,6 +514,9 @@ async def spawn_task(
     title: str,
     description: str,
     status: str | None = None,
+    cause: str = "",
+    origin_key: str | None = None,
+    hops: int = 0,
 ) -> Task:
     """A new task on another board, linked to the one it follows. It has its own identity and history; it takes the
     origin's property values (they are project wide) but not its schedule or what runs it, which the follow-up's own
@@ -521,6 +533,8 @@ async def spawn_task(
         position=await next_position(session, destination.id, landing),
         properties=dict(origin.properties),
         origin_task_id=origin.id,
+        origin_key=origin_key,
+        hops=hops,
     )
     session.add(task)
     await session.flush()
@@ -535,17 +549,26 @@ async def spawn_task(
             "origin": {"task_id": origin.id, "title": origin.title, **place(origin_board)},
             "to": place(destination, landing),
         },
+        cause,
     )
     return task
 
 
-def record_new_task(session: AsyncSession, task: Task, board: Board, actor: str) -> None:
-    record_task(session, "task_created", task, actor, board, {"to": place(board, task.status)})
+def record_new_task(session: AsyncSession, task: Task, board: Board, actor: str, cause: str = "") -> None:
+    record_task(session, "task_created", task, actor, board, {"to": place(board, task.status)}, cause)
 
 
-def record_status_change(session: AsyncSession, task: Task, board: Board, actor: str, was: str) -> None:
+def record_status_change(
+    session: AsyncSession, task: Task, board: Board, actor: str, was: str, cause: str = ""
+) -> None:
     """A person moved a task to another column of its board. Changes the scheduler makes (Running, then the outcome)
     are not recorded: the attempts already say what happened."""
     record_task(
-        session, "task_status", task, actor, board, {"from": {"status": was}, "to": {"status": task.status}}
+        session,
+        "task_status",
+        task,
+        actor,
+        board,
+        {"from": {"status": was}, "to": {"status": task.status}},
+        cause,
     )

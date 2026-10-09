@@ -69,7 +69,7 @@ dropped because the budget is full.
 
 A Ready task starts only some seconds after it was moved to Ready or its previous run ended (**Settings, Cell defaults,
 Wait before a Ready task starts**, 5 seconds by default). It keeps a task that puts itself back in Ready, or a workflow
-that keeps creating tasks, from hammering the machine. Set it to 0 to start tasks right away.
+that keeps creating tasks, from hammering the machine. Set it to 0 to start tasks right away. A project (**Edit project**) and a single task (its **Automation guard** box) can use their own delay instead.
 
 ## Reading the timeline
 

@@ -11,6 +11,7 @@
 	import { Switch } from '$lib/components/ui/switch/index.js'
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
 	import { columnsOf, statusLabel } from '$lib/boards'
+	import GuardFields from '$lib/components/GuardFields.svelte'
 	import { fromLocalInput, toLocalInput } from '$lib/format'
 	import { MINUTE_INTERVALS, REPEAT_KINDS, WEEKDAYS, defaultRecurrence, describeRecurrence, describeSchedule, fromCron, toCron, type RepeatKind, type Recurrence } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
@@ -53,6 +54,8 @@
 		runWith: task?.agent_id ? `agent:${task.agent_id}` : (task?.harness ?? ''),
 		workflowId: task?.workflow_id ? String(task.workflow_id) : '',
 		properties: { ...(task?.properties ?? {}) } as Record<string, PropertyValue>,
+		cooldown: task?.cooldown_seconds ?? null,
+		hops: task?.max_hops ?? null,
 	}))
 
 	let title = $state(initial.title)
@@ -79,6 +82,8 @@
 		repeat = { ...repeat, days: has ? repeat.days.filter((d) => d !== n) : [...repeat.days, n] }
 	}
 	let runAt = $state(initial.runAt)
+	let cooldown = $state<number | null>(initial.cooldown)
+	let hops = $state<number | null>(initial.hops)
 	let review = $state(initial.review)
 	// "Run with" is one choice: a kind of run, or one of the project's agents
 	let runWith = $state<string>(initial.runWith)
@@ -145,6 +150,8 @@
 						harness,
 						workflow_id: harness === 'workflow' ? Number(workflowId) : null,
 						agent_id: agentId,
+						cooldown_seconds: cooldown,
+						max_hops: hops,
 						...schedule,
 					})
 				)
@@ -157,6 +164,8 @@
 					harness,
 					workflow_id: harness === 'workflow' ? Number(workflowId) : null,
 					agent_id: agentId,
+					cooldown_seconds: cooldown,
+					max_hops: hops,
 				}
 				if (status !== task.status) patch.status = status
 				if (scheduleChanged) Object.assign(patch, schedule)
@@ -395,4 +404,13 @@
 			{/each}
 		</fieldset>
 	{/if}
+
+	<details class="rounded-lg border p-3" open={initial.cooldown !== null || initial.hops !== null}>
+		<summary class="cursor-pointer px-1 text-sm font-medium">Automation guard</summary>
+		<p class="mt-2 mb-3 text-xs text-muted-foreground">
+			Keeps workflows from moving this task around for ever. Leave a box empty to follow the project's values.
+			{#if task && task.hops > 0}Workflows have handled this task {task.hops} {task.hops === 1 ? 'time' : 'times'} in a row.{/if}
+		</p>
+		<GuardFields bind:cooldown bind:hops prefix="task" fallback="the project" />
+	</details>
 </form>

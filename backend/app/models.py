@@ -89,6 +89,9 @@ class Project(Base):
     # Overrides of the global cell defaults for this project's cells: {"image", "cpus", "memory_mb", "timeout_seconds"},
     # only the fields that differ (see app/profiles.py). None = use the global defaults.
     cell_profile: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # Overrides of the global automation guard for this project: {"start_cooldown_seconds", "max_hops"}, only the
+    # fields that differ (see app/automation.py). None = use the global settings.
+    automation: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="project", cascade="all, delete-orphan")
@@ -104,7 +107,11 @@ class ProjectEvent(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     kind: Mapped[str] = mapped_column(String(30))  # "task_deleted", "task_moved", "task_spawned"
     title: Mapped[str] = mapped_column(String(200), default="")
-    actor: Mapped[str] = mapped_column(String(100), default="")  # the user's name at the time
+    actor: Mapped[str] = mapped_column(
+        String(100), default=""
+    )  # the user's name at the time, or "Workflow <name>"
+    # What set it off when it was not a person: "run:<workflow run id>:<node id>". Empty for something a person did.
+    cause: Mapped[str] = mapped_column(String(80), default="", server_default="")
     # Where it happened. Plain numbers, not foreign keys: the history outlives the task and the board it names.
     workspace_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
     board_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
@@ -193,6 +200,13 @@ class Task(Base):
     origin_task_id: Mapped[int | None] = mapped_column(
         ForeignKey("tasks.id", ondelete="SET NULL"), default=None, index=True
     )
+    # Made by a workflow step: "run:<run id>:<node id>". Unique, so a step that runs again cannot make a second task.
+    origin_key: Mapped[str | None] = mapped_column(String(80), default=None, unique=True)
+    # Loop guard (see app/automation.py). `hops` counts how many times automation moved or made this task in a row; a
+    # person acting on it starts the count again. The two overrides beat the project's and the global settings.
+    hops: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cooldown_seconds: Mapped[int | None] = mapped_column(Integer, default=None)
+    max_hops: Mapped[int | None] = mapped_column(Integer, default=None)
     # What runs: "" = the placeholder program in a cell, "codex" = Codex in a cell (see app/harness.py),
     # "workflow" = play the workflow below instead of running a cell.
     harness: Mapped[str] = mapped_column(String(20), default="", server_default="")

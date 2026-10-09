@@ -58,10 +58,26 @@ export function statusLabel(status: string, board?: Board | null): string {
 
 /** The custom statuses of all boards as choices for a workflow step ("Development: Peer review"). The built-in ones are
  *  the same everywhere, so a step lists them once on its own. */
-export function customStatusChoices(workspaces: Workspace[]): { value: string; label: string }[] {
+export function customStatusChoices(workspaces: Workspace[], onlyBoard: number | null = null): { value: string; label: string }[] {
   return workspaces.flatMap((w) =>
-    w.boards.flatMap((b) => b.columns.filter((c) => !c.builtin).map((c) => ({ value: c.key, label: `${b.name}: ${c.name}` })))
+    w.boards
+      .filter((b) => onlyBoard === null || b.id === onlyBoard)
+      // once the board is known its name adds nothing
+      .flatMap((b) => b.columns.filter((c) => !c.builtin).map((c) => ({ value: c.key, label: onlyBoard === null ? `${b.name}: ${c.name}` : c.name })))
   )
+}
+
+/** The boards as choices for a workflow step, by id ("Workspace: Board"). */
+export function boardChoices(workspaces: Workspace[]): { value: string; label: string }[] {
+  return workspaces.flatMap((w) => w.boards.map((b) => ({ value: String(b.id), label: destinationLabel(workspaces, b) })))
+}
+
+/** Where a Trigger can look: the whole project (the field's own first option), one workspace ("w:<id>"), or one board ("b:<id>"). */
+export function whereChoices(workspaces: Workspace[]): { value: string; label: string }[] {
+  return [
+    ...workspaces.map((w) => ({ value: `w:${w.id}`, label: `Workspace ${w.name}` })),
+    ...boardChoices(workspaces).map((c) => ({ value: `b:${c.value}`, label: `Board ${c.label}` })),
+  ]
 }
 
 export function findBoard(workspaces: Workspace[], boardId: number): Board | null {

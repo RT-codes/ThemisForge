@@ -3,6 +3,7 @@ from typing import Any, Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from .automation import AutomationOverrides
 from .models import AttemptStatus, ScheduleKind, TaskStatus
 from .profiles import ProfileOverrides
 from .properties import HEX_COLOR, PropertyDef
@@ -108,6 +109,7 @@ class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=2000)
     cell_profile: ProfileOverrides | None = None  # overrides of the global cell defaults
+    automation: AutomationOverrides | None = None  # overrides of the global automation guard
 
     @field_validator("name")
     @classmethod
@@ -122,6 +124,7 @@ class ProjectPatch(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     properties: list[PropertyDef] | None = None
     cell_profile: ProfileOverrides | None = None  # sent as null: back to the global defaults
+    automation: AutomationOverrides | None = None  # sent as null: back to the global guard
 
 
 class ProjectOut(BaseModel):
@@ -132,6 +135,7 @@ class ProjectOut(BaseModel):
     description: str
     properties: list[PropertyDef]
     cell_profile: dict[str, Any] | None
+    automation: dict[str, Any] | None
     created_at: datetime
 
 
@@ -283,6 +287,9 @@ class TaskIn(_ScheduleFields):
     harness: Literal["", "codex", "workflow"] = ""
     workflow_id: int | None = None  # the workflow to play when harness is "workflow"
     agent_id: int | None = None  # the agent that does it; its harness replaces the one above
+    # the automation guard for this task; left out: the project's (see app/automation.py)
+    cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)
+    max_hops: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("title")
     @classmethod
@@ -336,6 +343,8 @@ class TaskPatch(BaseModel):
     harness: Literal["", "codex", "workflow"] | None = None
     workflow_id: int | None = None
     agent_id: int | None = None
+    cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)  # sent as null: the project's
+    max_hops: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("status")
     @classmethod
@@ -370,6 +379,7 @@ class ProjectEventOut(BaseModel):
     kind: str
     title: str
     actor: str
+    cause: str
     workspace_id: int | None
     board_id: int | None
     task_id: int | None
@@ -407,6 +417,9 @@ class TaskOut(BaseModel):
     harness: str
     workflow_id: int | None
     agent_id: int | None
+    hops: int  # how many times in a row automation moved or made this task
+    cooldown_seconds: int | None
+    max_hops: int | None
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None

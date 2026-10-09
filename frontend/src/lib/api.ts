@@ -31,12 +31,19 @@ export interface ProfileOverrides {
   timeout_seconds?: number | null
 }
 
+/** The parts of the automation guard a project may change; an empty field uses the settings' value */
+export interface AutomationOverrides {
+  start_cooldown_seconds?: number | null
+  max_hops?: number | null
+}
+
 export interface Project {
   id: number
   name: string
   description: string
   properties: PropertyDef[]
   cell_profile: ProfileOverrides | null
+  automation: AutomationOverrides | null
   created_at: string
 }
 
@@ -99,6 +106,11 @@ export interface Task {
   harness: Harness
   workflow_id: number | null
   agent_id: number | null
+  /** how many times in a row automation moved or made this task; a person acting on it starts again at 0 */
+  hops: number
+  /** this task's own automation guard; null follows the project's */
+  cooldown_seconds: number | null
+  max_hops: number | null
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
@@ -111,6 +123,8 @@ export interface ProjectEvent {
   kind: 'task_deleted' | 'task_moved' | 'task_spawned' | string
   title: string
   actor: string
+  /** what set it off when it was not a person: "run:<workflow run>:<node>" */
+  cause: string
   workspace_id: number | null
   board_id: number | null
   task_id: number | null
@@ -132,6 +146,8 @@ export interface TaskInput {
   harness?: Harness
   workflow_id?: number | null
   agent_id?: number | null
+  cooldown_seconds?: number | null
+  max_hops?: number | null
 }
 
 export type TaskPatch = Partial<TaskInput> & { position?: number }
@@ -304,6 +320,7 @@ export interface AppSettings {
   update_channel: 'stable' | 'beta'
   keep_workspaces_days: number
   start_cooldown_seconds: number
+  max_automation_hops: number
 }
 
 export interface DockerStatus {
@@ -450,7 +467,8 @@ export interface WorkflowSummary {
   runs: number
   last_run: { id: number; status: RunStatus; started_at: string } | null
   /** the statuses whose tasks start this workflow by themselves; empty for one that is only run by hand */
-  watches: TaskStatus[]
+  /** what starts it by itself: a status and where ("" anywhere, "w:<id>" a workspace, "b:<id>" a board) */
+  watches: { status: TaskStatus; where: string }[]
 }
 
 export interface TaskWorkflowRunSummary {
@@ -562,7 +580,7 @@ export const api = {
   project: (id: number) => request<Project>(`/projects/${id}`),
   createProject: (name: string, description = '', cell_profile: ProfileOverrides | null = null) =>
     request<Project>('/projects', send('POST', { name, description, cell_profile })),
-  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'description' | 'properties' | 'cell_profile'>>) =>
+  updateProject: (id: number, patch: Partial<Pick<Project, 'name' | 'description' | 'properties' | 'cell_profile' | 'automation'>>) =>
     request<Project>(`/projects/${id}`, send('PATCH', patch)),
   deleteProject: (id: number) => request<void>(`/projects/${id}`, send('DELETE')),
 

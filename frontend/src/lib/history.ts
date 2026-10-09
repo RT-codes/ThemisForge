@@ -7,7 +7,7 @@ export type HistoryScope = { workspaceId?: number; boardId?: number; taskId?: nu
 
 export const KIND_GROUPS = [
   { id: 'all', label: 'Everything', kinds: [] as string[] },
-  { id: 'tasks', label: 'Tasks', kinds: ['task_created', 'task_status', 'task_moved', 'task_spawned', 'task_deleted'] },
+  { id: 'tasks', label: 'Tasks', kinds: ['task_created', 'task_status', 'task_moved', 'task_spawned', 'task_deleted', 'automation_stopped'] },
   {
     id: 'structure',
     label: 'Boards and statuses',
@@ -54,6 +54,8 @@ export function describeEvent(e: ProjectEvent): string {
       const was = typeof d.status === 'string' ? ` (was in ${statusLabel(d.status)})` : ''
       return `Deleted the task "${e.title}"${was}`
     }
+    case 'automation_stopped':
+      return `Stopped automation on the task "${e.title}": ${typeof d.reason === 'string' ? d.reason.replace(/^Stopped to keep automation from looping: /, '') : 'a loop'}`
     case 'workspace_created':
       return `Created the workspace "${e.title}"`
     case 'workspace_renamed':

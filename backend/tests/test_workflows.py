@@ -1,34 +1,11 @@
 import asyncio
 
-import pytest
 from sqlalchemy import select
 
 from app.codex import save_auth
-from app.main import app
 from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
-from app.workflows import WorkflowRunner
 from tests.conftest import login, make_project, make_task, register
 from tests.test_harness import fake_auth
-
-
-@pytest.fixture
-async def runner(maker, scheduler):
-    """The workflow engine, with a background pump standing in for the scheduler loop."""
-    r = WorkflowRunner(maker, lambda: app.state.scheduler)
-    r.POLL_SECONDS = 0.02
-    app.state.workflows = r
-    scheduler.workflows = r
-
-    async def pump():
-        while True:
-            await scheduler.tick()
-            await asyncio.sleep(0.02)
-
-    pumper = asyncio.create_task(pump())
-    yield r
-    pumper.cancel()
-    await r.shutdown()
-    await asyncio.gather(pumper, return_exceptions=True)
 
 
 def node(id: str, kind: str, label: str = "", **config) -> dict:
@@ -693,7 +670,10 @@ async def test_the_board_can_see_what_watches_a_status_and_which_run_a_task_star
     )
     manual = await make_workflow(client, pid, "By hand")
     summaries = {w["id"]: w for w in (await client.get(f"/api/projects/{pid}/workflows")).json()}
-    assert summaries[wid]["watches"] == ["review"] and summaries[manual]["watches"] == []
+    assert (
+        summaries[wid]["watches"] == [{"status": "review", "where": ""}]
+        and summaries[manual]["watches"] == []
+    )
 
     task = await make_task(client, pid, title="Ticket", status="backlog")
     await client.patch(f"/api/tasks/{task['id']}", json={"status": "review"})

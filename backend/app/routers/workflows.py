@@ -32,6 +32,11 @@ class LastRun(BaseModel):
     started_at: datetime
 
 
+class Watch(BaseModel):
+    status: str
+    where: str
+
+
 class WorkflowSummary(BaseModel):
     id: int
     project_id: int
@@ -42,8 +47,9 @@ class WorkflowSummary(BaseModel):
     updated_at: datetime
     runs: int
     last_run: LastRun | None
-    # the statuses whose tasks start this workflow by themselves (its Triggers); empty for a manual workflow
-    watches: list[str]
+    # what starts this workflow by itself (its Triggers): a status, and where ("" anywhere, "w:<id>" a workspace, "b:<id>"
+    # a board); empty for a manual workflow
+    watches: list[Watch]
 
 
 class WorkflowIn(BaseModel):
@@ -181,7 +187,7 @@ async def list_workflows(project_id: int, session: SessionDep, user: CurrentUser
         WorkflowSummary(
             id=w.id, project_id=w.project_id, name=w.name, description=w.description, node_count=len(w.graph.get("nodes", [])),
             created_at=w.created_at, updated_at=w.updated_at, runs=run_counts.get(w.id, 0), last_run=last.get(w.id),
-            watches=list(dict.fromkeys(n.config.get("status", "") for n in Graph.model_validate(w.graph).status_triggers())),
+            watches=list({(n.config.get("status", ""), n.config.get("where", "")): Watch(status=n.config.get("status", ""), where=n.config.get("where", "")) for n in Graph.model_validate(w.graph).status_triggers()}.values()),
         )
         for w in flows
     ]  # fmt: skip

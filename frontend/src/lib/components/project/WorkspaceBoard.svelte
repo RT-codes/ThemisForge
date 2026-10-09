@@ -98,7 +98,7 @@
 				now={desk.now}
 				{view}
 				projectId={desk.projectId}
-				watchers={watchersByStatus(desk.workflows)}
+				watchers={watchersByStatus(desk.workflows, board)}
 				selectedId={desk.sheetOpen ? desk.sheetTaskId : null}
 				onopen={(t) => desk.openTask(t)}
 				ondelete={(t) => desk.askDelete(t)}

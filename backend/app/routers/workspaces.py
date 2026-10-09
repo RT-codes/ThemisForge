@@ -301,6 +301,7 @@ async def move_task(
         await rules.move_task(session, task, destination, user.name, body.status, body.position)
     except rules.BoardError as e:
         raise _refused(e) from None
+    task.hops = 0  # a person sent it: automation counts again from nothing
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     await session.commit()
     if task.status == TaskStatus.READY:

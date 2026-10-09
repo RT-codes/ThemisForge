@@ -9,6 +9,7 @@ from app.cells import FakeCellManager
 from app.config import DEFAULT_SECRET_KEY, settings
 from app.main import app
 from app.scheduler import Scheduler
+from app.workflows import WorkflowRunner
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +72,26 @@ async def client(maker, scheduler):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def runner(maker, scheduler):
+    """The workflow engine, with a background pump standing in for the scheduler loop."""
+    r = WorkflowRunner(maker, lambda: app.state.scheduler)
+    r.POLL_SECONDS = 0.02
+    app.state.workflows = r
+    scheduler.workflows = r
+
+    async def pump():
+        while True:
+            await scheduler.tick()
+            await asyncio.sleep(0.02)
+
+    pumper = asyncio.create_task(pump())
+    yield r
+    pumper.cancel()
+    await r.shutdown()
+    await asyncio.gather(pumper, return_exceptions=True)
 
 
 async def drain(scheduler: Scheduler) -> None:

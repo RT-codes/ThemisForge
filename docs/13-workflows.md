@@ -35,8 +35,8 @@ move them all together. **Esc** lets go of the selection.
 | Node | What it does |
 | --- | --- |
 | **Start** | A run begins here. A workflow can have several Start nodes; a run begins at all of them. |
-| **Trigger** | Begins a run by itself. Set to **A task moves into a status**, it starts the workflow whenever a task of the project is moved into (or created in) that status, from the board, the API or another workflow. The status can be one of the seven built-in ones or a [status you added](/docs/tasks#your-own-statuses) to a board. The steps after it can use that task. Schedules are not automatic yet; a Trigger set to anything else behaves like Start. |
-| **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). A task that becomes **Ready** runs like any other task and the node waits for it. |
+| **Trigger** | Begins a run by itself. Set to **A task moves into a status**, it starts the workflow whenever a task of the project is moved into (or created in) that status, from the board, the API or another workflow. The status can be one of the seven built-in ones or a [status you added](/docs/tasks#your-own-statuses) to a board. With **Where** it can watch only one workspace or one board (a status of your own belongs to one board and only fires there). The steps after it can use that task. Schedules are not automatic yet; a Trigger set to anything else behaves like Start. |
+| **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). It can work on a chosen **board**: create the task there, or send the moved task there. A created task can be a **follow-up** of the task that started the run. A task that becomes **Ready** runs like any other task and the node waits for it. |
 | **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task that started the run (its title and description). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
@@ -119,9 +119,34 @@ an agent that picks up everything moved into **Backlog**, splits it, and moves t
 - A task moved by a workflow node starts other workflows too, so workflows can hand work to each other.
 - The task an **Agent** node creates for itself never starts a workflow.
 - A workflow is not started again for the same task while its previous run for that task is still going, nor within the
-  start delay (**Settings, Wait before a Ready task starts**). That slows down a workflow that moves a task back into
+  start delay (**Settings, Wait before a Ready task starts**, which a project or a task can override). That slows down a workflow that moves a task back into
   the status that starts it; it does not forbid it.
 - Moves made while Themis is stopped do not start anything.
+
+## Workflows between boards
+
+Boards can be connected by workflows. A typical pair: a Trigger on the Research board's **Review** status whose Task
+node *creates a follow-up* on the Development board, and a Trigger on the QA board's **Failed** status whose Task node
+*sends the task back* to Development. Everything a workflow does shows in the project's
+[history](/docs/tasks#project-history) as "Workflow <name>", so you can see which one moved what.
+
+- **Send to board** on **Move the task that started this run** moves the same task to another board, with its history.
+- **Follow up** on **Create a task** links the new task to the one that started the run, like the **Follow-up** button
+  in the task panel. The new task takes the property values of the first.
+- A step makes its task **once per run**. Running the same step again finds the task it already made.
+
+### The automation guard
+
+Two boards that send a task back and forth would never stop, so Themis counts. Every time a workflow moves or makes a
+task, that task's count goes up by one; when a person moves it, edits its status or sends it, the count starts from
+nothing. When the count would pass the limit (10 by default) the step stops with a reason, the run fails, and the
+project's history says why. Two things can be tuned, each in three layers (**Settings**, then the **project**, then a
+single **task**; an empty box follows the layer above):
+
+- **Most automatic moves in a row**: the limit above. Set it on a project in **Edit project**, on a task in its
+  **Automation guard** box.
+- **Wait before starting**: how long after a change a task, or a workflow for it, may start. This is the same delay as
+  **Settings, Wait before a Ready task starts**.
 
 You can see this from the board:
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Board, Column, Task, Workspace } from './api.ts'
-import { boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, isSimple, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
+import { boardChoices, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, isSimple, parseCollapsed, statusLabel, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null })
 const custom = (id: number, name: string, color: string | null = null): Column => ({ key: `custom:${id}`, name, builtin: false, color })
@@ -98,4 +98,16 @@ test('a task knows what it follows and what followed it', () => {
   assert.equal(lineage(tasks, tasks[1]).origin?.id, 1)
   assert.equal(lineage(tasks, tasks[0]).origin, null)
   assert.equal(lineage(tasks, tasks[3]).origin, null) // the task it followed was deleted
+})
+
+test('a step picks a board by id and a trigger a workspace or a board', () => {
+  const ws = [
+    workspace(1, [{ ...board(1, [builtin('ready'), custom(5, 'Waiting')]), workspace_id: 1 }]),
+    workspace(2, [{ ...board(2), workspace_id: 2 }]),
+  ]
+  assert.deepEqual(boardChoices(ws), [{ value: '1', label: 'W1: B1' }, { value: '2', label: 'W2: B2' }])
+  assert.deepEqual(whereChoices(ws).map((c) => c.value), ['w:1', 'w:2', 'b:1', 'b:2'])
+  // knowing the board, its own statuses are listed without its name
+  assert.deepEqual(customStatusChoices(ws, 1), [{ value: 'custom:5', label: 'Waiting' }])
+  assert.deepEqual(customStatusChoices(ws, 2), [])
 })

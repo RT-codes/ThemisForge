@@ -184,6 +184,7 @@ async def create_project(body: ProjectIn, session: SessionDep, user: CurrentUser
         description=body.description,
         properties=[],
         cell_profile=body.cell_profile.clean() if body.cell_profile else None,
+        automation=body.automation.clean() if body.automation else None,
     )
     session.add(project)
     await session.flush()
@@ -208,6 +209,8 @@ async def update_project(
         project.description = body.description
     if "cell_profile" in body.model_fields_set:
         project.cell_profile = body.cell_profile.clean() if body.cell_profile else None
+    if "automation" in body.model_fields_set:
+        project.automation = body.automation.clean() if body.automation else None
     if body.properties is not None:
         try:
             project.properties = validate_definitions(body.properties)
@@ -277,6 +280,8 @@ async def create_task(
         run_at=body.run_at,
         review_on_success=body.review_on_success,
         harness=body.harness,
+        cooldown_seconds=body.cooldown_seconds,
+        max_hops=body.max_hops,
         workflow_id=await _workflow_for(session, project.id, body.harness, body.workflow_id),
     )
     if body.agent_id is not None:
@@ -327,6 +332,10 @@ async def update_task(
         wanted = body.workflow_id if "workflow_id" in fields else task.workflow_id
         task.harness = harness
         task.workflow_id = await _workflow_for(session, project.id, harness, wanted)
+    if "cooldown_seconds" in fields:  # null puts the project's value back
+        task.cooldown_seconds = body.cooldown_seconds
+    if "max_hops" in fields:
+        task.max_hops = body.max_hops
     if "agent_id" in fields:
         task.agent_id = (
             None if body.agent_id is None else (await _agent_for(session, project.id, body.agent_id)).id
@@ -343,6 +352,7 @@ async def update_task(
         except boards.BoardError as e:
             raise _bad(str(e)) from None
         was, task.status = task.status, body.status
+        task.hops = 0  # a person took it from here: automation counts again from nothing
         boards.record_status_change(session, task, board, user.name, was)
         reschedule = True
         if "position" not in fields:

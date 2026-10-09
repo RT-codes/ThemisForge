@@ -5,6 +5,7 @@
 	import { dateTime, relative } from '$lib/format'
 	import { KIND_GROUPS, describeEvent, historyQuery, type HistoryScope } from '$lib/history'
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right'
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
 	import GitBranchPlusIcon from '@lucide/svelte/icons/git-branch-plus'
 	import HistoryIcon from '@lucide/svelte/icons/history'
 	import LayersIcon from '@lucide/svelte/icons/layers'
@@ -79,6 +80,7 @@
 		task_moved: ArrowRightIcon,
 		task_spawned: GitBranchPlusIcon,
 		task_deleted: Trash2Icon,
+		automation_stopped: CircleAlertIcon,
 		workspace_created: PlusIcon,
 		board_created: PlusIcon,
 		status_added: PlusIcon,

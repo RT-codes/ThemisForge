@@ -595,7 +595,8 @@ export const api = {
   /** a new task on a board, linked to this one; this one stays where it is */
   spawnTask: (id: number, body: { board_id: number; title?: string; description?: string; status?: TaskStatus }) =>
     request<Task>(`/tasks/${id}/spawn`, send('POST', body)),
-  projectHistory: (projectId: number) => request<ProjectEvent[]>(`/projects/${projectId}/history`),
+  /** `query` comes from historyQuery() */
+  projectHistory: (projectId: number, query: string) => request<ProjectEvent[]>(`/projects/${projectId}/history?${query}`),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, send('DELETE')),
   runTask: (id: number) => request<Task>(`/tasks/${id}/run`, send('POST')),
   cancelTask: (id: number) => request<Task>(`/tasks/${id}/cancel`, send('POST')),

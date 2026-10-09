@@ -24,6 +24,7 @@
 		defs={desk.project.properties}
 		timezone={desk.system?.timezone ?? 'UTC'}
 		now={desk.now}
+		revision={desk.revision}
 		onchange={() => desk.reload()}
 		ondelete={(task) => desk.askDelete(task)}
 		onopen={(task) => desk.openTask(task)}

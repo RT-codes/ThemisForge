@@ -10,6 +10,7 @@
 	import SquareIcon from '@lucide/svelte/icons/square'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import AttemptHistory from './AttemptHistory.svelte'
+	import HistoryList from './HistoryList.svelte'
 	import SendDialog from './SendDialog.svelte'
 	import TaskForm, { TASK_FORM_ID } from './TaskForm.svelte'
 	import TaskRouting from './TaskRouting.svelte'
@@ -26,6 +27,7 @@
 		defs,
 		timezone,
 		now,
+		revision,
 		onchange,
 		ondelete,
 		onopen,
@@ -42,6 +44,8 @@
 		defs: PropertyDef[]
 		timezone: string
 		now: number
+		/** changes when the project was reloaded, so the task's activity refreshes */
+		revision: number
 		onchange: () => void
 		/** asks the page to delete the task (it confirms first and refreshes the board) */
 		ondelete: (task: Task) => void
@@ -173,6 +177,10 @@
 				<Tabs.Content value="history">
 					<TaskWorkflowRuns taskId={task.id} projectId={task.project_id} taskStatus={task.status} />
 					<AttemptHistory taskId={task.id} taskStatus={task.status} projectId={task.project_id} />
+					<h3 class="mx-4 mt-6 mb-2 text-sm font-medium">Activity</h3>
+					<div class="mx-4 mb-6">
+						<HistoryList projectId={task.project_id} scope={{ taskId: task.id }} {now} {revision} compact />
+					</div>
 				</Tabs.Content>
 			</Tabs.Root>
 		{:else}

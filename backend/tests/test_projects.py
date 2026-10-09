@@ -159,11 +159,12 @@ async def test_deleting_a_task_is_kept_in_the_project_history(client):
     pid = (await make_project(client))["id"]
     task = await make_task(client, pid, title="Old idea", description="Maybe later", status="review")
     other = await make_task(client, pid, title="Keeper")
-    assert (await client.get(f"/api/projects/{pid}/history")).json() == []
+    history = lambda: client.get(f"/api/projects/{pid}/history", params={"kind": "task_deleted"})
+    assert (await history()).json() == []
 
     assert (await client.delete(f"/api/tasks/{task['id']}")).status_code == 204
 
-    (event,) = (await client.get(f"/api/projects/{pid}/history")).json()
+    (event,) = (await history()).json()
     assert (event["kind"], event["title"], event["actor"]) == ("task_deleted", "Old idea", "Ada")
     assert event["data"]["description"] == "Maybe later" and event["data"]["status"] == "review"
     assert (await client.get(f"/api/tasks/{other['id']}")).status_code == 200

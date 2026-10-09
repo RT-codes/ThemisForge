@@ -52,25 +52,55 @@ class Column:
 def record(
     session: AsyncSession,
     kind: str,
+    project_id: int,
+    title: str,
+    actor: str,
+    *,
+    workspace_id: int | None = None,
+    board_id: int | None = None,
+    task_id: int | None = None,
+    data: dict | None = None,
+) -> None:
+    """Add a line to the project's history. It keeps its own copy of the names it mentions: the history outlives the
+    tasks, boards and workspaces it is about, so it stores plain numbers and names, never relations."""
+    session.add(
+        ProjectEvent(
+            project_id=project_id,
+            kind=kind,
+            title=title,
+            actor=actor,
+            workspace_id=workspace_id,
+            board_id=board_id,
+            task_id=task_id,
+            data=data or {},
+        )
+    )
+
+
+def record_task(
+    session: AsyncSession,
+    kind: str,
     task: Task,
     actor: str,
     board: Board | None = None,
     data: dict | None = None,
 ) -> None:
-    """Add a line to the project's history about a task. It keeps its own copy of the names it mentions: the history
-    outlives the task and the boards."""
-    session.add(
-        ProjectEvent(
-            project_id=task.project_id,
-            kind=kind,
-            title=task.title,
-            actor=actor,
-            workspace_id=board.workspace_id if board else None,
-            board_id=board.id if board else None,
-            task_id=task.id,
-            data=data or {},
-        )
+    record(
+        session,
+        kind,
+        task.project_id,
+        task.title,
+        actor,
+        workspace_id=board.workspace_id if board else None,
+        board_id=board.id if board else None,
+        task_id=task.id,
+        data=data,
     )
+
+
+def place(board: Board, status: str | None = None) -> dict:
+    """Where a task is, as stored in an event: the board with its workspace, and the status."""
+    return {"workspace_id": board.workspace_id, "board_id": board.id, "board": board.name, "status": status}
 
 
 class BoardError(Exception):
@@ -96,8 +126,14 @@ async def next_board_position(session: AsyncSession, workspace_id: int) -> float
 
 
 async def add_workspace(
-    session: AsyncSession, project_id: int, name: str, purpose: str = "", description: str = ""
+    session: AsyncSession,
+    project_id: int,
+    name: str,
+    purpose: str = "",
+    description: str = "",
+    actor: str | None = None,
 ) -> Workspace:
+    """`actor`: who is doing it, for the history. Left out for the workspace a new project starts with."""
     workspace = Workspace(
         project_id=project_id,
         name=name,
@@ -107,10 +143,19 @@ async def add_workspace(
     )
     session.add(workspace)
     await session.flush()
+    if actor:
+        record(session, "workspace_created", project_id, name, actor, workspace_id=workspace.id)
     return workspace
 
 
-async def add_board(session: AsyncSession, workspace: Workspace, name: str, purpose: str = "") -> Board:
+async def add_board(
+    session: AsyncSession,
+    workspace: Workspace,
+    name: str,
+    purpose: str = "",
+    actor: str | None = None,
+    data: dict | None = None,
+) -> Board:
     board = Board(
         project_id=workspace.project_id,
         workspace_id=workspace.id,
@@ -120,6 +165,11 @@ async def add_board(session: AsyncSession, workspace: Workspace, name: str, purp
     )
     session.add(board)
     await session.flush()
+    if actor:
+        record(
+            session, "board_created", board.project_id, name, actor,
+            workspace_id=workspace.id, board_id=board.id, data={"workspace": workspace.name, **(data or {})},
+        )  # fmt: skip
     return board
 
 
@@ -201,11 +251,16 @@ def check_status(board: Board, status: str) -> None:
         raise BoardError(f"'{status}' is not a status of the board '{board.name}'")
 
 
-async def duplicate_board(session: AsyncSession, board: Board) -> Board:
+async def duplicate_board(session: AsyncSession, board: Board, actor: str) -> Board:
     """A new board in the same workspace with the same purpose and the same custom statuses, in the same places.
     Tasks are not copied: a task is one piece of work, and copying it would make two."""
     copy = await add_board(
-        session, await session.get_one(Workspace, board.workspace_id), f"{board.name} copy", board.purpose
+        session,
+        await session.get_one(Workspace, board.workspace_id),
+        f"{board.name} copy",
+        board.purpose,
+        actor,
+        {"copy_of": board.name},
     )
     renamed: dict[str, str] = {}
     for row in await _customs(session, board):
@@ -248,8 +303,9 @@ async def _tasks_of(session: AsyncSession, *board_ids: int) -> list[Task]:
 
 async def _hand_over(
     session: AsyncSession, leaving: list[int], project_id: int, move_to: Board | None
-) -> None:
-    """Make deleting these boards safe: the project keeps a board, nothing running is lost, other tasks move on."""
+) -> int:
+    """Make deleting these boards safe: the project keeps a board, nothing running is lost, other tasks move on.
+    Returns how many tasks moved."""
     others = await session.scalar(
         select(func.count()).where(Board.project_id == project_id, Board.id.not_in(leaving))
     )
@@ -259,21 +315,30 @@ async def _hand_over(
     if any(t.status == TaskStatus.RUNNING for t in tasks):
         raise BoardError("A task here is running. Cancel it first.", conflict=True)
     if not tasks:
-        return
+        return 0
     if move_to is None or move_to.id in leaving:
         raise BoardError(f"Choose a board for the {len(tasks)} task(s) on it", conflict=True)
     await _move_tasks(session, tasks, move_to)
+    return len(tasks)
 
 
-async def delete_board(session: AsyncSession, board: Board, move_to: Board | None) -> None:
-    await _hand_over(session, [board.id], board.project_id, move_to)
+async def delete_board(session: AsyncSession, board: Board, move_to: Board | None, actor: str) -> None:
+    moved = await _hand_over(session, [board.id], board.project_id, move_to)
+    record(
+        session, "board_deleted", board.project_id, board.name, actor,
+        workspace_id=board.workspace_id, board_id=board.id,
+        data={"moved": moved, "to": move_to.name if moved and move_to else None},
+    )  # fmt: skip
     await session.delete(board)
 
 
-async def delete_workspace(session: AsyncSession, workspace: Workspace, move_to: Board | None) -> None:
-    board_ids = list(await session.scalars(select(Board.id).where(Board.workspace_id == workspace.id)))
-    if board_ids:
-        await _hand_over(session, board_ids, workspace.project_id, move_to)
+async def delete_workspace(
+    session: AsyncSession, workspace: Workspace, move_to: Board | None, actor: str
+) -> None:
+    boards = list(await session.scalars(select(Board).where(Board.workspace_id == workspace.id)))
+    moved = 0
+    if boards:
+        moved = await _hand_over(session, [b.id for b in boards], workspace.project_id, move_to)
     else:
         others = await session.scalar(
             select(func.count()).where(
@@ -282,6 +347,10 @@ async def delete_workspace(session: AsyncSession, workspace: Workspace, move_to:
         )
         if not others:
             raise BoardError("A project needs at least one workspace", conflict=True)
+    record(
+        session, "workspace_deleted", workspace.project_id, workspace.name, actor, workspace_id=workspace.id,
+        data={"boards": [b.name for b in boards], "moved": moved, "to": move_to.name if moved and move_to else None},
+    )  # fmt: skip
     await session.delete(workspace)
 
 
@@ -311,8 +380,15 @@ def _place(columns: list[str], key: str, index: int | None) -> list[str]:
     return [*rest[:at], key, *rest[at:]]
 
 
+def _record_status(session: AsyncSession, kind: str, board: Board, name: str, actor: str, **data) -> None:
+    record(
+        session, kind, board.project_id, name, actor,
+        workspace_id=board.workspace_id, board_id=board.id, data={"board": board.name, **data},
+    )  # fmt: skip
+
+
 async def add_status(
-    session: AsyncSession, board: Board, name: str, color: str | None, index: int | None
+    session: AsyncSession, board: Board, name: str, color: str | None, index: int | None, actor: str
 ) -> BoardStatus:
     customs = await _customs(session, board)
     if len(customs) >= MAX_CUSTOM_STATUSES:
@@ -321,6 +397,7 @@ async def add_status(
     session.add(status)
     await session.flush()  # the id is the key
     board.columns = _place(board.columns, custom_key(status.id), index)
+    _record_status(session, "status_added", board, status.name, actor)
     return status
 
 
@@ -333,9 +410,13 @@ async def update_status(
     color: str | None = None,
     set_color: bool = False,
     index: int | None = None,
+    actor: str = "",
 ) -> BoardStatus:
     if name is not None:
-        status.name = _status_name(board, name, await _customs(session, board), own_id=status.id)
+        new_name = _status_name(board, name, await _customs(session, board), own_id=status.id)
+        if new_name != status.name:
+            _record_status(session, "status_renamed", board, new_name, actor, was=status.name)
+        status.name = new_name
     if set_color:  # separate flag: None is a real value here ("no colour")
         status.color = color
     if index is not None:
@@ -343,7 +424,9 @@ async def update_status(
     return status
 
 
-async def remove_status(session: AsyncSession, board: Board, status: BoardStatus, move_to: str | None) -> int:
+async def remove_status(
+    session: AsyncSession, board: Board, status: BoardStatus, move_to: str | None, actor: str
+) -> int:
     """Delete a custom status; its tasks go to `move_to` (a status of the same board, default Backlog). Returns how
     many tasks moved."""
     key = custom_key(status.id)
@@ -363,6 +446,7 @@ async def remove_status(session: AsyncSession, board: Board, status: BoardStatus
         task.position = await next_position(session, board.id, destination)
         await session.flush()
     board.columns = [k for k in board.columns if k != key]
+    _record_status(session, "status_removed", board, status.name, actor, moved=len(tasks), to=destination)
     await session.delete(status)
     return len(tasks)
 
@@ -396,23 +480,20 @@ async def move_task(
         raise BoardError("That board does not exist in this project")
     source = await session.get_one(Board, task.board_id)
     landing = _landing_status(destination, status, task.status)
-    came_from = {"board_id": source.id, "board": source.name, "status": task.status}
+    came_from = place(source, task.status)
     task.board_id = destination.id
     task.status = landing
     task.position = (
         position if position is not None else await next_position(session, destination.id, landing)
     )
     if source.id != destination.id:
-        record(
+        record_task(
             session,
             "task_moved",
             task,
             actor,
             destination,
-            {
-                "from": came_from,
-                "to": {"board_id": destination.id, "board": destination.name, "status": landing},
-            },
+            {"from": came_from, "to": place(destination, landing)},
         )
 
 
@@ -444,20 +525,27 @@ async def spawn_task(
     session.add(task)
     await session.flush()
     origin_board = await session.get_one(Board, origin.board_id)
-    record(
+    record_task(
         session,
         "task_spawned",
         task,
         actor,
         destination,
         {
-            "origin": {
-                "task_id": origin.id,
-                "title": origin.title,
-                "board_id": origin_board.id,
-                "board": origin_board.name,
-            },
-            "to": {"board_id": destination.id, "board": destination.name, "status": landing},
+            "origin": {"task_id": origin.id, "title": origin.title, **place(origin_board)},
+            "to": place(destination, landing),
         },
     )
     return task
+
+
+def record_new_task(session: AsyncSession, task: Task, board: Board, actor: str) -> None:
+    record_task(session, "task_created", task, actor, board, {"to": place(board, task.status)})
+
+
+def record_status_change(session: AsyncSession, task: Task, board: Board, actor: str, was: str) -> None:
+    """A person moved a task to another column of its board. Changes the scheduler makes (Running, then the outcome)
+    are not recorded: the attempts already say what happened."""
+    record_task(
+        session, "task_status", task, actor, board, {"from": {"status": was}, "to": {"status": task.status}}
+    )

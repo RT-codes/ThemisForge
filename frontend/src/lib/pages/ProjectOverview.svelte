@@ -2,6 +2,7 @@
 	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
+	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
 	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -24,6 +25,8 @@
 	let now = $state(Date.now())
 	let loadError = $state('')
 	let workspaceOpen = $state(false)
+	let revision = $state(0)
+	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
 	// one workspace with one board is how a project starts, and it keeps the single card it always had
 	const simple = $derived(workspaces.length === 0 || isSimple(workspaces))
@@ -33,6 +36,7 @@
 			const [loaded, upcoming] = await Promise.all([api.project(id), api.schedule(id, 168), structure.refresh(id)])
 			project = loaded
 			runs = upcoming
+			revision++
 			loadError = ''
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.message : 'Could not load the project'
@@ -91,6 +95,19 @@
 		</svelte:element>
 
 		{#if !simple}<WorkspaceCards projectId={id} {workspaces} />{/if}
+
+		<section class="mt-4 rounded-xl border bg-card p-5">
+			<div class="mb-3 flex items-center justify-between gap-3">
+				<div>
+					<h3 class="text-base font-semibold tracking-tight">Recent activity</h3>
+					<p class="text-xs text-muted-foreground">What was done across all workspaces and boards. Each board and workspace has its own history too.</p>
+				</div>
+				<Button variant="ghost" size="sm" onclick={() => (allActivity = !allActivity)}>{allActivity ? 'Show less' : 'Show everything'}</Button>
+			</div>
+			{#key allActivity}
+				<HistoryList projectId={id} {workspaces} {now} {revision} compact={!allActivity} />
+			{/key}
+		</section>
 
 		<div class="overview-grid mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
 			<div class="lg:col-span-7"><WorkflowLibrary projectId={id} {now} /></div>

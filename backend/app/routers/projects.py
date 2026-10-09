@@ -284,6 +284,8 @@ async def create_task(
         task.agent_id, task.harness, task.workflow_id = agent.id, agent.harness, None
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     session.add(task)
+    await session.flush()
+    boards.record_new_task(session, task, board, user.name)
     await session.commit()
     if task.status == TaskStatus.READY:
         request.app.state.scheduler.wake()
@@ -335,11 +337,13 @@ async def update_task(
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:
+        board = await session.get(Board, task.board_id)
         try:
-            boards.check_status(await session.get(Board, task.board_id), body.status)
+            boards.check_status(board, body.status)
         except boards.BoardError as e:
             raise _bad(str(e)) from None
-        task.status = body.status
+        was, task.status = task.status, body.status
+        boards.record_status_change(session, task, board, user.name, was)
         reschedule = True
         if "position" not in fields:
             task.position = await boards.next_position(session, task.board_id, body.status)
@@ -368,7 +372,7 @@ async def delete_task(task_id: int, session: SessionDep, user: CurrentUser) -> N
     if task.status == TaskStatus.RUNNING:
         raise HTTPException(status.HTTP_409_CONFLICT, "This task is running. Cancel it first.")
     # the history keeps its own copy, so a deleted task can still be looked at (and put back by hand) afterwards
-    boards.record(
+    boards.record_task(
         session,
         "task_deleted",
         task,
@@ -385,18 +389,37 @@ async def project_history(
     project_id: int,
     session: SessionDep,
     user: CurrentUser,
-    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    before: Annotated[int | None, Query(description="Only events older than this id (the next page)")] = None,
+    workspace_id: int | None = None,
+    board_id: int | None = None,
+    task_id: int | None = None,
+    kind: Annotated[list[str] | None, Query(description="Only these kinds of event")] = None,
 ) -> list[ProjectEvent]:
-    """What was done to the project, newest first."""
+    """What was done to the project, newest first, optionally only what concerns one workspace, board or task. A task
+    that left a board is part of that board's history too, and a follow-up is part of the history of its origin."""
     await _project(session, project_id, user)
-    return list(
-        await session.scalars(
-            select(ProjectEvent)
-            .where(ProjectEvent.project_id == project_id)
-            .order_by(ProjectEvent.id.desc())
-            .limit(limit)
+    query = select(ProjectEvent).where(ProjectEvent.project_id == project_id)
+    if before is not None:
+        query = query.where(ProjectEvent.id < before)
+    if kind:
+        query = query.where(ProjectEvent.kind.in_(kind))
+    if workspace_id is not None:
+        query = query.where(
+            (ProjectEvent.workspace_id == workspace_id)
+            | (func.json_extract(ProjectEvent.data, "$.from.workspace_id") == workspace_id)
         )
-    )
+    if board_id is not None:
+        query = query.where(
+            (ProjectEvent.board_id == board_id)
+            | (func.json_extract(ProjectEvent.data, "$.from.board_id") == board_id)
+        )
+    if task_id is not None:
+        query = query.where(
+            (ProjectEvent.task_id == task_id)
+            | (func.json_extract(ProjectEvent.data, "$.origin.task_id") == task_id)
+        )
+    return list(await session.scalars(query.order_by(ProjectEvent.id.desc()).limit(limit)))
 
 
 @router.post("/tasks/{task_id}/run", response_model=TaskOut)

@@ -1,4 +1,4 @@
-from tests.conftest import make_project, make_task, register
+from tests.conftest import drain, make_project, make_task, register
 
 
 async def _workspaces(client, project_id):
@@ -305,8 +305,12 @@ async def _two_boards(client):
     return pid, first, second
 
 
-async def _history(client, pid):
-    return (await client.get(f"/api/projects/{pid}/history")).json()
+async def _history(client, pid, **params):
+    return (await client.get(f"/api/projects/{pid}/history", params=params)).json()
+
+
+async def _of_kind(client, pid, kind):
+    return await _history(client, pid, kind=kind)
 
 
 async def test_a_moved_task_keeps_its_identity_and_the_move_is_recorded(client):
@@ -322,7 +326,7 @@ async def test_a_moved_task_keeps_its_identity_and_the_move_is_recorded(client):
         for t in (await client.get(f"/api/projects/{pid}/tasks", params={"board_id": first["id"]})).json()
     ] == []
 
-    [event] = await _history(client, pid)
+    [event] = await _of_kind(client, pid, "task_moved")
     assert (event["kind"], event["title"], event["actor"], event["task_id"], event["board_id"]) == (
         "task_moved",
         "Ship it",
@@ -440,7 +444,7 @@ async def test_a_follow_up_is_a_new_linked_task_and_the_original_stays(client):
 
     same = (await client.get(f"/api/tasks/{origin['id']}")).json()
     assert (same["board_id"], same["status"]) == (first["id"], "done")
-    [event] = await _history(client, pid)
+    [event] = await _of_kind(client, pid, "task_spawned")
     assert (event["kind"], event["task_id"]) == ("task_spawned", child["id"])
     assert event["data"]["origin"]["task_id"] == origin["id"]
 
@@ -456,5 +460,113 @@ async def test_deleting_a_task_records_where_it_was(client):
     pid, first, _ = await _two_boards(client)
     task = await make_task(client, pid, title="Gone")
     await client.delete(f"/api/tasks/{task['id']}")
-    [event] = await _history(client, pid)
+    [event] = await _of_kind(client, pid, "task_deleted")
     assert (event["kind"], event["board_id"], event["task_id"]) == ("task_deleted", first["id"], task["id"])
+
+
+# history
+
+
+async def test_the_history_records_what_happens_to_workspaces_boards_and_statuses(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    [main] = await _workspaces(client, pid)
+    assert await _history(client, pid) == []  # a new project's own workspace and board are not events
+
+    space = (await client.post(f"/api/projects/{pid}/workspaces", json={"name": "Ops"})).json()
+    await client.patch(f"/api/workspaces/{space['id']}", json={"name": "Operations", "purpose": "Run things"})
+    board = (await client.post(f"/api/workspaces/{space['id']}/boards", json={"name": "Incidents"})).json()
+    await client.patch(
+        f"/api/boards/{board['id']}", json={"name": "Alerts", "position": 9}
+    )  # a move alone is not recorded
+    parked = await _add_status(client, board["id"], "Triage")
+    sid = parked["columns"][-1]["key"].removeprefix("custom:")
+    await client.patch(
+        f"/api/boards/{board['id']}/statuses/{sid}", json={"name": "Sorting", "color": "#112233"}
+    )
+    await client.delete(f"/api/boards/{board['id']}/statuses/{sid}")
+    copy = (await client.post(f"/api/boards/{board['id']}/duplicate")).json()
+    await client.delete(f"/api/boards/{copy['id']}")
+    await client.delete(f"/api/boards/{board['id']}", params={"move_to": main["boards"][0]["id"]})
+    await client.delete(f"/api/workspaces/{space['id']}")
+
+    events = list(reversed(await _history(client, pid)))
+    assert [(e["kind"], e["title"]) for e in events] == [
+        ("workspace_created", "Ops"),
+        ("workspace_renamed", "Operations"),
+        ("board_created", "Incidents"),
+        ("board_renamed", "Alerts"),
+        ("status_added", "Triage"),
+        ("status_renamed", "Sorting"),
+        ("status_removed", "Sorting"),
+        ("board_created", "Alerts copy"),
+        ("board_deleted", "Alerts copy"),
+        ("board_deleted", "Alerts"),
+        ("workspace_deleted", "Operations"),
+    ]
+    assert {e["actor"] for e in events} == {"Ada"}
+    assert events[1]["data"]["was"] == "Ops" and events[7]["data"]["copy_of"] == "Alerts"
+    assert events[5]["data"]["board"] == "Alerts"  # a status event names its board
+
+
+async def test_people_moving_a_task_between_columns_is_recorded_but_the_scheduler_is_not(client, scheduler):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    task = await make_task(client, pid, status="ready")
+    await scheduler.tick()
+    await drain(scheduler)  # it ran and finished: Running and Done were the scheduler's doing
+    await client.patch(f"/api/tasks/{task['id']}", json={"status": "review"})
+    await client.patch(
+        f"/api/tasks/{task['id']}", json={"position": 5}
+    )  # a place in the same column is not a move
+
+    kinds = [
+        (e["kind"], e["data"].get("to", {}).get("status")) for e in reversed(await _history(client, pid))
+    ]
+    assert kinds == [("task_created", "ready"), ("task_status", "review")]
+
+
+async def test_history_can_be_looked_at_per_workspace_board_and_task(client):
+    await register(client)
+    pid, first, second = await _two_boards(client)
+    workspace = (await _workspaces(client, pid))[0]
+    other = (await client.post(f"/api/projects/{pid}/workspaces", json={"name": "Other"})).json()
+    third = (await client.post(f"/api/workspaces/{other['id']}/boards", json={"name": "Far"})).json()
+    a = await make_task(client, pid, title="A")
+    await make_task(client, pid, title="B", board_id=second["id"])
+    await client.post(f"/api/tasks/{a['id']}/move", json={"board_id": third["id"]})
+    child = (await client.post(f"/api/tasks/{a['id']}/spawn", json={"board_id": second["id"]})).json()
+
+    def titles(events):
+        return sorted((e["kind"], e["title"]) for e in events)
+
+    # the board a task left still remembers it left
+    assert ("task_moved", "A") in titles(await _history(client, pid, board_id=first["id"]))
+    assert ("task_moved", "A") in titles(await _history(client, pid, board_id=third["id"]))
+    assert ("task_moved", "A") not in titles(await _history(client, pid, board_id=second["id"]))
+    # the same goes for workspaces
+    assert ("task_moved", "A") in titles(await _history(client, pid, workspace_id=workspace["id"]))
+    assert ("task_moved", "A") in titles(await _history(client, pid, workspace_id=other["id"]))
+    # a task's own history includes the follow-up made from it, and a follow-up's own creation
+    assert ("task_spawned", "Follow-up: A") in titles(await _history(client, pid, task_id=a["id"]))
+    assert titles(await _history(client, pid, task_id=child["id"])) == [("task_spawned", "Follow-up: A")]
+    assert [e["title"] for e in await _history(client, pid, kind="task_created", board_id=second["id"])] == [
+        "B"
+    ]
+
+
+async def test_history_is_paged_newest_first_and_survives_deleted_boards(client):
+    await register(client)
+    pid, first, second = await _two_boards(client)
+    for n in range(5):
+        await make_task(client, pid, title=f"T{n}")
+    page = await _history(client, pid, limit=2, kind="task_created")
+    assert [e["title"] for e in page] == ["T4", "T3"]
+    nxt = await _history(client, pid, limit=2, kind="task_created", before=page[-1]["id"])
+    assert [e["title"] for e in nxt] == ["T2", "T1"]
+
+    await client.delete(f"/api/boards/{second['id']}")
+    assert any(
+        e["kind"] == "board_created" and e["title"] == "QA" for e in await _history(client, pid, limit=200)
+    )
+    assert first["id"]

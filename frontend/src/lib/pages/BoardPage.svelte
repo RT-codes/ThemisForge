@@ -8,7 +8,7 @@
 	import BoardToolbar from '$lib/components/project/BoardToolbar.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
 	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
-	import ProjectHistory from '$lib/components/project/ProjectHistory.svelte'
+	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import RemoveDialog from '$lib/components/project/RemoveDialog.svelte'
 	import ScheduleTimeline from '$lib/components/project/ScheduleTimeline.svelte'
@@ -193,7 +193,7 @@
 				<ScheduleTimeline projectId={id} now={desk.now} timezone={desk.system?.timezone ?? 'UTC'} revision={desk.revision} />
 			</Tabs.Content>
 			<Tabs.Content value="history">
-				<ProjectHistory projectId={id} now={desk.now} revision={desk.revision} />
+				<HistoryList projectId={id} scope={{ boardId: board.id }} {workspaces} tasks={desk.tasks} ontask={(t) => desk.openTask(t)} now={desk.now} revision={desk.revision} />
 			</Tabs.Content>
 		</Tabs.Root>
 	</div>

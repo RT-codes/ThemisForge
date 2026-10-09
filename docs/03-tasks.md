@@ -15,7 +15,7 @@ tasks are ready and running, and how many are scheduled for today and the next 7
 - **Board**: columns by status, with drag and drop.
 - **List**: a table, handy when there are many tasks.
 - **Schedule**: a timeline of what will run in the next 24 hours or 7 days.
-- **History**: what was done to the project, such as deleted tasks.
+- **History**: what was done on this board: tasks created, moved, sent or deleted, and changes to its statuses.
 
 The header shows how many tasks are running, ready, waiting for review or failed, when the next run is due, and
 whether the scheduler is on and how many cells are busy.
@@ -137,7 +137,22 @@ Open a task to find the actions:
 
 - **Run now**: makes the task Ready and wakes the scheduler. A recurring task still keeps its normal schedule afterwards.
 - **Cancel run**: stops the cell. The attempt is recorded as cancelled.
-- **Delete**: removes the task and its attempts, after you confirm. Use the trash icon that appears when you point at a card on the board, or the one in the task's details panel. Files it wrote to a shared folder are not touched. The project's **History** tab keeps a note of every deleted task, with who deleted it, when, and what it was (description, status and schedule), so you can find it again.
+- **Delete**: removes the task and its attempts, after you confirm. Use the trash icon that appears when you point at a card on the board, or the one in the task's details panel. Files it wrote to a shared folder are not touched. The history keeps a note of every deleted task, with who deleted it, when, and what it was (description, status and schedule), so you can find it again.
+
+## Project history
+
+Themis keeps a history of what people do to a project: tasks created, moved to another column, sent to another board,
+followed up and deleted, and boards, workspaces and statuses created, renamed and deleted. Each line says who did it and
+when. You can look at it at every level:
+
+- **The project Overview** shows the recent activity of the whole project. **Show everything** pages through all of it,
+  and you can narrow it to tasks or to boards and statuses.
+- A **workspace page** has a History tab for that workspace, and a **board page** one for that board. A task that was
+  sent to another board shows up in the history of both.
+- A **task's** details panel lists its own activity at the bottom of its History tab, including follow-ups made from it.
+
+The history keeps its own copy of names, so a line still reads right after the task or board it mentions is gone. What
+the scheduler does (starting a task, finishing it) is not repeated there: that is what each task's attempts show.
 
 ## Attempts and history
 

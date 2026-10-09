@@ -3,12 +3,14 @@
 	import { defaultBoard, parseCollapsed } from '$lib/boards'
 	import BoardDialog from '$lib/components/project/BoardDialog.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
+	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import RemoveDialog from '$lib/components/project/RemoveDialog.svelte'
 	import StatusesDialog from '$lib/components/project/StatusesDialog.svelte'
 	import WorkspaceBoard from '$lib/components/project/WorkspaceBoard.svelte'
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
+	import * as Tabs from '$lib/components/ui/tabs/index.js'
 	import { dropPosition } from '$lib/kanban'
 	import { ProjectDesk } from '$lib/projectDesk.svelte'
 	import { router } from '$lib/router.svelte'
@@ -130,6 +132,12 @@
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error || desk.loadError}</p>
 		{/if}
 
+		<Tabs.Root value="boards" class="gap-4">
+		<Tabs.List>
+			<Tabs.Trigger value="boards">Boards</Tabs.Trigger>
+			<Tabs.Trigger value="history">History</Tabs.Trigger>
+		</Tabs.List>
+		<Tabs.Content value="boards" class="grid gap-4">
 		{#each workspace.boards as board, i (board.id)}
 			<WorkspaceBoard
 				{board}
@@ -152,6 +160,11 @@
 				<Button class="mt-4" onclick={() => ((boardDialog = 'new'), (boardDialogOpen = true))}><PlusIcon /> New board</Button>
 			</div>
 		{/each}
+		</Tabs.Content>
+		<Tabs.Content value="history">
+			<HistoryList projectId={id} scope={{ workspaceId: workspace.id }} {workspaces} tasks={desk.tasks} ontask={(t) => desk.openTask(t)} now={desk.now} revision={desk.revision} />
+		</Tabs.Content>
+		</Tabs.Root>
 	</div>
 
 	<DeskDialogs {desk} {workspaces} />

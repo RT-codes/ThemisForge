@@ -120,7 +120,9 @@ async def create_workspace(
     project_id: int, body: WorkspaceIn, session: SessionDep, user: CurrentUser
 ) -> WorkspaceOut:
     await _project(session, project_id, user)
-    workspace = await rules.add_workspace(session, project_id, body.name, body.purpose, body.description)
+    workspace = await rules.add_workspace(
+        session, project_id, body.name, body.purpose, body.description, user.name
+    )
     await session.commit()
     return (await _workspaces_out(session, [workspace]))[0]
 
@@ -130,6 +132,11 @@ async def update_workspace(
     workspace_id: int, body: WorkspacePatch, session: SessionDep, user: CurrentUser
 ) -> WorkspaceOut:
     workspace = await _workspace(session, workspace_id, user)
+    if body.name is not None and body.name != workspace.name:
+        rules.record(
+            session, "workspace_renamed", workspace.project_id, body.name, user.name,
+            workspace_id=workspace.id, data={"was": workspace.name},
+        )  # fmt: skip
     for field in body.model_fields_set:
         if (value := getattr(body, field)) is not None:
             setattr(workspace, field, value)
@@ -147,7 +154,7 @@ async def delete_workspace(
     workspace = await _workspace(session, workspace_id, user)
     destination = await _destination(session, workspace.project_id, move_to)
     try:
-        await rules.delete_workspace(session, workspace, destination)
+        await rules.delete_workspace(session, workspace, destination, user.name)
     except rules.BoardError as e:
         raise _refused(e) from None
     await session.commit()
@@ -161,7 +168,7 @@ async def delete_workspace(
 )
 async def create_board(workspace_id: int, body: BoardIn, session: SessionDep, user: CurrentUser) -> BoardOut:
     workspace = await _workspace(session, workspace_id, user)
-    board = await rules.add_board(session, workspace, body.name, body.purpose)
+    board = await rules.add_board(session, workspace, body.name, body.purpose, user.name)
     await session.commit()
     return (await _boards_out(session, [board]))[0]
 
@@ -171,6 +178,11 @@ async def update_board(board_id: int, body: BoardPatch, session: SessionDep, use
     board = await _board(session, board_id, user)
     fields = body.model_fields_set
     if "name" in fields and body.name is not None:
+        if body.name != board.name:
+            rules.record(
+                session, "board_renamed", board.project_id, body.name, user.name,
+                workspace_id=board.workspace_id, board_id=board.id, data={"was": board.name},
+            )  # fmt: skip
         board.name = body.name
     if "purpose" in fields and body.purpose is not None:
         board.purpose = body.purpose
@@ -190,7 +202,7 @@ async def update_board(board_id: int, body: BoardPatch, session: SessionDep, use
 async def duplicate_board(board_id: int, session: SessionDep, user: CurrentUser) -> BoardOut:
     """The same board again (name, purpose and statuses); its tasks stay where they are."""
     board = await _board(session, board_id, user)
-    copy = await rules.duplicate_board(session, board)
+    copy = await rules.duplicate_board(session, board, user.name)
     await session.commit()
     return (await _boards_out(session, [copy]))[0]
 
@@ -205,7 +217,7 @@ async def delete_board(
     board = await _board(session, board_id, user)
     destination = await _destination(session, board.project_id, move_to)
     try:
-        await rules.delete_board(session, board, destination)
+        await rules.delete_board(session, board, destination, user.name)
     except rules.BoardError as e:
         raise _refused(e) from None
     await session.commit()
@@ -225,7 +237,7 @@ async def _status(session: AsyncSession, board: Board, status_id: int) -> BoardS
 async def add_status(board_id: int, body: StatusIn, session: SessionDep, user: CurrentUser) -> BoardOut:
     board = await _board(session, board_id, user)
     try:
-        await rules.add_status(session, board, body.name, body.color, body.index)
+        await rules.add_status(session, board, body.name, body.color, body.index, user.name)
     except rules.BoardError as e:
         raise _refused(e) from None
     await session.commit()
@@ -247,6 +259,7 @@ async def update_status(
             color=body.color,
             set_color="color" in body.model_fields_set,
             index=body.index,
+            actor=user.name,
         )
     except rules.BoardError as e:
         raise _refused(e) from None
@@ -267,7 +280,7 @@ async def remove_status(
     board = await _board(session, board_id, user)
     row = await _status(session, board, status_id)
     try:
-        await rules.remove_status(session, board, row, move_to)
+        await rules.remove_status(session, board, row, move_to, user.name)
     except rules.BoardError as e:
         raise _refused(e) from None
     await session.commit()

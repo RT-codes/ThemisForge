@@ -63,7 +63,7 @@
 		aria-label="Edit {kind} {current.name}"
 		title="Edit {kind}"
 		class={cn(
-			'absolute flex size-5 items-center justify-center rounded-md text-sidebar-foreground/70 opacity-0 transition-[opacity,color,background-color] outline-hidden hover:bg-sidebar-accent hover:text-primary focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[state=open]:bg-sidebar-accent data-[state=open]:text-primary data-[state=open]:opacity-100',
+			'absolute flex size-6 items-center justify-center rounded-md text-sidebar-foreground/70 opacity-0 transition-[opacity,color,background-color] outline-hidden hover:bg-sidebar-accent hover:text-primary focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[state=open]:bg-sidebar-accent data-[state=open]:text-primary data-[state=open]:opacity-100',
 			className
 		)}
 	>

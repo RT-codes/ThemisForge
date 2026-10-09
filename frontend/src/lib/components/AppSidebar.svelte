@@ -120,7 +120,7 @@
 								current={{ name: p.name, purpose: p.purpose, description: p.description, icon: p.icon }}
 								fallback={FolderKanbanIcon}
 								onsave={(d) => saveProject(p.id, d)}
-								class="end-1 top-1.5 group-hover/menu-item:opacity-100"
+								class="end-1 top-1 group-hover/menu-item:opacity-100"
 							/>
 							{#if open}
 								<Sidebar.MenuSub class="tree-branch">
@@ -149,7 +149,7 @@
 													current={{ name: w.name, purpose: w.purpose, description: w.description, icon: w.icon }}
 													fallback={LayersIcon}
 													onsave={(d) => saveWorkspace(p.id, w.id, d)}
-													class="end-0.5 top-1/2 -translate-y-1/2 group-hover/menu-sub-item:opacity-100"
+													class="end-[0.8rem] top-1/2 -translate-y-1/2 group-hover/menu-sub-item:opacity-100"
 												/>
 												<SidebarPlus label="New board in {w.name}" class="-end-[1.2rem] top-1/2 -translate-y-1/2" onclick={() => ((boardFor = { projectId: p.id, workspaceId: w.id }), (boardOpen = true))} />
 											</Sidebar.MenuSubItem>

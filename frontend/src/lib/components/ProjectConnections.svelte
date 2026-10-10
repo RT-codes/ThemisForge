@@ -1,6 +1,9 @@
 <script lang="ts">
-	import { api, type McpServer } from '$lib/api'
+	import { api, type ConnectionProvider, type McpServer, type ProjectConnection } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
+	import UseConnectionDialog from '$lib/components/UseConnectionDialog.svelte'
+	import PlugIcon from '@lucide/svelte/icons/plug'
 	import { relative } from '$lib/format'
 	import { router } from '$lib/router.svelte'
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right'
@@ -14,12 +17,19 @@
 	let { projectId }: { projectId: number } = $props()
 
 	let servers = $state<McpServer[]>([])
+	let services = $state<ConnectionProvider[]>([])
+	let used = $state<ProjectConnection[]>([])
+	let picking = $state<ConnectionProvider | null>(null)
+	let pickerOpen = $state(false)
 	let loaded = $state(false)
 	let error = $state('')
 
 	async function load() {
 		try {
-			servers = await api.mcpServers(projectId)
+			const [tools, list, bound] = await Promise.all([api.mcpServers(projectId), api.connections(), api.projectConnections(projectId)])
+			servers = tools
+			services = list.providers.filter((p) => p.category === 'service')
+			used = bound
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load project connections'
@@ -29,6 +39,13 @@
 	}
 
 	onMount(load)
+
+	const boundTo = (provider: string) => used.find((u) => u.provider === provider) ?? null
+
+	function pick(provider: ConnectionProvider) {
+		picking = provider
+		pickerOpen = true
+	}
 
 	function status(server: McpServer) {
 		if (server.config_error) return { label: 'Configuration issue', tone: 'text-destructive' }
@@ -42,12 +59,36 @@
 	<div class="flex items-center gap-3 p-5 pb-3">
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold tracking-tight">Connections</h3>
-			<p class="text-sm text-muted-foreground">Project MCP tools and their latest test result, not live health.</p>
+			<p class="text-sm text-muted-foreground">The services this project uses, and its tools with their latest test result.</p>
 		</div>
 		<Button variant="outline" size="sm" onclick={() => router.navigate(`/projects/${projectId}#tools`)}>
-			Manage <ArrowUpRightIcon />
+			Manage tools <ArrowUpRightIcon />
 		</Button>
 	</div>
+
+	{#if services.length}
+		<ul class="divide-y border-t">
+			{#each services as service (service.id)}
+				{@const bound = boundTo(service.id)}
+				<li class="flex items-center gap-3 px-5 py-3">
+					<span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+						<DynamicIcon name={service.icon} fallback={PlugIcon} class="size-4" />
+					</span>
+					<span class="min-w-0 flex-1">
+						<span class="block truncate text-sm font-medium">{service.name}</span>
+						<span class="block truncate text-xs text-muted-foreground">
+							{#if bound}
+								As @{bound.account}{bound.config.repo ? ` · ${bound.config.repo}` : ''}. Give it to agents on their page.
+							{:else}
+								Not used by this project
+							{/if}
+						</span>
+					</span>
+					<Button variant="outline" size="sm" onclick={() => pick(service)}>{bound ? 'Change' : 'Choose'}</Button>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 
 	{#if error}
 		<p class="px-5 pb-5 text-sm text-destructive" role="alert">{error}</p>
@@ -55,7 +96,7 @@
 		<p class="px-5 pb-5 text-sm text-muted-foreground">Loading connections...</p>
 	{:else if servers.length === 0}
 		<div class="mx-5 mb-5 rounded-lg border border-dashed py-7 text-center">
-			<p class="text-sm font-medium">No connections yet</p>
+			<p class="text-sm font-medium">No tools yet</p>
 			<p class="mt-1 text-xs text-muted-foreground">Add MCP tools below and assign them to agents.</p>
 		</div>
 	{:else}
@@ -94,3 +135,5 @@
 		</ul>
 	{/if}
 </section>
+
+<UseConnectionDialog bind:open={pickerOpen} {projectId} provider={picking} current={picking ? boundTo(picking.id) : null} onsaved={load} />

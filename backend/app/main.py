@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from .cells import make_cell_manager
 from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
+from .connections import DeviceLogins
 from .db import SessionLocal
 from .migrate import upgrade_database
 from .preflight import Preflight
@@ -19,6 +20,7 @@ from .routers import (
     agents,
     auth,
     codex,
+    connections,
     projects,
     skills,
     system,
@@ -74,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.workflows.shutdown()
     await scheduler.stop()
     await app.state.codex_logins.shutdown()
+    await app.state.device_logins.shutdown()
     trail.end()
     log.info("Themis stopped")
 
@@ -94,6 +97,7 @@ app.state.trail = Trail(settings.log_dir)
 app.state.preflight = Preflight()
 app.state.updates = UpdateChecker()
 app.state.codex_logins = CodexLogins(SessionLocal)
+app.state.device_logins = DeviceLogins(SessionLocal)
 app.state.workflows = WorkflowRunner(SessionLocal, lambda: app.state.scheduler)
 app.state.scheduler.workflows = app.state.workflows
 
@@ -104,6 +108,7 @@ api.include_router(projects.router)
 api.include_router(workspaces.router)
 api.include_router(system.router)
 api.include_router(codex.router)
+api.include_router(connections.router)
 api.include_router(workflows.router)
 api.include_router(volumes.router)
 api.include_router(agents.router)

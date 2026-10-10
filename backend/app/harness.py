@@ -130,6 +130,7 @@ def build_prompt(
     *,
     preamble: str = "",
     folders: Sequence[tuple[str, bool]] = (),
+    notes: Sequence[str] = (),
 ) -> str:
     parts = [preamble] if preamble else []
     parts.append(f"# {title}")
@@ -140,6 +141,7 @@ def build_prompt(
         parts.append("Task properties:\n" + "\n".join(f"- {k}: {v}" for k, v in props.items()))
     if note := folders_note(folders):
         parts.append(note)
+    parts.extend(notes)  # what the agent's connections give it (app/connections.py)
     parts.append(
         "You are running unattended inside a throwaway container. Your working directory /workspace is private to "
         "this run. Do the task, then finish with a short summary of what you did and what you produced. Never read or "

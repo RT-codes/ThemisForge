@@ -5,6 +5,7 @@
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
 	import SkillPicker from '$lib/components/SkillPicker.svelte'
 	import ToolPicker from '$lib/components/ToolPicker.svelte'
+	import AgentConnections from '$lib/components/AgentConnections.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
@@ -67,6 +68,7 @@
 		skills: [],
 		mcp_servers: [],
 		secrets: [],
+		connections: [],
 	})
 	const toInput = (a: Agent): AgentInput => ({
 		name: a.name,
@@ -81,6 +83,7 @@
 		skills: [...a.skills],
 		mcp_servers: [...a.mcp_servers],
 		secrets: [...a.secrets],
+		connections: [...a.connections],
 	})
 
 	const first = untrack(() => (agent ? toInput(agent) : blank()))
@@ -271,6 +274,18 @@
 			</section>
 		{/if}
 	
+		{#if harness?.supports_keys}
+			<section class="grid gap-3 border-t pt-5">
+				<div>
+					<h3 class="text-sm font-semibold tracking-tight">Connections</h3>
+					<p class="text-xs text-muted-foreground">
+						Services it can act on, like GitHub, as the account the project connects with. Choose the connection on the project first. Its output is scrubbed of the token, but only give a connection to an agent you trust with it.
+					</p>
+				</div>
+				{#key projectId}<AgentConnections {projectId} bind:selected={draft.connections} />{/key}
+			</section>
+		{/if}
+
 		<section class="grid gap-3 border-t pt-5 first:border-t-0 first:pt-0">
 			<div>
 				<h3 class="text-sm font-semibold tracking-tight">Its cell</h3>

@@ -16,6 +16,8 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Workflow editor**: nodes, a Test run, and a history of runs with the log of every node.
 - **Codex agents**: tasks can run with a Codex agent in a cell, each run with its own private working folder.
 - **Codex connection**: each user signs in with ChatGPT once; the login is encrypted and can be handed to a cell.
+- **Connections**: a searchable list in Settings to connect services once, by token or by signing in with a code. GitHub
+  is the first; a project chooses one connection per service and each agent opts in to it.
 - **Resource budget**: all running cells together use at most a number of CPUs and an amount of memory, with the machine's
   real size and a recommendation shown in Settings.
 - **Shared folders**: a `shared` folder in every project plus managed and host folders, read only or read and write,

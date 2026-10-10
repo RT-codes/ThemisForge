@@ -18,6 +18,7 @@ from .budget import Cost, admit, never_fits
 from .cells import CellError, CellManager, CellResult, CellSpec, Mount
 from .codex import CodexError, lease_codex, lease_is_busy
 from .config import settings
+from .connections import ConnectionProblem, RunConnection, plan_for_run, secret_values
 from .crypto import decrypt
 from .harness import CODEX_AUTH, HarnessPlan, agent_preamble, build_prompt, plan_for, renderer_for
 from .keys import Redactor, key_path, unique_env_names
@@ -63,6 +64,11 @@ class _Plan:
     keys: dict[int, str] = field(
         default_factory=dict
     )  # key id -> variable name, for the keys the agent is given
+    connections: list[RunConnection] = field(default_factory=list)  # see app/connections.py
+    connection_env: dict[str, str] = field(
+        default_factory=dict
+    )  # plain settings the connections give the cell
+    connection_notes: list[str] = field(default_factory=list)  # what they tell the agent
 
     @property
     def cost(self) -> Cost:
@@ -337,12 +343,20 @@ class Scheduler:
     ) -> _Plan:
         harness = agent.harness if agent else task.harness
         skills, mcp, keys, error = await Scheduler._capabilities(s, project, agent)
+        used = await plan_for_run(s, project.id, agent)
+        error = error or used.error
+        secret_envs = {env for c in used.connections for env in c.env_names}
+        if clash := secret_envs & set(keys.values()):
+            error = error or (
+                f"A key of this agent is called {min(clash)}, which a connection of the agent already provides. "
+                "Rename the key."
+            )
         hp = plan_for(
             harness,
             cfg,
             model=agent.model if agent else "",
             effort=agent.reasoning_effort if agent else "",
-            key_envs=sorted(keys.values()),
+            key_envs=sorted(secret_envs | set(keys.values())),
         )
         extra = task.run_options or {}
         profile = resolve_profile(
@@ -352,7 +366,21 @@ class Scheduler:
             agent.cell_profile if agent else None,
             extra.get("profile"),
         )
-        plan = _Plan(task, project, agent, profile, hp, [], error=error, skills=skills, mcp=mcp, keys=keys)
+        plan = _Plan(
+            task,
+            project,
+            agent,
+            profile,
+            hp,
+            [],
+            error=error,
+            skills=skills,
+            mcp=mcp,
+            keys=keys,
+            connections=used.connections,
+            connection_env=used.env,
+            connection_notes=used.notes,
+        )
         if (
             harness != "workflow" and not plan.error
         ):  # a task that plays a workflow starts no cell, so it mounts nothing
@@ -475,6 +503,7 @@ class Scheduler:
                 task.properties,
                 preamble=agent_preamble(agent.name, agent.role, agent.instructions) if agent else "",
                 folders=[(m.name, m.read_only) for m in plan.mounts],
+                notes=plan.connection_notes,
             )
         return CellSpec(
             attempt_id=attempt_id,
@@ -498,6 +527,8 @@ class Scheduler:
             skills=plan.skills,
             keys=plan.keys,
             mcp=plan.mcp,
+            connections=plan.connections,
+            env=dict(plan.connection_env),
         )
 
     # running a cell
@@ -516,13 +547,17 @@ class Scheduler:
                         await buf.write("[Waiting for another Codex run of the same user to finish]\n")
                     lease = await stack.enter_async_context(lease_codex(self.maker, spec.owner_id))
                     spec.secret_files[CODEX_AUTH] = lease.auth_json
-                    if spec.keys or spec.mcp:
+                    if spec.keys or spec.mcp or spec.connections:
                         values = await self._key_values(spec)
                         for key_id, env in spec.keys.items():
                             spec.secret_files[key_path(env)] = values[key_id]
                         if spec.mcp:
                             spec.secret_files[CONFIG_PATH] = config_toml(spec.mcp, values, spec.keys)
-                        redact = Redactor(list(values.values()))
+                        # connections hand over their secrets the same way a key does: a file, exported as a variable
+                        from_connections = await secret_values(self.maker, spec.connections)
+                        for env, value in from_connections.items():
+                            spec.secret_files[key_path(env)] = value
+                        redact = Redactor([*values.values(), *from_connections.values()])
                 renderer = renderer_for(spec.harness)
 
                 async def sink(chunk: str) -> None:
@@ -552,7 +587,7 @@ class Scheduler:
             else:
                 outcome = AttemptStatus.CANCELLED
                 await buf.write("\n[Cancelled]\n")
-        except (CellError, CodexError) as e:
+        except (CellError, CodexError, ConnectionProblem) as e:
             await buf.write(f"\n[Cell error] {e}\n")
         except Exception as e:
             log.exception("attempt %s crashed", attempt_id)

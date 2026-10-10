@@ -83,6 +83,9 @@ class AppSettings(BaseModel):
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
     codex_model: str = "gpt-6-luna"
     codex_reasoning_effort: Literal["low", "medium", "high"] = "high"
+    # The client id of the GitHub OAuth App (device flow switched on) that "Sign in with GitHub" uses. It is public by
+    # design, and empty until an administrator adds it: only the token way of connecting works until then.
+    github_client_id: str = ""
     check_for_updates: bool = (
         True  # ask GitHub once a day whether a newer release exists (see app/updates.py)
     )
@@ -135,6 +138,14 @@ class AppSettings(BaseModel):
         v = v.strip()
         if not v or v.startswith("-") or any(c.isspace() or c in "'\"$`\\;&|<>" for c in v):
             raise ValueError("Invalid model name")
+        return v
+
+    @field_validator("github_client_id")
+    @classmethod
+    def valid_client_id(cls, v: str) -> str:
+        v = v.strip()
+        if v and not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", v):
+            raise ValueError("A client id has only letters, digits, dots, dashes and underscores")
         return v
 
     @field_validator("cell_image", "codex_image")

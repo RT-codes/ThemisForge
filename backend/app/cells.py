@@ -95,6 +95,9 @@ class CellSpec:
     mcp: list = field(
         default_factory=list
     )  # tool servers (McpSpec, app/mcp.py), written into the harness config
+    connections: list = field(
+        default_factory=list
+    )  # connections the run uses (RunConnection, app/connections.py); their secrets are filled in at start
 
     @property
     def workspace_dir(self) -> Path:

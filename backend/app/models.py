@@ -319,6 +319,41 @@ class CodexConnection(Base):
     refreshed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
 
 
+class Connection(Base):
+    """One user's sign in to an outside service (GitHub, ...). The credential is encrypted at rest (app/connections.py)."""
+
+    __tablename__ = "connections"
+    __table_args__ = (UniqueConstraint("user_id", "provider", "account", name="uq_connections_account"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(40))  # a provider id, see app/connections.py
+    method: Mapped[str] = mapped_column(String(10))  # how it was made: "token" | "oauth"
+    credential_encrypted: Mapped[str] = mapped_column(Text)  # JSON, e.g. {"token": "..."}
+    account: Mapped[str] = mapped_column(String(320), default="")  # who it is, shown in the UI ("octocat")
+    settings: Mapped[dict[str, Any]] = mapped_column(
+        JSON, default=dict
+    )  # what the provider learned: no secrets
+    connected_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+    checked_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)  # last successful test
+
+
+class ProjectConnection(Base):
+    """The connection a project uses for a provider. Agents of the project can then opt in to it (Agent.connections)."""
+
+    __tablename__ = "project_connections"
+    __table_args__ = (UniqueConstraint("project_id", "provider", name="uq_project_connections_provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(40))
+    connection_id: Mapped[int] = mapped_column(ForeignKey("connections.id", ondelete="CASCADE"))
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSON, default=dict
+    )  # per project, e.g. {"repo": "owner/name"}
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class RunStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
@@ -465,6 +500,9 @@ class Agent(Base):
     secrets: Mapped[list[int]] = mapped_column(
         JSON, default=list, server_default="[]"
     )  # Secret ids, see app/keys.py
+    connections: Mapped[list[str]] = mapped_column(
+        JSON, default=list, server_default="[]"
+    )  # provider ids this agent may use through the project's connections, see app/connections.py
     # The agent's file in the project's config folder is the source of truth (see app/project_config.py); this row is
     # its identity (tasks and workflows point at the id) and a parsed copy for fast lists and for planning runs.
     path: Mapped[str] = mapped_column(

@@ -2,7 +2,7 @@
 	import { api, ApiError, type AppSettings, type DockerStatus, type Resources, type Secret, type SystemStatus } from '$lib/api'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
-	import CodexConnection from '$lib/components/CodexConnection.svelte'
+	import ConnectionsSettings from '$lib/components/ConnectionsSettings.svelte'
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -12,6 +12,7 @@
 	import { cellsThatFit } from '$lib/budget'
 	import { dateTime } from '$lib/format'
 	import { cn } from '$lib/utils'
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
 	import InfoIcon from '@lucide/svelte/icons/info'
@@ -198,7 +199,26 @@
 	</div>
 {/snippet}
 
-<div class="w-full max-w-3xl px-6 py-8">
+{#snippet signInSetup(provider: string)}
+	{#if provider === 'github' && form}
+		<details class="group border-t px-3 py-2.5">
+			<summary class="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+				<ChevronDownIcon class="size-4 transition-transform group-open:rotate-180" />
+				Sign in setup (administrator)
+				<span class="ms-auto text-xs">{form.github_client_id ? 'Set up' : 'Not set up, tokens only'}</span>
+			</summary>
+			<div class="mt-3 grid gap-2">
+				<Label for="github-client-id">OAuth App client ID</Label>
+				<Input id="github-client-id" bind:value={form.github_client_id} class="font-mono" placeholder="Iv1.0123456789abcdef" maxlength={100} />
+				<p class="text-xs text-muted-foreground">
+					Lets people connect GitHub by signing in instead of pasting a token. Create an OAuth App at github.com/settings/developers, switch on <em>Enable Device Flow</em>, and paste its client ID here. It is public, so it is not a secret. Saved with the Save changes bar.
+				</p>
+			</div>
+		</details>
+	{/if}
+{/snippet}
+
+<div class="w-full max-w-6xl px-6 py-8">
 	<h2 class="text-2xl font-semibold tracking-tight">Settings</h2>
 	<p class="mt-1 text-sm text-muted-foreground">Your own connections, and for administrators how this installation runs.</p>
 
@@ -213,18 +233,58 @@
 	<div class="mt-8 grid gap-3">
 		<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Your account</h3>
 		<AppearanceSettings />
-		<SettingsSection id="codex" title="Codex" description="Sign in with ChatGPT so your tasks use your plan's Codex usage." defaultOpen>
-			<CodexConnection bare />
+	</div>
+
+	<div class="mt-8 grid gap-3">
+		<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Connections</h3>
+		<SettingsSection id="connections" title="Your connections" description="Your sign ins to AI models and services like GitHub. Projects and their agents use them." defaultOpen>
+			<ConnectionsSettings setup={auth.user?.is_admin ? signInSetup : undefined} />
 		</SettingsSection>
+		{#if auth.user?.is_admin}
+		<SettingsSection id="keys" title="Keys" description="Credentials for model providers and tools. They are encrypted and never shown again." summary={keySummary}>
+			{#if secrets.length}
+			<ul class="divide-y rounded-lg border">
+				{#each secrets as s (s.id)}
+					<li class="flex items-center gap-3 px-3 py-2.5">
+						<KeyRoundIcon class="size-4 shrink-0 text-muted-foreground" />
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium">{s.name}</p>
+							<p class="text-xs text-muted-foreground">{s.kind} · <span class="font-mono">{s.hint}</span> · added {dateTime(s.created_at)}</p>
+						</div>
+						<Button type="button" variant="ghost" size="icon" class="ms-auto" aria-label={`Delete ${s.name}`} onclick={() => removeSecret(s)}>
+							<Trash2Icon />
+						</Button>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">No keys yet.</p>
+		{/if}
+
+		<form onsubmit={addSecret} class="grid gap-3 sm:grid-cols-[1fr_9rem]">
+			<Input bind:value={secretName} placeholder="Name, e.g. Anthropic (work)" required aria-label="Secret name" />
+			<Select.Root type="single" bind:value={secretKind}>
+				<Select.Trigger class="w-full capitalize">{secretKind}</Select.Trigger>
+				<Select.Content>
+					{#each kinds as k (k)}<Select.Item value={k} label={k} class="capitalize">{k}</Select.Item>{/each}
+				</Select.Content>
+			</Select.Root>
+			<Input type="password" autocomplete="off" bind:value={secretValue} placeholder="Key or token" required class="font-mono sm:col-span-2" aria-label="Secret value" />
+			{#if secretError}<p class="text-sm text-destructive sm:col-span-2" role="alert">{secretError}</p>{/if}
+			<Button type="submit" variant="secondary" class="justify-self-start sm:col-span-2">Add key</Button>
+		</form>
+		</SettingsSection>
+		{/if}
 	</div>
 
 	{#if auth.user?.is_admin}
-		<div class="mt-8 grid gap-3">
-			<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Administration</h3>
+		<div class="mt-8 grid gap-8">
 			{#if loadError}
 				<p class="text-sm text-destructive" role="alert">{loadError}</p>
 			{:else if form}
-				<form onsubmit={save} class="grid gap-3">
+				<form onsubmit={save} class="grid gap-8">
+					<div class="grid gap-3">
+					<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Cells and agents</h3>
 					<SettingsSection
 						id="docker"
 						title="Docker"
@@ -362,21 +422,21 @@
 								<Label for="cell-mem">Memory per cell</Label>
 								<NumberField id="cell-mem" bind:value={form.cell_memory_mb} unit="MB" min={64} step={64} />
 							</div>
-							<div class="grid gap-2">
+							<div class="grid content-start gap-2">
 								<Label for="cell-timeout">Time limit per run</Label>
 								<NumberField id="cell-timeout" bind:value={form.cell_timeout_seconds} unit="seconds" min={10} step={10} />
 							</div>
-							<div class="grid gap-2 sm:col-span-2">
+							<div class="grid content-start gap-2">
 								<Label for="start-cooldown">Wait before a Ready task starts</Label>
 								<NumberField id="start-cooldown" bind:value={form.start_cooldown_seconds} unit="seconds" min={0} max={3600} />
 								<p class="text-xs text-muted-foreground">A task starts this long after it was moved to Ready or its last run ended, and a workflow starts for a task no sooner than this after the last one did. It stops loops from hammering the machine; 0 starts right away. A project or a single task can set its own.</p>
 							</div>
-							<div class="grid gap-2 sm:col-span-2">
+							<div class="grid content-start gap-2">
 								<Label for="max-hops">Most automatic moves of one task in a row</Label>
 								<NumberField id="max-hops" bind:value={form.max_automation_hops} unit="moves" min={1} max={100} />
 								<p class="text-xs text-muted-foreground">Workflows that move or make the same task over and over stop after this many, until a person acts on the task. It catches two boards that keep sending a task back and forth. A project or a single task can set its own.</p>
 							</div>
-							<div class="grid gap-2 sm:col-span-2">
+							<div class="grid content-start gap-2">
 								<Label for="keep-days">Keep working folders for</Label>
 								<NumberField id="keep-days" bind:value={form.keep_workspaces_days} unit="days" min={0} max={3650} />
 								<p class="text-xs text-muted-foreground">Every run gets its own private working folder. Old ones are deleted after this long; 0 deletes them right away.</p>
@@ -458,6 +518,10 @@
 						</div>
 					</SettingsSection>
 
+					</div>
+
+					<div class="grid gap-3">
+					<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">General</h3>
 					<SettingsSection
 						id="updates"
 						title="Updates"
@@ -537,6 +601,8 @@
 						</div>
 					</SettingsSection>
 
+					</div>
+
 					{#if dirty || saving || justSaved || saveError}
 						<div class="sticky bottom-4 z-10" transition:fly={{ y: 16, duration: 200 }}>
 							<div class="flex items-center gap-3 rounded-xl border bg-popover/95 px-4 py-3 shadow-lg backdrop-blur">
@@ -550,39 +616,6 @@
 					{/if}
 				</form>
 
-				<SettingsSection id="keys" title="Keys" description="Credentials for model providers and tools. They are encrypted and never shown again." summary={keySummary}>
-					{#if secrets.length}
-					<ul class="divide-y rounded-lg border">
-						{#each secrets as s (s.id)}
-							<li class="flex items-center gap-3 px-3 py-2.5">
-								<KeyRoundIcon class="size-4 shrink-0 text-muted-foreground" />
-								<div class="min-w-0">
-									<p class="truncate text-sm font-medium">{s.name}</p>
-									<p class="text-xs text-muted-foreground">{s.kind} · <span class="font-mono">{s.hint}</span> · added {dateTime(s.created_at)}</p>
-								</div>
-								<Button type="button" variant="ghost" size="icon" class="ms-auto" aria-label={`Delete ${s.name}`} onclick={() => removeSecret(s)}>
-									<Trash2Icon />
-								</Button>
-							</li>
-						{/each}
-					</ul>
-				{:else}
-					<p class="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">No keys yet.</p>
-				{/if}
-
-				<form onsubmit={addSecret} class="grid gap-3 sm:grid-cols-[1fr_9rem]">
-					<Input bind:value={secretName} placeholder="Name, e.g. Anthropic (work)" required aria-label="Secret name" />
-					<Select.Root type="single" bind:value={secretKind}>
-						<Select.Trigger class="w-full capitalize">{secretKind}</Select.Trigger>
-						<Select.Content>
-							{#each kinds as k (k)}<Select.Item value={k} label={k} class="capitalize">{k}</Select.Item>{/each}
-						</Select.Content>
-					</Select.Root>
-					<Input type="password" autocomplete="off" bind:value={secretValue} placeholder="Key or token" required class="font-mono sm:col-span-2" aria-label="Secret value" />
-					{#if secretError}<p class="text-sm text-destructive sm:col-span-2" role="alert">{secretError}</p>{/if}
-					<Button type="submit" variant="secondary" class="justify-self-start sm:col-span-2">Add key</Button>
-				</form>
-				</SettingsSection>
 			{/if}
 			{#if system}
 				<!-- which build this is: what to quote in a bug report, and the doctor (themis doctor) prints the same -->

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Agent, CellDefaults, HarnessInfo, KeyInfo, McpServer, Project, Skill, Volume } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import AgentConnections from '$lib/components/AgentConnections.svelte'
 	import { describeCell, effectiveCell } from '$lib/cell'
 	import { relative } from '$lib/format'
 	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
@@ -167,6 +168,13 @@
 				{#if cell}<p class="truncate px-1 font-mono text-xs text-muted-foreground" title={cell.image}>{cell.image}</p>{/if}
 			</div>
 		</section>
+
+		{#if harness?.supports_keys && agent.connections.length}
+			<section class="rounded-lg border bg-card p-4">
+				<h4 class="text-sm font-semibold tracking-tight">Connections</h4>
+				<div class="mt-2.5"><AgentConnections projectId={agent.project_id} selected={agent.connections} readonly /></div>
+			</section>
+		{/if}
 
 		{#if harness?.supports_keys && myKeys.length}
 			<section class="rounded-lg border bg-card p-4">

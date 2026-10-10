@@ -50,6 +50,7 @@ Themis is deliberately small: **one server process** that does everything, plus 
 | `tasks` | Title, description, board, status, position, property values, schedule and next run time, and the task it was spawned from. |
 | `attempts` | One row per execution: status, times, exit code, log and result. |
 | `secrets` | Named credentials, encrypted. |
+| `connections` and `project_connections` | A user's sign ins to outside services (encrypted), and the one a project uses per service. An agent's opt-in is a list of services on the agent. |
 | `app_settings` | The operator settings edited on the Settings page. |
 | `access_requests` and `invites` | The invite only access flow. Only a hash of each invite token is stored. |
 
@@ -64,6 +65,7 @@ tasks are marked Failed so a human decides whether to retry.
 - **Invite only accounts**, with a single administrator who manages access, Docker and keys.
 - **Sessions** are signed cookies (`HttpOnly`, `SameSite=Lax`, optionally `Secure`). Passwords use Argon2.
 - **Keys** are encrypted at rest with a key derived from `THEMIS_SECRET_KEY` and never shown again after saving.
+  **Connections** are kept the same way, belong to one user, and reach a cell only through the agents that opted in.
 - **Isolation**: tasks run in containers with limited CPU and memory and only the work folder mounted. Cell names and
   mount paths come from numeric ids, never from user input.
 - **Docker access** is the sensitive part: the server's user can control Docker. Run it on a machine you trust, keep it

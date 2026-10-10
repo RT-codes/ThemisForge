@@ -28,6 +28,7 @@ it, or **New agent** at the top to make one. A project starts with none, and can
 | **Instructions** | For the agent: always put in front of whatever task it is given. How to work, what to produce, what to avoid. |
 | **Cell** | The size of its container. **Automatic** by default (the project's cell, which uses the defaults in Settings); press **Customise** only if this agent needs something different. |
 | **Folders** | The [shared folders](/docs/cells#shared-folders) mounted in its work folder, and whether it may write to them. |
+| **Connections** | The services it may act on, like GitHub, through the connection the project chose. See [Connections](/docs/connections). |
 | **Skills** | Guides it reads when a task calls for them (see below). |
 | **Tools** | Extra tools it can use, as MCP servers (see below). |
 | **Keys** | Stored keys its commands can use (see below). |
@@ -42,7 +43,7 @@ Everything that sets an agent up is kept as files in the project's **config fold
 
 ```
 config/
-  agents/<name>/agent.md     the agent: its settings between two --- lines, then its instructions
+  agents/<name>/agent.md     the agent: its settings between two --- lines, then its instructions (`connections:` lists its services)
   skills/<name>/SKILL.md     a skill (and anything else you put in its folder)
   mcp/<name>.yaml            a tool
 ```

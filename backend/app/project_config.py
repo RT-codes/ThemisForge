@@ -36,6 +36,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import skills as skill_store
+from .connections import providers as connection_providers
 from .harness import clean_model_name
 from .mcp import NAME, McpIn
 from .models import Agent, McpServer, Project, Secret, User, Volume
@@ -168,6 +169,7 @@ class AgentFile(BaseModel):
     skills: list[str] = Field(default_factory=list, max_length=50)
     tools: list[str] = Field(default_factory=list, max_length=50)
     keys: list[str] = Field(default_factory=list, max_length=50)
+    connections: list[str] = Field(default_factory=list, max_length=50)  # providers, see app/connections.py
     instructions: str = Field(default="", max_length=20_000)  # the text below the settings
 
     @field_validator("name", "role")
@@ -209,6 +211,7 @@ def render_agent(af: AgentFile) -> str:
         meta["cell"] = cell  # left out when the agent just uses the project's cell
     meta["folders"] = [f.model_dump() for f in af.folders]
     meta["skills"], meta["tools"], meta["keys"] = af.skills, af.tools, af.keys
+    meta["connections"] = af.connections
     return f"---\n{_dump(meta)}---\n\n{af.instructions}\n" if af.instructions else f"---\n{_dump(meta)}---\n"
 
 
@@ -321,6 +324,7 @@ AGENT_COLUMNS = (
     "skills",
     "mcp_servers",
     "secrets",
+    "connections",
 )
 
 
@@ -332,6 +336,8 @@ def agent_fields(af: AgentFile, refs: Refs, actor: User | None, before: Agent | 
     _keys_only_for_admins(actor, set(keys), set(before.secrets) if before else set(), "an agent")
     if gone := [s for s in dict.fromkeys(af.skills) if s not in refs.skills]:
         raise ConfigError(f"The skill '{gone[0]}' does not exist in this project")
+    if unknown := [c for c in dict.fromkeys(af.connections) if c not in connection_providers()]:
+        raise ConfigError(f"Themis has no connection called '{unknown[0]}'")
     by_id = Refs.invert(refs.folders)
     return {
         "name": af.name,
@@ -346,6 +352,7 @@ def agent_fields(af: AgentFile, refs: Refs, actor: User | None, before: Agent | 
         "skills": list(dict.fromkeys(af.skills)),
         "mcp_servers": _look_up(af.tools, refs.tools, "tool"),
         "secrets": keys,
+        "connections": list(dict.fromkeys(af.connections)),
     }
 
 
@@ -368,6 +375,7 @@ def agent_file(agent: Agent, refs: Refs) -> AgentFile:
         skills=list(agent.skills),
         tools=[tools[i] for i in agent.mcp_servers if i in tools],
         keys=[keys[i] for i in agent.secrets if i in keys],
+        connections=list(agent.connections),
         instructions=agent.instructions,
     )
 

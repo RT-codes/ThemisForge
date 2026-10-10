@@ -243,6 +243,7 @@ export interface Agent {
   skills: string[]
   mcp_servers: number[]
   secrets: number[]
+  connections: string[] // providers (github, ...) it may use through the project's connections
   path: string // the agent's file in the project's config folder
   config_error: string // why that file cannot be used right now, "" when it is fine
   created_at: string
@@ -323,6 +324,7 @@ export interface AppSettings {
   codex_image: string
   codex_model: string
   codex_reasoning_effort: 'low' | 'medium' | 'high'
+  github_client_id: string // the OAuth App that "Sign in with GitHub" uses, empty until an administrator adds it
   check_for_updates: boolean // ask GitHub once a day whether a newer release exists
   update_channel: 'stable' | 'beta'
   keep_workspaces_days: number
@@ -422,6 +424,64 @@ export interface Secret {
   kind: string
   hint: string
   created_at: string
+}
+
+// ----- connections to outside services (see backend/app/connections.py) -----
+
+export interface ConnectionMethod {
+  id: 'token' | 'oauth'
+  available: boolean
+  reason: string // why it is not available, in words for the person
+}
+
+export interface ConnectionField {
+  key: string
+  label: string
+  placeholder: string
+  help: string
+}
+
+export interface ConnectionProvider {
+  id: string
+  name: string
+  category: string // "ai" | "service"
+  description: string
+  icon: string // a Lucide icon name
+  token_help: string
+  methods: ConnectionMethod[]
+  config_fields: ConnectionField[] // what a project sets on its connection
+}
+
+export interface Connection {
+  id: number
+  provider: string
+  method: 'token' | 'oauth'
+  account: string
+  settings: Record<string, unknown>
+  connected_at: string
+  checked_at: string | null
+  needs_reconnect: boolean // stored, but unreadable (the secret key changed)
+}
+
+export interface ConnectionsList {
+  secret_key_secure: boolean
+  providers: ConnectionProvider[]
+  connections: Connection[]
+}
+
+export interface ConnectionLogin {
+  status: 'starting' | 'waiting' | 'connected' | 'failed' | 'cancelled'
+  verification_url: string
+  code: string
+  expires_at: string | null
+  error: string
+}
+
+export interface ProjectConnection {
+  provider: string
+  connection_id: number
+  account: string
+  config: Record<string, string>
 }
 
 export interface CodexLogin {
@@ -703,6 +763,17 @@ export const api = {
   workflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}`),
   cancelWorkflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}/cancel`, send('POST')),
 
+  connections: () => request<ConnectionsList>('/connections'),
+  connectWithToken: (provider: string, token: string) => request<Connection>('/connections', send('POST', { provider, token })),
+  testConnection: (id: number) => request<Connection>(`/connections/${id}/test`, send('POST')),
+  disconnect: (id: number) => request<void>(`/connections/${id}`, send('DELETE')),
+  startConnectionLogin: (provider: string) => request<ConnectionLogin>(`/connection-logins/${provider}`, send('POST')),
+  connectionLogin: (provider: string) => request<ConnectionLogin | null>(`/connection-logins/${provider}`),
+  cancelConnectionLogin: (provider: string) => request<void>(`/connection-logins/${provider}`, send('DELETE')),
+  projectConnections: (projectId: number) => request<ProjectConnection[]>(`/projects/${projectId}/connections`),
+  useConnection: (projectId: number, provider: string, connectionId: number, config: Record<string, string>) =>
+    request<ProjectConnection>(`/projects/${projectId}/connections/${provider}`, send('PUT', { connection_id: connectionId, config })),
+  stopUsingConnection: (projectId: number, provider: string) => request<void>(`/projects/${projectId}/connections/${provider}`, send('DELETE')),
   codex: () => request<CodexStatus>('/codex'),
   codexStartLogin: () => request<CodexLogin>('/codex/login', send('POST')),
   codexCancelLogin: () => request<void>('/codex/login', send('DELETE')),

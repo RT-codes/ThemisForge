@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .. import project_config
 from .. import skills as skill_store
 from ..app_settings import load_settings
+from ..connections import providers
 from ..deps import CurrentUser, SessionDep
 from ..harness import CATALOG, clean_model_name
 from ..models import Agent, McpServer, Project, Secret, Task, TaskStatus, Volume
@@ -37,6 +38,9 @@ class AgentIn(BaseModel):
     secrets: list[int] = Field(
         default_factory=list, max_length=50
     )  # keys, available to the agent as variables
+    connections: list[str] = Field(
+        default_factory=list, max_length=50
+    )  # provider ids, see app/connections.py
 
     @field_validator("name")
     @classmethod
@@ -69,6 +73,7 @@ class AgentPatch(BaseModel):
     skills: list[str] | None = Field(default=None, max_length=50)
     mcp_servers: list[int] | None = Field(default=None, max_length=50)
     secrets: list[int] | None = Field(default=None, max_length=50)
+    connections: list[str] | None = Field(default=None, max_length=50)
 
     @field_validator("model")
     @classmethod
@@ -93,6 +98,7 @@ class AgentOut(BaseModel):
     skills: list[str]
     mcp_servers: list[int]
     secrets: list[int]
+    connections: list[str]
     path: str  # the agent's file in the project's config folder
     config_error: str  # why that file cannot be used right now ("" when it is fine)
     created_at: datetime
@@ -173,6 +179,11 @@ async def _capabilities(session, project_id: int, body, user, before: Agent | No
         if set(ids) != set(before.secrets if before else []) and not user.is_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an administrator can give an agent keys")
         out["secrets"] = ids
+    if body.connections is not None:
+        names = list(dict.fromkeys(body.connections))
+        if unknown := [n for n in names if n not in providers()]:
+            raise _bad(f"Themis has no connection called '{unknown[0]}'")
+        out["connections"] = names
     return out
 
 

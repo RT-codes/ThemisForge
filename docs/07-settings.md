@@ -6,8 +6,8 @@ summary: Docker connection, resource budget, cell defaults, time zone and stored
 
 # Settings
 
-The **Settings** page has two parts. **Your account** holds your own connections (see [Connecting Codex](/docs/codex)) and
-everyone can use it. **Administration** controls how this installation runs, and only the administrator sees it.
+The **Settings** page has two parts. **Your account** holds your own connections (see [Connections](/docs/connections) and
+[Connecting Codex](/docs/codex)) and everyone can use it. **Administration** controls how this installation runs, and only the administrator sees it.
 
 Every section folds away, and a folded section says in one line what is inside. Themis remembers which ones you
 left open. Change something and a bar slides in at the bottom with **Discard** and **Save changes**.
@@ -104,9 +104,10 @@ never told to upgrade, since it is updated with `git pull`.
 The **time zone** used to evaluate recurring schedules. Pick the zone where you want "every morning" to happen. The
 button next to the field offers the zone of your current browser. See [Scheduling](/docs/scheduling).
 
-## Keys and connections
+## Keys
 
-Store credentials for model providers and tools (Anthropic, OpenAI, Google, GitHub or custom). They are:
+Store credentials that are shared by the whole installation, such as a model provider's API key or a key for a tool. They
+belong to the administrator. Your own sign ins to services like GitHub are [connections](/docs/connections) instead. Keys are:
 
 - **encrypted at rest** with a key derived from `THEMIS_SECRET_KEY`,
 - **masked** in the interface: after saving you only see the last four characters,

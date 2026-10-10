@@ -68,7 +68,7 @@
 		<ChevronDownIcon class={cn('size-4 shrink-0 text-muted-foreground transition-transform duration-200', open && 'rotate-180')} />
 	</button>
 	{#if open}
-		<div id="section-{id}" class="grid gap-4 border-t px-5 py-5" transition:slide={{ duration: 200 }}>
+		<div id="section-{id}" class="slim-scrollbar grid min-w-0 grid-cols-1 gap-4 overflow-x-auto border-t px-5 py-5" transition:slide={{ duration: 200 }}>
 			{@render children()}
 		</div>
 	{/if}

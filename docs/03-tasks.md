@@ -14,6 +14,15 @@ recent activity. Under a project the sidebar lists its pages (**Overview**, **Fi
 editor**) and then **Workspaces**, with the workspaces themselves indented below it, where your work lives. The small plus buttons beside a page or a workspace
 (a new agent, workflow or board) appear when you point at its row; the one beside **Workspaces** adds a workspace.
 
+The overview's **Needs attention** section brings together tasks waiting for review and failed tasks across all boards.
+It also shows recurring tasks back in Ready whose last run failed; their next occurrence still happens. Review tasks
+come first, then failures, with the most recently changed tasks first in each group. Click a row to open its board and
+inspect the task. The section shows five tasks at first, with a total count and **Show everything** for the rest, and
+refreshes while the page is visible. The list follows current statuses and latest attempts: a review moved to Done
+disappears, as does a recurring failure when another attempt starts or its latest attempt no longer failed.
+If the list cannot refresh, it shows an error and retries
+automatically instead of reporting that nothing needs attention.
+
 ## Workspaces and boards
 
 Every project starts with one workspace, **Main**, that holds one board, **Tasks**. Open it from the sidebar to see

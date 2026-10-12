@@ -67,12 +67,14 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'boardId', label: 'On board', type: 'select', options: opts(['', 'Automatic']), hint: 'Automatic is the board of one of your own statuses, or the first board.', when: { key: 'action', oneOf: ['create'] } },
     { key: 'boardId', label: 'Send to board', type: 'select', options: opts(['', 'Stay on its board']), when: { key: 'action', oneOf: ['update', 'move_trigger'] } },
     { key: 'link', label: 'Follow up', type: 'select', options: opts(['', 'A separate task'], ['1', 'Follow up the task that started this run']), hint: 'A follow-up is linked to that task and takes its property values. Needs a Trigger that starts the run.', when: { key: 'action', oneOf: ['create'] } },
+    { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue lets the new task, and the workflows it plays, work on the files the step before this one left behind.', when: { key: 'action', oneOf: ['create'] } },
   ],
   agent: [
     // the options of agentId are the project's agents: the panel fills them in, this one is always there
     { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: plain Codex']) },
     { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent']), when: { key: 'agentId', oneOf: [''] } },
     { key: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'What should the agent do?' },
+    { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue works in the folder of the step before this one (or of the stage before this workflow), and is told what that step changed. Without anything before it, the agent gets a fresh folder.' },
     { key: 'onFailure', label: 'If it fails', type: 'select', options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on'])},
     { key: 'cellCpus', label: 'CPUs', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellMemory', label: 'Memory (MB)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
@@ -236,6 +238,19 @@ export function fromGraph(graph: Graph) {
 export const nextNodeNumber = (ids: string[]) => ids.reduce((max, id) => Math.max(max, Number(id.match(/^n(\d+)$/)?.[1] ?? 0)), 0)
 
 /** the graph a new workflow starts with: just where a run begins */
+/** The steps of a graph that are given instructions (its Agent nodes), with who does each: for a ticket to show what its
+ * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs plain Codex. */
+export function agentSteps(graph: Graph, agents: { id: number; name: string }[]) {
+  return graph.nodes
+    .filter((n) => n.kind === 'agent')
+    .map((n) => ({
+      nodeId: n.id,
+      label: n.label.trim() || 'Agent',
+      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? 'Plain Codex',
+      instructions: (n.config.instructions ?? '').trim(),
+    }))
+}
+
 export const seedGraph = (): Graph => ({ nodes: [{ id: 'n1', kind: 'start', label: 'Start', config: {}, position: { x: 0, y: 0 } }], edges: [] })
 
 /** "Workflow 1", "Workflow 2"... the first number nobody uses yet (the server picks the same name) */

@@ -17,6 +17,7 @@
 	import { MINUTE_INTERVALS, REPEAT_KINDS, WEEKDAYS, defaultRecurrence, describeRecurrence, describeSchedule, fromCron, toCron, type RepeatKind, type Recurrence } from '$lib/recurrence'
 	import { cn } from '$lib/utils'
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down'
+	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right'
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import XIcon from '@lucide/svelte/icons/x'
@@ -35,6 +36,7 @@
 		dirty = $bindable(false),
 		title = $bindable(''),
 		onsaved,
+		onopenworkflow,
 	}: {
 		projectId: number
 		task: Task | null
@@ -52,6 +54,8 @@
 		/** edited in the panel's title card, outside this form, and saved with the rest of it */
 		title?: string
 		onsaved: (task: Task) => void
+		/** leaves for the editor of a workflow this task plays (the panel asks about unsaved changes first) */
+		onopenworkflow: (workflowId: number) => void
 	} = $props()
 
 	const MAX_STAGES = 20 // the same limit as the server's
@@ -240,6 +244,11 @@
 			<div class="grid gap-2">
 				<Label for="task-desc">Description</Label>
 				<Textarea id="task-desc" bind:value={description} rows={4} placeholder="Context, goal, acceptance criteria..." />
+				{#if harness === 'workflow'}
+					<p class="text-xs text-muted-foreground" transition:slide={{ duration: 160 }}>
+						Given to every agent step of the workflows below as the task's brief. Write what this run should focus on; the workflows say how to work.
+					</p>
+				{/if}
 			</div>
 
 			<div class="grid gap-2">
@@ -268,6 +277,23 @@
 										{#each workflows as w (w.id)}<Select.Item value={String(w.id)} label={w.name}>{w.name}</Select.Item>{/each}
 									</Select.Content>
 								</Select.Root>
+								{#if workflowIds[i]}
+									<!-- a plain click goes through the panel (it asks about unsaved changes first); ctrl or cmd opens a tab -->
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										class="text-muted-foreground"
+										aria-label="Open {workflowName(workflowIds[i])} in the editor"
+										title="Open in the workflow editor"
+										href="/projects/{projectId}/workflows/{workflowIds[i]}"
+										onclick={(e: MouseEvent) => {
+											if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+											e.preventDefault()
+											onopenworkflow(Number(workflowIds[i]))
+										}}><ArrowRightIcon /></Button
+									>
+								{/if}
 								{#if workflowIds.length > 1}
 									<Button type="button" variant="ghost" size="icon-sm" aria-label="Move up" disabled={i === 0} onclick={() => moveWorkflow(i, -1)}><ArrowUpIcon /></Button>
 									<Button type="button" variant="ghost" size="icon-sm" aria-label="Move down" disabled={i === workflowIds.length - 1} onclick={() => moveWorkflow(i, 1)}><ArrowDownIcon /></Button>

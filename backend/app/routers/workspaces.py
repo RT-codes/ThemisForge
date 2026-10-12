@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import boards as rules
+from .. import halt
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import Board, BoardStatus, Project, TaskStatus, Workspace, utcnow
@@ -26,7 +27,7 @@ from ..schemas import (
     WorkspaceOut,
     WorkspacePatch,
 )
-from .projects import _project, _task, _task_out
+from .projects import HaltIn, _project, _task, _task_out
 
 router = APIRouter(tags=["workspaces"])
 
@@ -195,6 +196,29 @@ async def update_board(board_id: int, body: BoardPatch, session: SessionDep, use
     if "position" in fields and body.position is not None:
         board.position = body.position
     await session.commit()
+    return (await _boards_out(session, [board]))[0]
+
+
+@router.post("/boards/{board_id}/halt", response_model=BoardOut)
+async def halt_board(
+    board_id: int, body: HaltIn, request: Request, session: SessionDep, user: CurrentUser
+) -> BoardOut:
+    """Nothing on the board starts until it is resumed; by default what is running on it is stopped too."""
+    board = await _board(session, board_id, user)
+    project = await session.get_one(Project, board.project_id)
+    await halt.halt(
+        session, request.app.state.scheduler, project, board, stop_running=body.stop_running, actor=user.name
+    )
+    await session.refresh(board)
+    return (await _boards_out(session, [board]))[0]
+
+
+@router.post("/boards/{board_id}/resume", response_model=BoardOut)
+async def resume_board(board_id: int, request: Request, session: SessionDep, user: CurrentUser) -> BoardOut:
+    board = await _board(session, board_id, user)
+    project = await session.get_one(Project, board.project_id)
+    await halt.resume(session, request.app.state.scheduler, project, board, user.name)
+    await session.refresh(board)
     return (await _boards_out(session, [board]))[0]
 
 

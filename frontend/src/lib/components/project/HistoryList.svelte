@@ -10,7 +10,9 @@
 	import HistoryIcon from '@lucide/svelte/icons/history'
 	import LayersIcon from '@lucide/svelte/icons/layers'
 	import ListPlusIcon from '@lucide/svelte/icons/list-plus'
+	import OctagonXIcon from '@lucide/svelte/icons/octagon-x'
 	import PencilIcon from '@lucide/svelte/icons/pencil'
+	import PlayIcon from '@lucide/svelte/icons/play'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 
@@ -81,6 +83,8 @@
 		task_spawned: GitBranchPlusIcon,
 		task_deleted: Trash2Icon,
 		automation_stopped: CircleAlertIcon,
+		halted: OctagonXIcon,
+		resumed: PlayIcon,
 		workspace_created: PlusIcon,
 		board_created: PlusIcon,
 		status_added: PlusIcon,

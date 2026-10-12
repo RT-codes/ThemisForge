@@ -6,8 +6,9 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
 	import { dateTime, relative } from '$lib/format'
 	import PlayIcon from '@lucide/svelte/icons/play'
-	import SquareIcon from '@lucide/svelte/icons/square'
+	import OctagonXIcon from '@lucide/svelte/icons/octagon-x'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
+	import CopyIcon from '@lucide/svelte/icons/copy'
 	import AttemptHistory from './AttemptHistory.svelte'
 	import HistoryList from './HistoryList.svelte'
 	import SendDialog from './SendDialog.svelte'
@@ -32,7 +33,9 @@
 		revision,
 		onchange,
 		ondelete,
+		onduplicate,
 		onopen,
+		onopenworkflow,
 	}: {
 		open: boolean
 		/** the form has changes that are not saved */
@@ -55,8 +58,12 @@
 		onchange: () => void
 		/** asks the page to delete the task (it confirms first and refreshes the board) */
 		ondelete: (task: Task) => void
+		/** makes a copy of the task in the Backlog and opens it; rejects when that did not work */
+		onduplicate: (task: Task) => Promise<void>
 		/** opens another task in this panel (a link between tasks) */
 		onopen: (task: Task) => void
+		/** leaves for the editor of a workflow the task plays, at one of its nodes when `nodeId` is given */
+		onopenworkflow: (workflowId: number, nodeId?: string) => void
 	} = $props()
 
 	let sendMode = $state<'move' | 'spawn'>('move')
@@ -104,6 +111,18 @@
 		open = false
 	}
 
+	async function duplicate() {
+		error = ''
+		busy = true
+		try {
+			await onduplicate(task!)
+		} catch (e) {
+			error = e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong'
+		} finally {
+			busy = false
+		}
+	}
+
 	async function act(fn: () => Promise<unknown>) {
 		error = ''
 		busy = true
@@ -134,7 +153,7 @@
 			{#if task}
 				{#if task.status === 'running'}
 					<Button size="sm" variant="secondary" disabled={busy} onclick={() => act(() => api.cancelTask(task!.id))}>
-						<SquareIcon /> Cancel run
+						<OctagonXIcon /> Stop task
 					</Button>
 				{:else}
 					<Button size="sm" disabled={busy} onclick={() => act(() => api.runTask(task!.id))}>
@@ -170,6 +189,19 @@
 					oninput={(e) => (title = e.currentTarget.value.replace(/\s*\n+\s*/g, ' '))}
 					onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), formCanSave && form?.save())}
 				></textarea>
+				{#if task && !task.internal}
+					<Button
+						size="icon-sm"
+						variant="ghost"
+						class="shrink-0 text-muted-foreground"
+						aria-label="Duplicate task"
+						title="Duplicate task (the copy goes to the Backlog)"
+						disabled={busy}
+						onclick={duplicate}
+					>
+						<CopyIcon />
+					</Button>
+				{/if}
 				{#if task}
 					<Button
 						size="icon-sm"
@@ -212,14 +244,14 @@
 				/>
 				<!-- above the tabs, so where the task is stays in view whichever tab is open -->
 				{#if task.stages.length}
-					<TaskStages stages={task.stages} projectId={task.project_id} />
+					<TaskStages stages={task.stages} projectId={task.project_id} {onopenworkflow} />
 				{/if}
 				{#if error}
 					<p class="mx-4 mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
 				{/if}
 				<Tabs.Content value="details" class="mt-1">
 					{#key formKey}
-						<TaskForm bind:this={form} {projectId} {task} {board} status={newStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} bind:dirty bind:title onsaved={() => (onchange(), (open = false))} />
+						<TaskForm bind:this={form} {projectId} {task} {board} status={newStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} bind:dirty bind:title {onopenworkflow} onsaved={() => (onchange(), (open = false))} />
 					{/key}
 				</Tabs.Content>
 				<Tabs.Content value="history" class="mt-1">
@@ -234,7 +266,7 @@
 		{:else}
 			<TaskBar task={null} {board} {tasks} {workspaces} status={newStatus} busy={false} showTabs={false} onstatus={(s) => (newStatus = s)} onsend={() => {}} onfollowup={() => {}} {onopen} />
 			{#key formKey}
-				<TaskForm bind:this={form} {projectId} task={null} {board} status={newStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} bind:dirty bind:title onsaved={() => (onchange(), (open = false))} />
+				<TaskForm bind:this={form} {projectId} task={null} {board} status={newStatus} {defs} {timezone} bind:saving={formSaving} bind:canSave={formCanSave} bind:dirty bind:title {onopenworkflow} onsaved={() => (onchange(), (open = false))} />
 			{/key}
 		{/if}
 	</aside>

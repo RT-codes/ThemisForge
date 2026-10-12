@@ -200,8 +200,9 @@ async def test_an_agent_node_runs_the_chosen_agent_with_node_level_extras(client
     assert (spec.cpus, spec.memory_mb) == (2, 512)  # the node's cpus, the agent's memory
     assert [m.name for m in spec.mounts] == ["out", "shared"]
     assert "Write like a poet." in spec.prompt and "Write the intro" in spec.prompt
-    task = next(t for t in (await client.get(f"/api/projects/{pid}/tasks")).json() if t["title"] == "Draft")
-    assert task["agent_id"] == agent["id"]
+    steps = (await client.get(f"/api/projects/{pid}/tasks", params={"include_steps": True})).json()
+    task = next(t for t in steps if t["title"] == "Draft")
+    assert task["agent_id"] == agent["id"] and task["internal"]
 
 
 async def test_an_agent_node_whose_agent_was_deleted_fails_with_the_reason(client, runner):

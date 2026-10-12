@@ -48,6 +48,8 @@ export interface Project {
   properties: PropertyDef[]
   cell_profile: ProfileOverrides | null
   automation: AutomationOverrides | null
+  /** set while the project is halted: nothing in it starts until it is resumed */
+  halted_at: string | null
   created_at: string
 }
 
@@ -70,6 +72,8 @@ export interface Board {
   position: number
   columns: Column[]
   task_counts: Partial<Record<TaskStatus, number>>
+  /** set while the board is halted: none of its tasks start until it is resumed */
+  halted_at: string | null
   created_at: string
 }
 
@@ -120,6 +124,8 @@ export interface Task {
   review_on_success: boolean
   harness: Harness
   agent_id: number | null
+  /** made by a workflow's Agent node to run its step: not board work, so it is only listed when asked for */
+  internal: boolean
   /** the workflows this task plays, in order, each with how far its latest attempt got */
   stages: TaskStage[]
   /** how many times in a row automation moved or made this task; a person acting on it starts again at 0 */
@@ -672,6 +678,11 @@ export const api = {
   deleteWorkspace: (id: number, moveTo?: number) => request<void>(`/workspaces/${id}${moveTo ? `?move_to=${moveTo}` : ''}`, send('DELETE')),
   createBoard: (workspaceId: number, body: { name: string; purpose?: string }) =>
     request<Board>(`/workspaces/${workspaceId}/boards`, send('POST', body)),
+  /** `stopRunning` also stops what is running in it; off only holds back what is next */
+  haltProject: (id: number, stopRunning = true) => request<Project>(`/projects/${id}/halt`, send('POST', { stop_running: stopRunning })),
+  resumeProject: (id: number) => request<Project>(`/projects/${id}/resume`, send('POST')),
+  haltBoard: (id: number, stopRunning = true) => request<Board>(`/boards/${id}/halt`, send('POST', { stop_running: stopRunning })),
+  resumeBoard: (id: number) => request<Board>(`/boards/${id}/resume`, send('POST')),
   updateBoard: (id: number, patch: { name?: string; purpose?: string; position?: number; workspace_id?: number }) =>
     request<Board>(`/boards/${id}`, send('PATCH', patch)),
   duplicateBoard: (id: number) => request<Board>(`/boards/${id}/duplicate`, send('POST')),
@@ -683,7 +694,8 @@ export const api = {
   /** its tasks go to `moveTo` (a status of the board; the server defaults to Backlog) */
   removeStatus: (boardId: number, statusId: number, moveTo?: TaskStatus) =>
     request<Board>(`/boards/${boardId}/statuses/${statusId}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ''}`, send('DELETE')),
-  tasks: (projectId: number) => request<Task[]>(`/projects/${projectId}/tasks`),
+  tasks: (projectId: number, includeSteps = false) =>
+    request<Task[]>(`/projects/${projectId}/tasks${includeSteps ? '?include_steps=true' : ''}`),
   createTask: (projectId: number, body: TaskInput) => request<Task>(`/projects/${projectId}/tasks`, send('POST', body)),
   updateTask: (id: number, patch: TaskPatch) => request<Task>(`/tasks/${id}`, send('PATCH', patch)),
   /** the same task continues on another board (and status) */
@@ -692,6 +704,8 @@ export const api = {
   /** a new task on a board, linked to this one; this one stays where it is */
   spawnTask: (id: number, body: { board_id: number; title?: string; description?: string; status?: TaskStatus }) =>
     request<Task>(`/tasks/${id}/spawn`, send('POST', body)),
+  /** the same task again, in the Backlog of its board, without its history */
+  duplicateTask: (id: number) => request<Task>(`/tasks/${id}/duplicate`, send('POST')),
   /** `query` comes from historyQuery() */
   projectHistory: (projectId: number, query: string) => request<ProjectEvent[]>(`/projects/${projectId}/history?${query}`),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, send('DELETE')),

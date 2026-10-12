@@ -2,6 +2,8 @@
 	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
+	import HaltBanner from '$lib/components/project/HaltBanner.svelte'
+	import HaltControl from '$lib/components/project/HaltControl.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import WorkspaceDialog from '$lib/components/project/WorkspaceDialog.svelte'
 	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
@@ -80,9 +82,11 @@
 					{#if project.description}
 						<p class="mt-1 text-sm whitespace-pre-line text-muted-foreground">{project.description}</p>
 					{/if}
+					{#if project.halted_at}<div class="mt-3"><HaltBanner scope="project" name={project.name} /></div>{/if}
 				</div>
 			</div>
 			<div class="flex items-center gap-2">
+				<HaltControl scope="project" id={id} name={project.name} haltedAt={project.halted_at} running={counts.running ?? 0} onchange={load} />
 				<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>

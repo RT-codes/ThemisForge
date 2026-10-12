@@ -39,7 +39,9 @@
 		revision={desk.revision}
 		onchange={() => desk.reload()}
 		ondelete={(task) => desk.askDelete(task)}
+		onduplicate={(task) => desk.duplicateTask(task)}
 		onopen={(task) => desk.openTask(task)}
+		onopenworkflow={(id, nodeId) => desk.openWorkflow(id, nodeId)}
 	/>
 {/if}
 <AlertDialog.Root open={desk.tasksToDelete.length > 0} onOpenChange={(o) => !o && (desk.tasksToDelete = [])}>

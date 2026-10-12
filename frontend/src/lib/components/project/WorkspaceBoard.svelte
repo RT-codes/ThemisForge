@@ -16,6 +16,9 @@
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link'
 	import PlusIcon from '@lucide/svelte/icons/plus'
+	import HaltBanner from './HaltBanner.svelte'
+	import HaltControl from './HaltControl.svelte'
+	import StepsToggle from './StepsToggle.svelte'
 	import { untrack } from 'svelte'
 	import Board from './Board.svelte'
 
@@ -166,6 +169,8 @@
 			<span class="rounded-full border px-2 py-0.5 text-xs text-muted-foreground" title="A search or filter chosen on this board's page is applied">Filtered</span>
 		{/if}
 		<div class="ms-auto flex items-center gap-0.5">
+			<StepsToggle {desk} />
+			<HaltControl scope="board" id={board.id} name={board.name} haltedAt={board.halted_at} running={tasks.filter((t) => t.status === 'running').length} onchange={() => desk.reload()} />
 			<Button variant="ghost" size="sm" onclick={() => desk.addTask(board.id)}><PlusIcon /> Task</Button>
 			<Button variant="ghost" size="sm" href="/projects/{board.project_id}/boards/{board.id}" aria-label={`Open ${board.name} on its own page`}><ExternalLinkIcon /> Open</Button>
 			<DropdownMenu.Root>
@@ -188,6 +193,9 @@
 			</DropdownMenu.Root>
 		</div>
 	</header>
+	{#if !collapsed && (board.halted_at || desk.project?.halted_at)}
+		<div class="px-3 pt-3"><HaltBanner scope={desk.project?.halted_at ? 'project' : 'board'} name={board.name} /></div>
+	{/if}
 	{#if !collapsed && desk.project}
 		<div
 			class={cn('px-3 pt-3', height === null && (fill ? 'h-[max(28.25rem,calc(100svh-20rem))]' : 'h-[28.25rem]'))}
@@ -208,6 +216,7 @@
 				onopen={(t) => desk.openTask(t)}
 				onclosedetails={(then) => desk.closeTask(then)}
 				ondelete={(ts) => desk.askDelete(...ts)}
+				onstop={(t) => desk.stopTask(t)}
 				onadd={(status) => desk.addTask(board.id, status)}
 				onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)}
 				onmovemany={(moves, status) => desk.moveTasks(moves, status)}

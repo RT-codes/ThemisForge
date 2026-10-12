@@ -306,7 +306,8 @@ async def test_agent_runs_with_the_owners_login_and_gets_the_previous_result(cli
     assert detail["status"] == "succeeded"
     spec = next(s for s in cells.specs if s.harness == "codex")
     assert "Summarise it" in spec.prompt and "Result of the previous step (t)" in spec.prompt
-    tasks = {t["title"]: t for t in (await client.get(f"/api/projects/{pid}/tasks")).json()}
+    listed = (await client.get(f"/api/projects/{pid}/tasks", params={"include_steps": True})).json()
+    tasks = {t["title"]: t for t in listed}
     assert tasks["Writer"]["harness"] == "codex" and tasks["Writer"]["status"] == "done"
 
 
@@ -490,7 +491,8 @@ async def test_a_task_plays_its_workflow_and_reports_the_run(client, runner, cel
     )  # fmt: skip
     task = await play_task(client, pid, wid)
     attempt = await attempt_of(client, task["id"])
-    assert attempt["status"] == "succeeded" and attempt["result"] == "All done"
+    # the task's result is what its stage's last step reported, not the End node's note
+    assert attempt["status"] == "succeeded" and "(Inner) finished" in attempt["result"]
     assert (
         'Playing the workflow "Flow"' in attempt["log"]
         and "[2] Step (task)" in attempt["log"]

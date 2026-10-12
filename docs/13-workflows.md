@@ -37,7 +37,7 @@ move them all together. **Esc** lets go of the selection.
 | **Start** | A run begins here. A workflow can have several Start nodes; a run begins at all of them. |
 | **Trigger** | Begins a run by itself. Set to **A task moves into a status**, it starts the workflow whenever a task of the project is moved into (or created in) that status, from the board, the API or another workflow. The status can be one of the seven built-in ones or a [status you added](/docs/tasks#your-own-statuses) to a board. With **Where** it can watch only one workspace or one board (a status of your own belongs to one board and only fires there). The steps after it can use that task. Schedules are not automatic yet; a Trigger set to anything else behaves like Start. |
 | **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). It can work on a chosen **board**: create the task there, or send the moved task there. A created task can be a **follow-up** of the task that started the run. A task that becomes **Ready** runs like any other task and the node waits for it. |
-| **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task that started the run (its title and description). |
+| **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task behind the run: the task that started it, or the task it is a stage of (its title and description). That is how a ticket steers a workflow, see [Steering a run from the task](#steering-a-run-from-the-task). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
 | **Folder** | Not a step: hands a [shared folder](/docs/cells#shared-folders) to an Agent node (see below). |
@@ -52,6 +52,18 @@ and what you write here is the task it is given. With **No agent** the node runs
 Under **Cell and folders** a step can change the cell size or mount extra [shared folders](/docs/cells#shared-folders) (or join Folder nodes to it, see below) for
 this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press **Customise**. If an agent is deleted, the nodes that
 used it fail with a note that says so until you pick another.
+
+### Working folders in a workflow
+
+Each Agent node starts in a **fresh working folder**. Under **Working folder** a node can instead choose **Continue in the
+previous folder**: it then works in the folder of the step before it, sees the files that step left, and is told what
+every earlier step changed there (see [Continuing in a working folder](/docs/cells#continuing-in-a-working-folder)).
+
+- A **Condition** or an **End** hands the folder on, so continuing works across a branch.
+- The **first** step of a run has no step before it. In a stage of a task it continues in the folder the stage before it
+  ended in; started by a task moving into a status, in the folder that task last worked in; otherwise it is fresh.
+- A **Task** node that creates a task has the same choice. The new task, and the workflows it plays as stages, then
+  start in that folder, so a task a workflow makes can carry on the work of the workflow that made it.
 
 ### Handing folders to an agent
 
@@ -75,7 +87,11 @@ dashed and teal and has no arrow, because it is not a step: it only says "this a
 - Nodes run **one at a time**, in the order the lines lead.
 - A node that fails stops its path. An agent can be told to **carry on** instead.
 - A node that more than one path leads to runs once.
-- Task and Agent nodes create real tasks in the project, so they also show up on the project's first board.
+- A **Task** node creates a real task in the project, which shows on its board like any other. An **Agent** node also makes
+  a task to run its step (so the budget, the cell and the history work as for any task), but it is marked as a **workflow
+  step** and kept off the boards and out of the counts. Show them with the small workflow button in a board's taskbar
+  (off by default; it is remembered per project in this browser). A step starts without the usual wait before a Ready task
+  starts, because its workflow is already waiting for it.
 
 ### Watching a test run
 
@@ -95,6 +111,19 @@ log of the run on the Runs tab.
 So workflows orchestrate tasks, and tasks orchestrate workflows. A task that plays workflows does not take up one of the
 resource budget (Settings, Resources), because it mostly waits for the tasks inside it. A workflow that would end up playing
 itself through its own tasks is stopped, and so are chains nested more than five levels deep.
+
+### Steering a run from the task
+
+A workflow says **how** to work. What a particular run should **focus on** belongs on the task: its **description** is
+given to every Agent node of the workflows it plays, right after that node's own instructions and before the result of
+the step before it, as "This is a stage of the task ...". So the same workflow can be pointed somewhere else by editing the
+ticket, and the workflow's instructions can stay general ("improve the game toward the task's focus").
+
+- A task with no description still tells its agents its title.
+- A test run from the editor has no task, so nothing is added.
+- Under each stage in the task's panel, **Step instructions** shows what its agents are told (the workflow's instructions
+  as they are now, and who does each). **Edit step** opens the workflow editor with that node selected and its panel open.
+  Changing instructions there changes the workflow for every task that plays it.
 
 ### Stages on a task
 
@@ -119,6 +148,11 @@ details** opens the full run.
   "+N more" for the rest. The track of the running stage shows the node before as a dot (point at it for the name), and
   it wraps or shortens its names when the card is narrow.
 - A stage that fails ends the attempt, and the stages after it stay not started.
+- The panel lists what each stage's steps reported, under its track: a short summary that opens in full when you click it
+  (a pull request link in it is a link). The same text, one section per stage, is the task's **result** in its History.
+- Stages connect through the working folder: a stage starts in the folder the one before it ended in, and any Agent node
+  in it set to **Continue in the previous folder** picks up those files. Nodes left on a fresh folder are unaffected, so
+  a stage only shares files with the stage before it when you ask it to.
 - Starting the task again starts every stage over. The panel always shows the latest attempt; earlier runs stay under
   **History**.
 - Deleting a workflow takes it out of the tasks that played it.

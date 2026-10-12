@@ -16,7 +16,7 @@ Whatever runs in a cell (today a placeholder, later an agent harness) gets the s
 
 | Path or signal | Meaning |
 | --- | --- |
-| `/workspace` | This attempt's **private working folder**, read and write. Nothing else sees it, and it is removed after the retention period (default 7 days, see Settings). |
+| `/workspace` | The **working folder**, read and write. It is private to this attempt unless a step asked to [continue in the folder of an earlier step](#continuing-in-a-working-folder). It is removed after the retention period (default 7 days, see Settings). |
 | `/workspace/NAME` | A **shared folder** mounted inside it, read and write or read only. `/workspace/shared` is in every cell; see [Shared folders](#shared-folders). |
 | `/workspace/.agents/skills` | Agent tasks only: the agent's [skills](/docs/agents#skills), read only. |
 | `/cell/prompt.md` | Agent tasks only: the instructions handed to the agent. |
@@ -33,7 +33,7 @@ The cell also receives the environment variables `THEMIS_TASK_ID` and `THEMIS_TA
 Under the Themis data directory (`data/` next to the code by default, change it with `THEMIS_DATA_DIR`):
 
 ```text
-data/projects/<project id>/workspaces/<attempt>/ private working folder, mounted at /workspace
+data/projects/<project id>/workspaces/<attempt>/ working folder, mounted at /workspace (named by the attempt that made it)
 data/projects/<project id>/attempts/<attempt>/   input.json, prompt.md and result.md for one attempt
 ```
 
@@ -41,6 +41,24 @@ Cells run as your Themis user, so files they create are owned by you and easy to
 Deleting a project removes its database records but **keeps** these folders. Working folders of finished attempts
 are deleted automatically after **Settings, Cells, Keep working folders for** days; keep what matters in the
 result. Shared folders are the exception: they live outside the working folder and outlive every run.
+
+## Continuing in a working folder
+
+Every run gets a **fresh** working folder, so what an earlier run left behind can never leak into it by accident. A step
+in a workflow can ask for the opposite: **Working folder: Continue in the previous folder** on an Agent node, or on a Task
+node that creates a task (see [workflows](/docs/workflows#working-folders-in-a-workflow)). It then works in the folder of
+the step before it, with the files that step left there.
+
+An agent that continues is told what the earlier steps did in the folder: for each one, the files it added, changed and
+removed and what it reported, and what is at the top of the folder now. You do not have to describe which files belong to
+the job. The same record is on each attempt (its **changes**, and the folder it used) in the API.
+
+- A step that does not ask to continue keeps its own fresh folder, whatever ran before it.
+- A folder is removed once the **last** step that used it is older than the retention period, not the first.
+- If the folder has already been removed, the step starts empty and its agent is told so.
+- Steps of one run take turns, so they never write at the same moment. Two separate tasks made to continue in the same
+  folder can run at the same time and would share it live: give them separate steps if that matters.
+- Use a [shared folder](#shared-folders) for files that must outlive the job or be seen by other jobs.
 
 ## Shared folders
 
@@ -138,14 +156,19 @@ that says so, instead of waiting forever.
 
 ## Logs and results
 
-- The **log** is everything the cell printed. It is saved about once a second while the cell runs, and capped at
-  200,000 characters (a notice is added when it is cut).
+- The **log** is what the cell printed. It is saved about once a second while the cell runs. For an agent, everything it
+  says and thinks is kept, and the output of a single command is shortened when it is very long (its first 40 lines and
+  last 12, with a note of how much was left out; the agent itself saw all of it). A log is capped at 200,000 characters
+  by keeping how the run began and its most recent output, with a note where the middle was dropped, so a long run never
+  stops showing what it is doing now.
 - The **result** is the content of `/cell/result.md`, capped at 100,000 characters.
 - Both are visible in the **History** tab of the task.
 
 ## Stopping a cell
 
-- **Cancel run** on the task stops the container immediately and records the attempt as cancelled.
+- **Stop task** stops the container immediately and records the attempt as cancelled. A **halt** of a board or a project
+  does this for everything running in it and keeps anything from starting until it is resumed (see
+  [Stopping work](/docs/tasks#stopping-work)).
 - Shutting Themis down stops running cells. On the next start, leftover containers (those labelled
   `themis.cell`) are removed automatically.
 

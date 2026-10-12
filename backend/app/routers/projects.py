@@ -2,10 +2,11 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import boards
+from .. import boards, halt
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import (
@@ -217,14 +218,14 @@ async def list_projects(session: SessionDep, user: CurrentUser) -> list[ProjectS
     counts: dict[int, dict[str, int]] = {}
     rows = await session.execute(
         select(Task.project_id, Task.status, func.count())
-        .where(Task.project_id.in_([p.id for p in projects]))
+        .where(Task.project_id.in_([p.id for p in projects]), Task.internal.is_(False))
         .group_by(Task.project_id, Task.status)
     )
     for project_id, task_status, n in rows:
         counts.setdefault(project_id, {})[task_status] = n
     next_rows = await session.execute(
         select(Task.project_id, func.min(Task.next_run_at))
-        .where(Task.status == TaskStatus.READY, Task.next_run_at.is_not(None))
+        .where(Task.status == TaskStatus.READY, Task.next_run_at.is_not(None), Task.internal.is_(False))
         .group_by(Task.project_id)
     )
     nexts = {project_id: at for project_id, at in next_rows}
@@ -254,6 +255,35 @@ async def create_project(body: ProjectIn, session: SessionDep, user: CurrentUser
     await session.flush()
     await boards.create_defaults(session, project.id)  # every project has a board to put tasks on
     await session.commit()
+    return project
+
+
+class HaltIn(BaseModel):
+    stop_running: bool = (
+        True  # also stop what is running now; off lets it finish and only holds back what is next
+    )
+
+
+@router.post("/projects/{project_id}/halt", response_model=ProjectOut)
+async def halt_project(
+    project_id: int, body: HaltIn, request: Request, session: SessionDep, user: CurrentUser
+) -> Project:
+    """Nothing in the project starts until it is resumed; by default what is running is stopped too."""
+    project = await _project(session, project_id, user)
+    await halt.halt(
+        session, request.app.state.scheduler, project, None, stop_running=body.stop_running, actor=user.name
+    )
+    await session.refresh(project)
+    return project
+
+
+@router.post("/projects/{project_id}/resume", response_model=ProjectOut)
+async def resume_project(
+    project_id: int, request: Request, session: SessionDep, user: CurrentUser
+) -> Project:
+    project = await _project(session, project_id, user)
+    await halt.resume(session, request.app.state.scheduler, project, None, user.name)
+    await session.refresh(project)
     return project
 
 
@@ -309,9 +339,14 @@ async def list_tasks(
     session: SessionDep,
     user: CurrentUser,
     board_id: Annotated[int | None, Query(description="Only the tasks of this board")] = None,
+    include_steps: Annotated[
+        bool, Query(description="Also the tasks that workflow Agent nodes made to run their steps")
+    ] = False,
 ) -> list[TaskOut]:
     await _project(session, project_id, user)
     query = select(Task).where(Task.project_id == project_id).order_by(Task.position, Task.id)
+    if not include_steps:
+        query = query.where(Task.internal.is_(False))
     if board_id is not None:
         query = query.where(Task.board_id == board_id)
     return await _task_out(session, list((await session.scalars(query)).all()))
@@ -366,6 +401,54 @@ async def create_task(
     if task.status == TaskStatus.READY:
         request.app.state.scheduler.wake()
     return (await _task_out(session, [task]))[0]
+
+
+@router.post("/tasks/{task_id}/duplicate", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
+async def duplicate_task(task_id: int, session: SessionDep, user: CurrentUser) -> TaskOut:
+    """The same task again, parked in the Backlog of its board. It takes what the task asks for and how it runs
+    (description, properties, schedule, agent or workflows, automation guard), and none of what happened to it: no
+    attempts or history, no link to the task it follows, and not the working folder it carried on in (a copy starts
+    fresh). The Backlog is where a task does not start by itself, so the copy runs when its owner moves it on."""
+    origin = await _task(session, task_id, user)
+    if origin.internal:
+        raise _bad("A workflow step is made by its workflow and cannot be duplicated")
+    board = await session.get_one(Board, origin.board_id)
+    # run_options may name the folder a workflow handed this task (see workflows.task_workdir); that is history too
+    options = {k: v for k, v in (origin.run_options or {}).items() if k != "workdir"}
+    copy = Task(
+        project_id=origin.project_id,
+        board_id=board.id,
+        title=f"Copy of {origin.title}"[:200],
+        description=origin.description,
+        status=TaskStatus.BACKLOG,
+        position=await boards.next_position(session, board.id, TaskStatus.BACKLOG),
+        properties=dict(origin.properties),
+        schedule_kind=origin.schedule_kind,
+        cron=origin.cron,
+        run_at=origin.run_at,
+        review_on_success=origin.review_on_success,
+        harness=origin.harness,
+        agent_id=origin.agent_id,
+        run_options=options or None,
+        cooldown_seconds=origin.cooldown_seconds,
+        max_hops=origin.max_hops,
+    )
+    session.add(copy)
+    await session.flush()
+    stages = await session.scalars(
+        select(TaskStage.workflow_id).where(TaskStage.task_id == origin.id).order_by(TaskStage.position)
+    )
+    await _set_stages(session, copy, list(stages))
+    boards.record_task(
+        session,
+        "task_created",
+        copy,
+        user.name,
+        board,
+        {"to": boards.place(board, copy.status), "copy_of": origin.title},
+    )
+    await session.commit()
+    return (await _task_out(session, [copy]))[0]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskOut)
@@ -519,6 +602,8 @@ async def run_task_now(task_id: int, request: Request, session: SessionDep, user
     task = await _task(session, task_id, user)
     if task.status == TaskStatus.RUNNING:
         raise HTTPException(status.HTTP_409_CONFLICT, "This task is already running")
+    if held := await halt.why_held(session, task):
+        raise HTTPException(status.HTTP_409_CONFLICT, held)
     task.status = TaskStatus.READY
     task.next_run_at = utcnow()
     await session.commit()
@@ -591,6 +676,7 @@ async def upcoming_runs(
         await session.scalars(
             select(Task).where(
                 Task.project_id == project_id,
+                Task.internal.is_(False),  # a workflow step runs at once: it is not "coming up"
                 (Task.status == TaskStatus.READY)
                 | ((Task.status == TaskStatus.RUNNING) & (Task.schedule_kind == ScheduleKind.CRON)),
             )

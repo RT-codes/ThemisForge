@@ -3,6 +3,8 @@
 	import { defaultBoard, parseCollapsed } from '$lib/boards'
 	import BoardDialog from '$lib/components/project/BoardDialog.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
+	import HaltBanner from '$lib/components/project/HaltBanner.svelte'
+	import HaltControl from '$lib/components/project/HaltControl.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import RemoveDialog from '$lib/components/project/RemoveDialog.svelte'
@@ -121,8 +123,10 @@
 				</h2>
 				{#if workspace.purpose}<p class="mt-0.5 text-sm text-muted-foreground">{workspace.purpose}</p>{/if}
 				{#if workspace.description}<p class="mt-2 max-w-3xl text-sm whitespace-pre-line text-muted-foreground/80">{workspace.description}</p>{/if}
+				{#if desk.project.halted_at}<div class="mt-3"><HaltBanner scope="project" name={desk.project.name} /></div>{/if}
 			</div>
 			<div class="flex items-center gap-2">
+				<HaltControl scope="project" id={id} name={desk.project.name} haltedAt={desk.project.halted_at} running={desk.tasks.filter((t) => t.status === 'running').length} onchange={() => desk.reload()} />
 				<Button onclick={() => ((boardDialog = 'new'), (boardDialogOpen = true))}><PlusIcon /> New board</Button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>

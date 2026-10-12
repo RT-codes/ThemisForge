@@ -88,12 +88,40 @@ log of the run on the Runs tab.
 ## Workflows and tasks play each other
 
 - A **Task node** can create, update or run any task of the project, and wait for it.
-- A **task** can play a workflow: set the task's **Run with** to **Workflow** and pick one from the library. When the task
-  runs, the workflow runs instead of a container, and the attempt history shows its progress with a link to the full run.
+- A **task** can play workflows: set the task's **Run with** to **Workflow** and pick one from the library. Use **Add a
+  stage** to pick more, and the arrows to put them in order. When the task runs, the workflows run one after the other
+  instead of a container.
 
-So workflows orchestrate tasks, and tasks orchestrate workflows. A task that plays a workflow does not take up one of the
+So workflows orchestrate tasks, and tasks orchestrate workflows. A task that plays workflows does not take up one of the
 resource budget (Settings, Resources), because it mostly waits for the tasks inside it. A workflow that would end up playing
 itself through its own tasks is stopped, and so are chains nested more than five levels deep.
+
+### Stages on a task
+
+Each workflow a task plays is a **stage**. They are listed at the top of the task's panel, in the order they play, and
+under a divider on the task's card on the board, where you can follow a run without opening anything:
+
+| Icon | Stage |
+| --- | --- |
+| Dashed circle | Not started yet. It is listed as soon as you pick it. |
+| Spinner | Running |
+| Check | Done, with how long it took |
+| Cross | Failed |
+| Slashed circle | Cancelled |
+
+A stage that has started unfolds (the one that is running opens by itself) into a small track: the node it has just
+come from, the node it is working on now, and the node that comes next. When the workflow branches, for example at a
+**Condition**, every way on is listed one under the other with the answer that leads there (Yes or No). Once the node has
+answered, the ways not taken are dimmed. A node that failed stops the track, and what came after it is dimmed. **Run
+details** opens the full run.
+
+- On a card, finished stages fold into a count ("2 done") and only the next few that are still open are listed, with
+  "+N more" for the rest. The track of the running stage shows the node before as a dot (point at it for the name), and
+  it wraps or shortens its names when the card is narrow.
+- A stage that fails ends the attempt, and the stages after it stay not started.
+- Starting the task again starts every stage over. The panel always shows the latest attempt; earlier runs stay under
+  **History**.
+- Deleting a workflow takes it out of the tasks that played it.
 
 ## Run history
 

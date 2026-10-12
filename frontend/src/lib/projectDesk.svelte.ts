@@ -20,8 +20,17 @@ export class ProjectDesk {
   sheetTaskId = $state<number | null>(null)
   sheetBoardId = $state<number | null>(null)
   sheetStatus = $state<TaskStatus>('backlog')
+  /** the card selected on its own (a plain click): it unfolds. One for the whole page, so two boards never both do. */
+  focusedTaskId = $state<number | null>(null)
+  /** the open panel has changes that are not saved, and how to save them (both reported by the panel) */
+  sheetDirty = $state(false)
+  saveSheet = $state<(() => Promise<boolean>) | null>(null)
+  /** what the person was about to do when unsaved changes stood in the way; the question is open while this is set */
+  leaving = $state<(() => void) | null>(null)
+  leaveSaving = $state(false)
 
-  taskToDelete = $state<Task | null>(null)
+  /** the tasks the "delete?" question is about (one from a card or the panel, several from a selection) */
+  tasksToDelete = $state<Task[]>([])
   deleteError = $state('')
 
   sheetTask = $derived(this.tasks.find((t) => t.id === this.sheetTaskId) ?? null)
@@ -67,17 +76,66 @@ export class ProjectDesk {
     await Promise.all([this.load(), projects.refresh()])
   }
 
+  /** Runs `proceed` now, or after the person has answered the question about the changes that are not saved. */
+  private whenClean(proceed: () => void) {
+    if (this.sheetOpen && this.sheetDirty) this.leaving = proceed
+    else proceed()
+  }
+
   openTask(task: Task) {
-    this.sheetTaskId = task.id
-    this.sheetBoardId = task.board_id
-    this.sheetOpen = true
+    if (this.sheetOpen && this.sheetTaskId === task.id) return
+    this.whenClean(() => {
+      this.sheetTaskId = task.id
+      this.sheetBoardId = task.board_id
+      this.sheetOpen = true
+    })
+  }
+
+  /** `after` runs once the panel is closed, which may be after the question about unsaved changes (or never) */
+  closeTask(after?: () => void) {
+    this.whenClean(() => {
+      this.sheetOpen = false
+      after?.()
+    })
   }
 
   addTask(boardId: number, status: TaskStatus = 'backlog') {
-    this.sheetTaskId = null
-    this.sheetBoardId = boardId
-    this.sheetStatus = status
-    this.sheetOpen = true
+    this.whenClean(() => {
+      this.sheetTaskId = null
+      this.sheetBoardId = boardId
+      this.sheetStatus = status
+      this.sheetOpen = true
+    })
+  }
+
+  /** "Keep editing": the panel stays as it is. */
+  keepEditing() {
+    this.leaving = null
+  }
+
+  /** "Discard": the changes go, and the person gets what they were doing. */
+  discardAndLeave() {
+    const proceed = this.leaving
+    this.leaving = null
+    this.sheetDirty = false
+    proceed?.()
+  }
+
+  /** "Save": saved first; if it cannot be (the form says why) the person stays where they were. */
+  async saveAndLeave() {
+    if (!this.saveSheet || this.leaveSaving) return
+    this.leaveSaving = true
+    try {
+      const saved = await this.saveSheet()
+      const proceed = this.leaving
+      this.leaving = null
+      if (saved) {
+        this.sheetDirty = false
+        proceed?.()
+      }
+    } finally {
+      this.leaveSaving = false
+    }
   }
 
   /** `boardId`: the board the card was dropped on; a different one than the task's sends the task there */
@@ -94,21 +152,46 @@ export class ProjectDesk {
     }
   }
 
-  askDelete(task: Task) {
+  /** Several tasks of one board into a status, at the given positions (the end of its column). Only the ones that
+   *  were not already there should be passed. A task that cannot move (it started running meanwhile) is skipped. */
+  async moveTasks(moves: { task: Task; position: number }[], status: TaskStatus) {
+    const position = new Map(moves.map((m) => [m.task.id, m.position]))
+    this.tasks = this.tasks.map((t) => (position.has(t.id) ? { ...t, status, position: position.get(t.id)! } : t)) // optimistic
+    let failed = 0
+    let reason = ''
+    for (const { task, position: p } of moves) {
+      try {
+        await api.updateTask(task.id, { status, position: p })
+      } catch (e) {
+        failed++
+        reason = e instanceof Error ? e.message : 'Could not move the task'
+      }
+    }
+    await this.load() // the truth: what moved stays, and what could not goes back
+    // after the load, which clears the error of an earlier one
+    if (failed) this.loadError = failed === 1 ? reason : `${failed} of ${moves.length} tasks could not be moved: ${reason}`
+  }
+
+  askDelete(...tasks: Task[]) {
     this.deleteError = ''
-    this.taskToDelete = task
+    this.tasksToDelete = tasks
   }
 
   async confirmDelete() {
-    const task = this.taskToDelete
-    if (!task) return
-    try {
-      await api.deleteTask(task.id)
-      if (this.sheetTaskId === task.id) this.sheetOpen = false
-      this.taskToDelete = null
-      await this.reload()
-    } catch (e) {
-      this.deleteError = e instanceof Error ? e.message : 'Could not delete the task'
+    // one by one, so that a task that cannot go (it started running meanwhile) does not stop the others
+    const failed: Task[] = []
+    let reason = ''
+    for (const task of this.tasksToDelete) {
+      try {
+        await api.deleteTask(task.id)
+        if (this.sheetTaskId === task.id) this.sheetOpen = false
+      } catch (e) {
+        failed.push(task)
+        reason = e instanceof Error ? e.message : 'Could not delete the task'
+      }
     }
+    this.tasksToDelete = failed // what is left is what could not be deleted: the question stays, with the reason
+    this.deleteError = failed.length ? (failed.length === 1 ? reason : `${failed.length} tasks could not be deleted: ${reason}`) : ''
+    await this.reload()
   }
 }

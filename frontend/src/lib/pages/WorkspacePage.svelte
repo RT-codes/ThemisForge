@@ -4,6 +4,7 @@
 	import BoardDialog from '$lib/components/project/BoardDialog.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
+	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import RemoveDialog from '$lib/components/project/RemoveDialog.svelte'
 	import StatusesDialog from '$lib/components/project/StatusesDialog.svelte'
 	import WorkspaceBoard from '$lib/components/project/WorkspaceBoard.svelte'
@@ -39,6 +40,9 @@
 
 	// folded boards are remembered in this browser, per workspace
 	const foldedKey = `themis.workspace.${untrack(() => workspaceId)}.folded`
+	// the project's custom properties: the same dialog as on the board page, reachable from here too
+	let propsOpen = $state(false)
+
 	let folded = $state<number[]>(parseCollapsed(readFolded()))
 	function readFolded() {
 		try {
@@ -129,6 +133,7 @@
 					<DropdownMenu.Content align="end" class="w-48">
 						<DropdownMenu.Item onSelect={() => ((workspaceDialog = 'edit'), (workspaceDialogOpen = true))}>Edit workspace</DropdownMenu.Item>
 						<DropdownMenu.Item onSelect={() => ((workspaceDialog = 'new'), (workspaceDialogOpen = true))}>New workspace</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Custom properties</DropdownMenu.Item>
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (removing = { kind: 'workspace', workspace })}>Delete workspace</DropdownMenu.Item>
 					</DropdownMenu.Content>
@@ -159,6 +164,7 @@
 				onmove={(step) => shift(board, step)}
 				onedit={() => edit(board)}
 				onstatuses={() => openStatuses(board)}
+				onproperties={() => (propsOpen = true)}
 				onduplicate={() => duplicate(board)}
 				onremove={() => (removing = { kind: 'board', board })}
 			/>
@@ -177,6 +183,7 @@
 	</div>
 
 	<DeskDialogs {desk} {workspaces} />
+	<PropertiesDialog bind:open={propsOpen} projectId={id} defs={desk.project.properties} onsaved={() => desk.reload()} />
 	{#if statusesBoard}
 		<StatusesDialog bind:open={statusesOpen} board={allBoards.find((b) => b.id === statusesBoard!.id) ?? statusesBoard} tasks={desk.tasks} onchange={() => desk.reload()} />
 	{/if}

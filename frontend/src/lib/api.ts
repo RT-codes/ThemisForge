@@ -93,6 +93,14 @@ export interface ProjectSummary extends Project {
 
 export type Harness = '' | 'codex' | 'workflow'
 
+/** one workflow a task plays; "pending" until a run of it starts, then the run's own status */
+export interface TaskStage {
+  workflow_id: number
+  workflow_name: string
+  status: 'pending' | RunStatus
+  run_id: number | null
+}
+
 export interface Task {
   id: number
   project_id: number
@@ -111,8 +119,9 @@ export interface Task {
   last_run_at: string | null
   review_on_success: boolean
   harness: Harness
-  workflow_id: number | null
   agent_id: number | null
+  /** the workflows this task plays, in order, each with how far its latest attempt got */
+  stages: TaskStage[]
   /** how many times in a row automation moved or made this task; a person acting on it starts again at 0 */
   hops: number
   /** this task's own automation guard; null follows the project's */
@@ -151,7 +160,8 @@ export interface TaskInput {
   run_at?: string | null
   review_on_success?: boolean
   harness?: Harness
-  workflow_id?: number | null
+  /** the workflows to play in order, when harness is "workflow" */
+  workflow_ids?: number[]
   agent_id?: number | null
   cooldown_seconds?: number | null
   max_hops?: number | null
@@ -579,6 +589,8 @@ export interface WorkflowRunDetail {
   outcome: string
   started_at: string
   finished_at: string | null
+  /** the graph as it was when the run began */
+  graph: Graph
   nodes: NodeRun[]
 }
 

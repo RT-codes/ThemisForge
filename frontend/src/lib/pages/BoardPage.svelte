@@ -117,7 +117,7 @@
 						<DropdownMenu.Item onSelect={duplicate}>Duplicate this board</DropdownMenu.Item>
 						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (removing = { kind: 'board', board })}>Delete this board</DropdownMenu.Item>
 						<DropdownMenu.Separator />
-						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Task properties</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Custom properties</DropdownMenu.Item>
 						<DropdownMenu.Item onSelect={() => (editProjectOpen = true)}>Rename project</DropdownMenu.Item>
 						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteProjectOpen = true)}>
 							Delete project
@@ -167,7 +167,7 @@
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} ondelete={(t) => desk.askDelete(t)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} onstatuschange={boardChanged} />
+				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} focusedId={desk.focusedTaskId} onfocus={(id) => (desk.focusedTaskId = id)} onopen={(t) => desk.openTask(t)} onclosedetails={(then) => desk.closeTask(then)} ondelete={(ts) => desk.askDelete(...ts)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} onmovemany={(moves, status) => desk.moveTasks(moves, status)} onstatuschange={boardChanged} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
 				<TaskList {tasks} {board} {defs} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />

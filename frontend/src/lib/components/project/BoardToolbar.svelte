@@ -16,7 +16,7 @@
 	import SortMenuItems from './SortMenuItems.svelte'
 
 	// The controls for the whole board: search, order and filters. Each status can add its own below its title.
-	let { view, defs, columns, onmanage }: { view: BoardViewStore; defs: PropertyDef[]; columns: ColumnInfo[]; onmanage: () => void } = $props()
+	let { view, defs, columns, onmanage, showStatuses = true }: { view: BoardViewStore; defs: PropertyDef[]; columns: ColumnInfo[]; onmanage: () => void; showStatuses?: boolean } = $props()
 
 	const sorted = $derived(view.board.sort !== 'manual')
 	const filters = $derived(filterCount(view.board.filters))
@@ -76,6 +76,7 @@
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 
+	{#if showStatuses}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
@@ -101,6 +102,7 @@
 			<DropdownMenu.Item onSelect={onmanage}>Add or edit statuses...</DropdownMenu.Item>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
+	{/if}
 
 	{#if anything}
 		<Button variant="ghost" size="sm" class="h-8 text-muted-foreground" onclick={() => view.reset()}>Reset</Button>

@@ -36,8 +36,8 @@ workspace** dialogs.
 On a workspace page, fold a board away with the arrow in its header, use **Move up** or **Move down** from its menu,
 and **Open** it to get its own page with a header and four views of the **same** tasks:
 
-- **Board**: columns by status, with drag and drop.
-- **List**: a table, handy when there are many tasks.
+- **Board**: columns by status, with drag and drop. Search, order and filters apply across the board.
+- **List**: a table, handy when there are many tasks. The same search, order and filters apply here too.
 - **Schedule**: a timeline of what will run in the next 24 hours or 7 days.
 - **History**: what was done on this board: tasks created, moved, sent or deleted, and changes to its statuses.
 

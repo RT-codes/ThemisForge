@@ -219,11 +219,8 @@ class Task(Base):
     cooldown_seconds: Mapped[int | None] = mapped_column(Integer, default=None)
     max_hops: Mapped[int | None] = mapped_column(Integer, default=None)
     # What runs: "" = the placeholder program in a cell, "codex" = Codex in a cell (see app/harness.py),
-    # "workflow" = play the workflow below instead of running a cell.
+    # "workflow" = play the workflows of its TaskStage rows, one after the other, instead of running a cell.
     harness: Mapped[str] = mapped_column(String(20), default="", server_default="")
-    workflow_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflows.id", ondelete="SET NULL"), default=None
-    )
     # The agent that does this task (its instructions, model, cell and folders), see Agent below.
     agent_id: Mapped[int | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), default=None)
     # Extras for this one run, set by a workflow's Agent node: {"profile": {...}, "mounts": [{"volume_id", "mode"}]}.
@@ -235,6 +232,29 @@ class Task(Base):
     project: Mapped[Project] = relationship(back_populates="tasks")
     attempts: Mapped[list["Attempt"]] = relationship(
         back_populates="task", cascade="all, delete-orphan", order_by="Attempt.id.desc()"
+    )
+
+
+class TaskStage(Base):
+    """One workflow a task plays, in order. Its progress is the run it started in the task's latest attempt.
+
+    Read and written through queries (see the task router), not a relationship on Task: tasks are loaded and made in
+    many async places, where an unloaded collection would fail on access.
+
+    There is no status column on purpose: a stage with no run is "not started", otherwise it is whatever its run says,
+    so the two can never disagree. A new attempt clears every `workflow_run_id` (see WorkflowRunner.run_for_task);
+    the runs themselves, and the attempt that started them, stay as the history.
+    """
+
+    __tablename__ = "task_stages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    # deleting a workflow takes it out of the tasks that played it
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), index=True)
+    workflow_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"), default=None
     )
 
 
@@ -251,7 +271,7 @@ class Attempt(Base):
     exit_code: Mapped[int | None] = mapped_column(Integer, default=None)
     log: Mapped[str] = mapped_column(Text, default="")
     result: Mapped[str] = mapped_column(Text, default="")
-    # set when the task played a workflow: the run that did the work
+    # set when the task played workflows: the run of the stage playing now, or of the last one that did
     workflow_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow_runs.id", ondelete="SET NULL"), default=None
     )

@@ -435,10 +435,11 @@ async def test_a_restart_closes_dangling_runs(client, runner, maker):
 # ----- tasks that play a workflow -----
 
 
-async def play_task(client, pid: int, wid: int | None, title: str = "Player", **extra) -> dict:
+async def play_task(client, pid: int, wid: int | list[int] | None, title: str = "Player", **extra) -> dict:
+    ids = wid if isinstance(wid, list) else [wid] if wid is not None else []
     r = await client.post(
         f"/api/projects/{pid}/tasks",
-        json={"title": title, "harness": "workflow", "workflow_id": wid, "status": "ready", **extra},
+        json={"title": title, "harness": "workflow", "workflow_ids": ids, "status": "ready", **extra},
     )
     assert r.status_code == 201, r.text
     return r.json()
@@ -459,20 +460,24 @@ async def test_a_task_validates_the_workflow_it_plays(client, runner):
     wid = await make_workflow(client, pid)
     other = (await make_project(client, "Other"))["id"]
     foreign = await make_workflow(client, other)
-    for wf in (None, foreign, 9999):
+    for wfs in ([], [foreign], [9999], [wid, foreign]):
         r = await client.post(
-            f"/api/projects/{pid}/tasks", json={"title": "x", "harness": "workflow", "workflow_id": wf}
+            f"/api/projects/{pid}/tasks", json={"title": "x", "harness": "workflow", "workflow_ids": wfs}
         )
-        assert r.status_code == 422, wf
+        assert r.status_code == 422, wfs
     task = await play_task(
         client, pid, wid, status="backlog"
     )  # not ready, so nothing starts it while we edit
-    assert task["harness"] == "workflow" and task["workflow_id"] == wid
+    assert task["harness"] == "workflow" and [s["workflow_id"] for s in task["stages"]] == [wid]
     back = await client.patch(f"/api/tasks/{task['id']}", json={"harness": ""})
-    assert back.json()["harness"] == "" and back.json()["workflow_id"] is None  # not playing one any more
-    again = await client.patch(f"/api/tasks/{task['id']}", json={"harness": "workflow", "workflow_id": wid})
-    assert again.json()["workflow_id"] == wid
-    assert (await client.patch(f"/api/tasks/{task['id']}", json={"workflow_id": foreign})).status_code == 422
+    assert back.json()["harness"] == "" and back.json()["stages"] == []  # not playing any more
+    again = await client.patch(
+        f"/api/tasks/{task['id']}", json={"harness": "workflow", "workflow_ids": [wid]}
+    )
+    assert [s["workflow_id"] for s in again.json()["stages"]] == [wid]
+    assert (
+        await client.patch(f"/api/tasks/{task['id']}", json={"workflow_ids": [foreign]})
+    ).status_code == 422
 
 
 async def test_a_task_plays_its_workflow_and_reports_the_run(client, runner, cells):
@@ -550,10 +555,66 @@ async def test_a_task_whose_workflow_was_deleted_fails_clearly(client, runner):
     wid = await make_workflow(client, pid)
     task = await play_task(client, pid, wid, status="backlog")
     await client.delete(f"/api/workflows/{wid}")
-    assert (await client.get(f"/api/tasks/{task['id']}")).json()["workflow_id"] is None
+    assert (await client.get(f"/api/tasks/{task['id']}")).json()["stages"] == []
     await client.post(f"/api/tasks/{task['id']}/run")
     attempt = await attempt_of(client, task["id"])
     assert attempt["status"] == "failed" and "no longer exists" in attempt["log"]
+
+
+async def test_a_task_plays_its_workflows_in_order_and_reports_each_stage(client, runner):
+    _, pid = await setup(client)
+    first, second = await make_workflow(client, pid, "Research"), await make_workflow(client, pid, "Review")
+    for wid in (first, second):
+        await save(client, wid, [node("s", "start"), node("e", "end", note="ok")], [edge("s", "e")])
+    task = await play_task(client, pid, [first, second], status="backlog")
+    assert [(s["workflow_name"], s["status"], s["run_id"]) for s in task["stages"]] == [
+        ("Research", "pending", None),
+        ("Review", "pending", None),
+    ]  # selected, so listed, before anything ran
+    assert (await client.post(f"/api/tasks/{task['id']}/run")).status_code == 200
+    attempt = await attempt_of(client, task["id"])
+    assert (
+        attempt["status"] == "succeeded"
+        and "Stage 1 of 2" in attempt["log"]
+        and "Stage 2 of 2" in attempt["log"]
+    )
+    stages = (await client.get(f"/api/tasks/{task['id']}")).json()["stages"]
+    assert [s["status"] for s in stages] == ["succeeded", "succeeded"]
+    assert len({s["run_id"] for s in stages}) == 2
+    assert attempt["workflow_run_id"] == stages[1]["run_id"]  # the attempt points at the stage that ended it
+
+
+async def test_a_failed_stage_stops_the_ones_after_it(client, runner):
+    _, pid = await setup(client)
+    bad, after = await make_workflow(client, pid, "Bad"), await make_workflow(client, pid, "After")
+    await save(client, bad, [node("s", "start"), node("e", "end", outcome="failed")], [edge("s", "e")])
+    await save(client, after, [node("s", "start")], [])
+    task = await play_task(client, pid, [bad, after])
+    attempt = await attempt_of(client, task["id"])
+    assert attempt["status"] == "failed" and "Stage 2 of 2" not in attempt["log"]
+    stages = (await client.get(f"/api/tasks/{task['id']}")).json()["stages"]
+    assert [s["status"] for s in stages] == ["failed", "pending"]
+
+
+async def test_editing_a_task_keeps_its_stage_runs_unless_the_list_changes(client, runner):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(client, wid, [node("s", "start")], [])
+    task = await play_task(client, pid, [wid])
+    await attempt_of(client, task["id"])
+    same = await client.patch(f"/api/tasks/{task['id']}", json={"title": "Renamed", "workflow_ids": [wid]})
+    assert same.json()["stages"][0]["status"] == "succeeded"
+    longer = await client.patch(f"/api/tasks/{task['id']}", json={"workflow_ids": [wid, wid]})
+    assert [s["status"] for s in longer.json()["stages"]] == ["pending", "pending"]
+
+
+async def test_deleting_a_workflow_takes_it_out_of_the_tasks_that_play_it(client, runner):
+    _, pid = await setup(client)
+    keep, gone = await make_workflow(client, pid, "Keep"), await make_workflow(client, pid, "Gone")
+    task = await play_task(client, pid, [keep, gone], status="backlog")
+    await client.delete(f"/api/workflows/{gone}")
+    stages = (await client.get(f"/api/tasks/{task['id']}")).json()["stages"]
+    assert [s["workflow_id"] for s in stages] == [keep]
 
 
 # ----- triggers: a task moves into a status -----

@@ -85,7 +85,7 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-xl">
 		<Dialog.Header>
-			<Dialog.Title>Task properties</Dialog.Title>
+			<Dialog.Title>Custom properties</Dialog.Title>
 			<Dialog.Description>
 				Custom fields for every task in this project, shown on cards and in the list. Removing a property hides its values.
 			</Dialog.Description>

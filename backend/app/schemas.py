@@ -10,6 +10,8 @@ from .profiles import ProfileOverrides
 from .properties import HEX_COLOR, PropertyDef
 from .scheduling import validate_cron
 
+MAX_STAGES = 20  # workflows one task can play in a row
+
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -323,7 +325,8 @@ class TaskIn(_ScheduleFields):
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
     harness: Literal["", "codex", "workflow"] = ""
-    workflow_id: int | None = None  # the workflow to play when harness is "workflow"
+    # the workflows to play, in order, when harness is "workflow" (each is a stage of the task)
+    workflow_ids: list[int] = Field(default_factory=list, max_length=MAX_STAGES)
     agent_id: int | None = None  # the agent that does it; its harness replaces the one above
     # the automation guard for this task; left out: the project's (see app/automation.py)
     cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)
@@ -379,7 +382,7 @@ class TaskPatch(BaseModel):
     run_at: AwareDatetime | None = None
     review_on_success: bool | None = None
     harness: Literal["", "codex", "workflow"] | None = None
-    workflow_id: int | None = None
+    workflow_ids: list[int] | None = Field(default=None, max_length=MAX_STAGES)
     agent_id: int | None = None
     cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)  # sent as null: the project's
     max_hops: int | None = Field(default=None, ge=1, le=100)
@@ -406,7 +409,7 @@ class TaskSnapshot(BaseModel):
     run_at: datetime | None
     review_on_success: bool
     harness: str
-    workflow_id: int | None
+    workflow_ids: list[int] = Field(default_factory=list)  # set by the router: they live in TaskStage rows
     agent_id: int | None
 
 
@@ -434,6 +437,16 @@ class TaskWorkflowRun(BaseModel):
     step: str  # the node it is working on right now ("" between nodes)
 
 
+class TaskStageOut(BaseModel):
+    """One workflow of a task, and how far its latest attempt got with it."""
+
+    workflow_id: int
+    workflow_name: str
+    # "pending" until a run of this stage starts, then the run's own status
+    status: Literal["pending", "running", "succeeded", "failed", "cancelled"]
+    run_id: int | None
+
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -453,7 +466,6 @@ class TaskOut(BaseModel):
     last_run_at: datetime | None
     review_on_success: bool
     harness: str
-    workflow_id: int | None
     agent_id: int | None
     hops: int  # how many times in a row automation moved or made this task
     cooldown_seconds: int | None
@@ -462,6 +474,7 @@ class TaskOut(BaseModel):
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None
     workflow_run: TaskWorkflowRun | None = None
+    stages: list[TaskStageOut] = Field(default_factory=list)  # filled in by the router, in play order
 
 
 class AttemptOut(BaseModel):

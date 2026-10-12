@@ -98,19 +98,40 @@ its history. The next occurrence still happens.
 
 ## Task options
 
-- **Title and description**: what needs doing. The description is passed to the cell.
-- **Status**: where the task is in its life.
-- **Schedule**: manual, once, or recurring. See [Scheduling](/docs/scheduling).
-- **Ask for review when it succeeds**: one-off tasks end in **Review** instead of **Done**, so a human looks at the
-  result first.
+**Click a card** to select it. A selected card unfolds to show more of the task: its whole description, how it runs, when
+it last ran and how that ended, and every stage. All the other cards stay compact. Click it again, press **Esc** or click
+on empty space to fold it. To open the task's **details panel**, use the **pencil** that appears when you point at a card
+(it is always shown on a selected card and on touch screens), next to the trash. Several cards picked with Ctrl or Shift
+(see [Several tasks at once](#several-tasks-at-once)) do not unfold.
+
+The top of the details panel has **Run now** (or **Cancel run**) on the left, with when the task last ran
+beside it, and **Cancel** and **Save changes** on the right. Under it is a card with the task's **title**, which you
+edit right there (it is saved with **Save changes**, like the rest), and the **trash** icon. Then comes a **taskbar**: the board the task is on, its **status**, and a switch
+between **Details** and **History**. The status is changed right there and takes effect at once, like moving the card
+(a running task has to be cancelled first). Everything else is saved with **Save changes**, and sits on two tabs of
+**Details**:
+
+**General**
+
+- **Description**: what needs doing, in more words. It is passed to the cell.
 - **Run with**: what works on the task. The **placeholder program** prints the task and finishes (good for trying out
   scheduling). A **Codex agent** does the task for real in its own container, using the project owner's
-  [Codex connection](/docs/codex).
-- **Properties**: your own fields, see below.
+  [Codex connection](/docs/codex). One or more **workflows** play in order, each as a stage you can follow in the
+  task's panel (see [Stages on a task](/docs/workflows#stages-on-a-task)).
+- **Custom properties**: your own fields, see below.
+
+**Schedule & automation**
+
+- **Ask for review when it succeeds**: one-off tasks end in **Review** instead of **Done**, so a human looks at the
+  result first.
+- **Schedule**: manual, once, or recurring. See [Scheduling](/docs/scheduling).
+- **Automation guard**: how much workflows may move this task around. See
+  [the automation guard](/docs/workflows#the-automation-guard).
 
 ## Custom properties
 
-Each project defines its own fields. Open the project menu (the three dots) and choose **Task properties**.
+Each project defines its own fields, shared by all of its boards. Choose **Custom properties** in the three-dot menu of
+the board page or the project overview, in the workspace page's menu, or in the menu of any board on a workspace page.
 
 | Type | Use it for |
 | --- | --- |
@@ -131,15 +152,45 @@ Drag a card to another column or to a new place in a column. A few rules keep th
 - A running task cannot be edited or deleted. Press **Cancel run** first.
 - Moving a task to **Ready** makes it eligible to run. For a task with no schedule that means *now*.
 
+### Several tasks at once
+
+Hold **Ctrl** (**Cmd** on a Mac) and click cards to pick several of them, or hold **Shift** and click to pick a run of
+them. A picked card gets a ring and a check mark, and a bar appears above the board with what you can do with them.
+
+- **Shift and click** picks every card between the one you last clicked (or the task that is open) and this one, in the
+  order the column is shown. A run stays **inside one status**: shift and click on a card of another status picks only
+  that card, and starts a new run from there. Shift alone replaces the selection with the run; **Ctrl and Shift** adds
+  the run to it.
+- The card that was selected on its own (or open in the details panel) joins the selection when you pick another one, and
+  the details panel closes, so the two are not side by side.
+
+What the bar does:
+
+- **Move to** sends all of them to a status of this board. They land at the end of its column, in the order they had on
+  the board. **Running** is not offered: only the scheduler starts tasks.
+- **Delete** asks once for all of them. The project's History keeps a note of each task that was deleted.
+- **Clear**, or **Esc**, lets go of the selection.
+
+A running task cannot be moved or deleted, so it cannot be picked; one that starts running while picked drops out of the
+selection. Each board keeps its own selection, so on a workspace page cards of two boards are not mixed.
+
+### Clicking away
+
+Click on empty space (not on a card, a button or the panel) to let go. That clears a selection, folds the card selected on
+its own, and closes the task open in the details panel. If the panel holds changes that are not saved, nothing closes:
+Themis asks whether to **Save** them, **Discard** them or **Keep editing**. The same question comes up when you open
+another task, or start a new one, while the panel has unsaved changes. A new task that you are still writing is not
+closed by clicking away.
+
 ### Between boards
 
-When a project has several boards, work can move from one to another in two ways. Both are in the task's details panel,
-under **On board**:
+When a project has several boards, work can move from one to another in two ways. Both are in the menu on the board name
+in the task's taskbar:
 
-- **Send to...** moves the **same task** to another board. Its history, attempts, schedule and properties go with it.
+- **Send to another board...** moves the **same task** to another board. Its history, attempts, schedule and properties go with it.
   On a workspace page you can also drag a card from one board and drop it on a column of another. It keeps its status
   when the new board has it, and otherwise lands in that board's Backlog. A running task cannot be sent; cancel it first.
-- **Follow-up...** creates a **new task** on another board that is linked to this one, which stays where it is. Use it
+- **Create a follow-up...** creates a **new task** on another board that is linked to this one, which stays where it is. Use it
   when one finished piece of work feeds another, for example approved research that becomes a build task. The details
   panel of each shows what it follows and what followed it, and the card carries a small branch mark.
 
@@ -152,7 +203,7 @@ Open a task to find the actions:
 
 - **Run now**: makes the task Ready and wakes the scheduler. A recurring task still keeps its normal schedule afterwards.
 - **Cancel run**: stops the cell. The attempt is recorded as cancelled.
-- **Delete**: removes the task and its attempts, after you confirm. Use the trash icon that appears when you point at a card on the board, or the one in the task's details panel. Files it wrote to a shared folder are not touched. The history keeps a note of every deleted task, with who deleted it, when, and what it was (description, status and schedule), so you can find it again.
+- **Delete**: removes the task and its attempts, after you confirm. Use the trash icon that appears when you point at a card on the board, or the one in the task's title card. Files it wrote to a shared folder are not touched. The history keeps a note of every deleted task, with who deleted it, when, and what it was (description, status and schedule), so you can find it again.
 
 ## Project history
 

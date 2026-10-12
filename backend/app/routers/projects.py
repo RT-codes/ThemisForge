@@ -2,7 +2,7 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import boards
@@ -19,6 +19,7 @@ from ..models import (
     RunStatus,
     ScheduleKind,
     Task,
+    TaskStage,
     TaskStatus,
     Workflow,
     WorkflowNodeRun,
@@ -40,6 +41,7 @@ from ..schemas import (
     TaskOut,
     TaskPatch,
     TaskSnapshot,
+    TaskStageOut,
     TaskWorkflowRun,
     check_schedule,
 )
@@ -77,12 +79,55 @@ async def _task_out(session: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
         rows = await session.execute(select(Attempt.task_id, Attempt.status).where(Attempt.id.in_(newest)))
         latest = {task_id: AttemptStatus(attempt_status) for task_id, attempt_status in rows}
     running = await _running_workflow_runs(session, [t.id for t in tasks])
+    stages = await _stages_out(session, tasks)
     out = []
     for t in tasks:
         item = TaskOut.model_validate(t)
         item.last_attempt_status = latest.get(t.id)
         item.workflow_run = running.get(t.id)
+        item.stages = stages.get(t.id, [])
         out.append(item)
+    return out
+
+
+async def _stages_out(session: AsyncSession, tasks: list[Task]) -> dict[int, list[TaskStageOut]]:
+    """Each task's stages in play order, with the workflow's name and how far the latest attempt got (three queries
+    for all of the tasks)."""
+    if not tasks:
+        return {}
+    rows = list(
+        await session.scalars(
+            select(TaskStage)
+            .where(TaskStage.task_id.in_([t.id for t in tasks]))
+            .order_by(TaskStage.task_id, TaskStage.position)
+        )
+    )
+    if not rows:
+        return {}
+    names = dict(
+        (
+            await session.execute(
+                select(Workflow.id, Workflow.name).where(Workflow.id.in_({st.workflow_id for st in rows}))
+            )
+        ).all()
+    )
+    run_ids = {st.workflow_run_id for st in rows if st.workflow_run_id}
+    states = {}
+    if run_ids:
+        found = await session.execute(
+            select(WorkflowRun.id, WorkflowRun.status).where(WorkflowRun.id.in_(run_ids))
+        )
+        states = dict(found.all())
+    out: dict[int, list[TaskStageOut]] = {}
+    for st in rows:
+        out.setdefault(st.task_id, []).append(
+            TaskStageOut(
+                workflow_id=st.workflow_id,
+                workflow_name=names.get(st.workflow_id, "Workflow"),
+                status=states.get(st.workflow_run_id, "pending"),
+                run_id=st.workflow_run_id,
+            )
+        )
     return out
 
 
@@ -123,18 +168,35 @@ def _bad(detail: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
 
 
-async def _workflow_for(
-    session: AsyncSession, project_id: int, harness: str, workflow_id: int | None
-) -> int | None:
-    """The workflow a task may play: only when it runs with one, and only one from its own project."""
+async def _workflows_for(
+    session: AsyncSession, project_id: int, harness: str, workflow_ids: list[int]
+) -> list[int]:
+    """The workflows a task may play: only when it runs with them, and only ones from its own project."""
     if harness != "workflow":
-        return None
-    if workflow_id is None:
+        return []
+    if not workflow_ids:
         raise _bad("Choose the workflow this task should play")
-    wf = await session.get(Workflow, workflow_id)
-    if wf is None or wf.project_id != project_id:
-        raise _bad("That workflow does not exist in this project")
-    return workflow_id
+    found = set(
+        await session.scalars(
+            select(Workflow.id).where(Workflow.id.in_(set(workflow_ids)), Workflow.project_id == project_id)
+        )
+    )
+    if missing := set(workflow_ids) - found:
+        raise _bad(f"Workflow {min(missing)} does not exist in this project")
+    return workflow_ids
+
+
+async def _set_stages(session: AsyncSession, task: Task, workflow_ids: list[int]) -> None:
+    """Make the task play exactly these workflows. An unchanged list is left alone, so the stages keep their runs."""
+    current = await session.scalars(
+        select(TaskStage.workflow_id).where(TaskStage.task_id == task.id).order_by(TaskStage.position)
+    )
+    if list(current) == workflow_ids:
+        return
+    await session.execute(delete(TaskStage).where(TaskStage.task_id == task.id))
+    session.add_all(
+        TaskStage(task_id=task.id, position=i, workflow_id=wid) for i, wid in enumerate(workflow_ids)
+    )
 
 
 # projects
@@ -288,14 +350,17 @@ async def create_task(
         harness=body.harness,
         cooldown_seconds=body.cooldown_seconds,
         max_hops=body.max_hops,
-        workflow_id=await _workflow_for(session, project.id, body.harness, body.workflow_id),
     )
+    stages: list[int] = []
     if body.agent_id is not None:
         agent = await _agent_for(session, project.id, body.agent_id)
-        task.agent_id, task.harness, task.workflow_id = agent.id, agent.harness, None
+        task.agent_id, task.harness = agent.id, agent.harness
+    else:
+        stages = await _workflows_for(session, project.id, body.harness, body.workflow_ids)
     refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
     session.add(task)
     await session.flush()
+    await _set_stages(session, task, stages)
     boards.record_new_task(session, task, board, user.name)
     await session.commit()
     if task.status == TaskStatus.READY:
@@ -333,11 +398,19 @@ async def update_task(
             raise _bad(str(e)) from None
     if "review_on_success" in fields and body.review_on_success is not None:
         task.review_on_success = body.review_on_success
-    if fields & {"harness", "workflow_id"}:
+    if fields & {"harness", "workflow_ids"}:
         harness = body.harness if "harness" in fields and body.harness is not None else task.harness
-        wanted = body.workflow_id if "workflow_id" in fields else task.workflow_id
+        wanted = body.workflow_ids
+        if wanted is None:  # only the harness changed: keep the list it has
+            wanted = list(
+                await session.scalars(
+                    select(TaskStage.workflow_id)
+                    .where(TaskStage.task_id == task.id)
+                    .order_by(TaskStage.position)
+                )
+            )
         task.harness = harness
-        task.workflow_id = await _workflow_for(session, project.id, harness, wanted)
+        await _set_stages(session, task, await _workflows_for(session, project.id, harness, wanted))
     if "cooldown_seconds" in fields:  # null puts the project's value back
         task.cooldown_seconds = body.cooldown_seconds
     if "max_hops" in fields:
@@ -348,7 +421,8 @@ async def update_task(
         )
     if task.agent_id is not None:  # an agent decides how its tasks run
         agent = await _agent_for(session, project.id, task.agent_id)
-        task.harness, task.workflow_id = agent.harness, None
+        task.harness = agent.harness
+        await _set_stages(session, task, [])
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:
@@ -388,13 +462,15 @@ async def delete_task(task_id: int, session: SessionDep, user: CurrentUser) -> N
     if task.status == TaskStatus.RUNNING:
         raise HTTPException(status.HTTP_409_CONFLICT, "This task is running. Cancel it first.")
     # the history keeps its own copy, so a deleted task can still be looked at (and put back by hand) afterwards
+    snapshot = TaskSnapshot.model_validate(task)
+    snapshot.workflow_ids = [s.workflow_id for s in (await _stages_out(session, [task])).get(task.id, [])]
     boards.record_task(
         session,
         "task_deleted",
         task,
         user.name,
         await session.get(Board, task.board_id),
-        TaskSnapshot.model_validate(task).model_dump(mode="json"),
+        snapshot.model_dump(mode="json"),
     )
     await session.delete(task)
     await session.commit()

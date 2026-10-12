@@ -33,6 +33,7 @@
 		onmove,
 		onedit,
 		onstatuses,
+		onproperties,
 		onduplicate,
 		onremove,
 	}: {
@@ -49,6 +50,8 @@
 		onmove: (step: -1 | 1) => void
 		onedit: () => void
 		onstatuses: () => void
+		/** the project's custom properties (they are shared by every board, edited from any of them) */
+		onproperties: () => void
 		onduplicate: () => void
 		onremove: () => void
 	} = $props()
@@ -174,6 +177,7 @@
 				<DropdownMenu.Content align="end" class="w-48">
 					<DropdownMenu.Item onSelect={onedit}>Edit board</DropdownMenu.Item>
 					<DropdownMenu.Item onSelect={onstatuses}>Add or edit statuses</DropdownMenu.Item>
+					<DropdownMenu.Item onSelect={onproperties}>Custom properties</DropdownMenu.Item>
 					<DropdownMenu.Item onSelect={onduplicate}>Duplicate</DropdownMenu.Item>
 					<DropdownMenu.Separator />
 					<DropdownMenu.Item disabled={!canMoveUp} onSelect={() => onmove(-1)}>Move up</DropdownMenu.Item>
@@ -199,10 +203,14 @@
 				projectId={desk.projectId}
 				watchers={watchersByStatus(desk.workflows, board)}
 				selectedId={desk.sheetOpen ? desk.sheetTaskId : null}
+				focusedId={desk.focusedTaskId}
+				onfocus={(id) => (desk.focusedTaskId = id)}
 				onopen={(t) => desk.openTask(t)}
-				ondelete={(t) => desk.askDelete(t)}
+				onclosedetails={(then) => desk.closeTask(then)}
+				ondelete={(ts) => desk.askDelete(...ts)}
 				onadd={(status) => desk.addTask(board.id, status)}
 				onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)}
+				onmovemany={(moves, status) => desk.moveTasks(moves, status)}
 				onstatuschange={() => desk.reload()}
 			/>
 		</div>

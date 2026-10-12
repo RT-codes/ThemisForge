@@ -92,7 +92,7 @@
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="w-48">
 						<DropdownMenu.Item onSelect={() => (editOpen = true)}>Edit project</DropdownMenu.Item>
-						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Task properties</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Custom properties</DropdownMenu.Item>
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteOpen = true)}>Delete project</DropdownMenu.Item>
 					</DropdownMenu.Content>

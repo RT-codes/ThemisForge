@@ -84,7 +84,6 @@ class CellSpec:
     writeback: tuple[str, ...] = ()
     owner_id: int = 0  # the user whose connections the cell may use
     harness: str = ""
-    workflow_id: int | None = None  # for harness "workflow": the workflow to play (no cell is started)
     mounts: list[Mount] = field(default_factory=list)  # shared folders, mounted at /workspace/NAME
     skills: list[str] = field(
         default_factory=list

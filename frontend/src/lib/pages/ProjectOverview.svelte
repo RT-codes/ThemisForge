@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type Project, type ScheduledRun } from '$lib/api'
+	import { api, ApiError, type Project, type ScheduledRun, type Task } from '$lib/api'
+	import { attentionTasks } from '$lib/attention'
+	import { destinationLabel, findBoard } from '$lib/boards'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
@@ -28,6 +30,9 @@
 	let runs = $state<ScheduledRun[]>([])
 	let now = $state(Date.now())
 	let loadError = $state('')
+	let tasks = $state<Task[] | null>(null)
+	let attentionError = $state('')
+	let allAttention = $state(false)
 	let workspaceOpen = $state(false)
 	let editOpen = $state(false)
 	let propsOpen = $state(false)
@@ -35,10 +40,20 @@
 	let revision = $state(0)
 	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
+	const attention = $derived(attentionTasks(tasks ?? [], allAttention ? tasks?.length : 5))
+
+	async function loadAttention() {
+		try {
+			tasks = await api.tasks(id)
+			attentionError = ''
+		} catch (e) {
+			attentionError = e instanceof ApiError ? e.message : 'Could not load tasks needing attention'
+		}
+	}
 
 	async function load() {
 		try {
-			const [loaded, upcoming] = await Promise.all([api.project(id), api.schedule(id, 168), structure.refresh(id)])
+			const [loaded, upcoming] = await Promise.all([api.project(id), api.schedule(id, 168), structure.refresh(id), loadAttention()])
 			project = loaded
 			runs = upcoming
 			revision++
@@ -116,6 +131,43 @@
 				{/each}
 			</div>
 		</div>
+
+		<section class="mt-4 rounded-xl border bg-card p-5" aria-labelledby="attention-title">
+			<div class="flex items-center justify-between gap-3">
+				<div>
+					<h3 id="attention-title" class="text-base font-semibold tracking-tight">Needs attention{attentionError || tasks === null ? '' : ` (${attention.total})`}</h3>
+					<p class="text-xs text-muted-foreground">Review results and check failures across all boards.</p>
+				</div>
+				{#if !attentionError && attention.total > 5}
+					<Button variant="ghost" size="sm" onclick={() => (allAttention = !allAttention)}>{allAttention ? 'Show less' : 'Show everything'}</Button>
+				{/if}
+			</div>
+			{#if attentionError}
+				<p class="mt-3 text-sm text-destructive" role="alert">Could not refresh tasks needing attention: {attentionError}. Retrying automatically.</p>
+			{:else if tasks === null}
+				<p class="mt-3 text-sm text-muted-foreground">Loading tasks needing attention...</p>
+			{:else if attention.total === 0}
+				<p class="mt-3 text-sm text-muted-foreground">No tasks need attention.</p>
+			{:else}
+				<ul class="mt-3 divide-y border-t">
+					{#each attention.items as { task, reason } (task.id)}
+						{@const board = findBoard(workspaces, task.board_id)}
+						<li>
+							<a href="/projects/{id}/boards/{task.board_id}" class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md px-2 py-3 text-sm transition-colors hover:bg-accent/50">
+								<div class="min-w-0 flex-1">
+									<p class="truncate font-medium" title={task.title}>{task.title}</p>
+									<p class="truncate text-xs text-muted-foreground">{board ? destinationLabel(workspaces, board) : 'Open board'}</p>
+								</div>
+								<span class={reason === 'Last run failed' ? 'text-destructive' : 'text-muted-foreground'}>{reason}</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+				{#if attention.items.length < attention.total}
+					<p class="mt-2 text-xs text-muted-foreground">Showing {attention.items.length} of {attention.total} tasks.</p>
+				{/if}
+			{/if}
+		</section>
 
 		<WorkspaceCards projectId={id} {workspaces} />
 

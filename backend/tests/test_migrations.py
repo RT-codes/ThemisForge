@@ -83,7 +83,8 @@ async def test_the_workflow_library_migration_keeps_existing_workflows_and_runs(
     assert con.execute("SELECT count(*) FROM workflow_node_runs").fetchone() == (1,)
     # recreating tables must not have cascaded into the rows that point at them
     assert con.execute("SELECT id, log, result FROM attempts").fetchall() == [(4, "the log", "the result")]
-    assert con.execute("SELECT id, workflow_id FROM tasks").fetchall() == [(3, None)]
+    assert con.execute("SELECT id FROM tasks").fetchall() == [(3,)]  # and it has no stages
+    assert con.execute("SELECT count(*) FROM task_stages").fetchone() == (0,)
     con.execute(
         "INSERT INTO workflows (project_id, name, description, graph, created_at, updated_at) VALUES (1, 'Second', '', '{}', '2026-03-01 00:00:00', '2026-03-01 00:00:00')"
     )
@@ -279,4 +280,40 @@ async def test_every_task_moves_onto_the_board_its_project_gets(tmp_path):
         (2, boards[2], "ready"),
     ]
     assert "backlog" in con.execute("SELECT columns FROM boards").fetchone()[0]
+    con.close()
+
+
+async def test_the_workflow_a_task_played_becomes_its_only_stage(tmp_path):
+    path = tmp_path / "stages.db"
+    url = f"sqlite+aiosqlite:///{path}"
+    await asyncio.to_thread(_alembic, url, "upgrade", "0021")
+    con = sqlite3.connect(path)
+    con.execute("PRAGMA foreign_keys=ON")
+    con.executescript(
+        """
+        INSERT INTO users (id, email, name, password_hash, is_admin, created_at) VALUES (1, 'a@b.co', 'Ada', 'x', 1, '2026-01-01 00:00:00');
+        INSERT INTO projects (id, owner_id, name, description, properties, created_at) VALUES (1, 1, 'P', '', '[]', '2026-01-01 00:00:00');
+        INSERT INTO workspaces (id, project_id, name, purpose, description, position, created_at) VALUES (1, 1, 'Main', '', '', 0, '2026-01-01 00:00:00');
+        INSERT INTO boards (id, project_id, workspace_id, name, purpose, position, columns, created_at) VALUES (1, 1, 1, 'Board', '', 0, '[]', '2026-01-01 00:00:00');
+        INSERT INTO workflows (id, project_id, name, description, graph, created_at, updated_at) VALUES (5, 1, 'Flow', '', '{}', '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        INSERT INTO tasks (id, project_id, board_id, title, description, status, position, properties, schedule_kind, review_on_success, harness, workflow_id, created_at, updated_at)
+            VALUES (1, 1, 1, 'Plays', '', 'ready', 1, '{}', 'none', 0, 'workflow', 5, '2026-01-01 00:00:00', '2026-01-01 00:00:00'),
+                   (2, 1, 1, 'Plain', '', 'ready', 2, '{}', 'none', 0, '', NULL, '2026-01-01 00:00:00', '2026-01-01 00:00:00');
+        """
+    )
+    con.commit()
+    con.close()
+
+    await upgrade_database(url)
+
+    con = sqlite3.connect(path)
+    assert con.execute(
+        "SELECT task_id, position, workflow_id, workflow_run_id FROM task_stages"
+    ).fetchall() == [(1, 0, 5, None)]
+    assert "workflow_id" not in {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
+    con.close()
+
+    await asyncio.to_thread(_alembic, url, "downgrade", "0021")  # the first stage goes back into the column
+    con = sqlite3.connect(path)
+    assert con.execute("SELECT id, workflow_id FROM tasks ORDER BY id").fetchall() == [(1, 5), (2, None)]
     con.close()

@@ -1,7 +1,7 @@
 """A project's workflow (the graph drawn in the editor) and the history of its runs."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -105,6 +105,7 @@ class RunDetail(BaseModel):
     outcome: str
     started_at: datetime
     finished_at: datetime | None
+    graph: dict[str, Any]  # as it was when the run began, so a viewer can tell what comes after a node
     nodes: list[NodeRunOut]
 
 
@@ -115,7 +116,8 @@ def _runner(request: Request) -> WorkflowRunner:
 def _detail(run: WorkflowRun) -> RunDetail:
     return RunDetail(
         id=run.id, project_id=run.project_id, workflow_id=run.workflow_id, status=run.status, trigger=run.trigger, outcome=run.outcome,
-        started_at=run.started_at, finished_at=run.finished_at, nodes=[NodeRunOut.model_validate(n) for n in run.nodes],
+        started_at=run.started_at, finished_at=run.finished_at, graph=run.graph,
+        nodes=[NodeRunOut.model_validate(n) for n in run.nodes],
     )  # fmt: skip
 
 

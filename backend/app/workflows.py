@@ -38,6 +38,7 @@ from .models import (
     Project,
     RunStatus,
     Task,
+    TaskStage,
     TaskStatus,
     Workflow,
     WorkflowNodeRun,
@@ -494,13 +495,42 @@ class WorkflowRunner:
         await asyncio.gather(task, return_exceptions=True)
         return True
 
-    async def run_for_task(
-        self, project_id: int, task_id: int, workflow_id: int | None, attempt_id: int, write
-    ) -> tuple[bool, str]:
-        """Play a task's workflow for one attempt of that task. Progress goes into the attempt's log as it happens.
-        Returns whether the run succeeded, and what it concluded."""
+    async def run_for_task(self, project_id: int, task_id: int, attempt_id: int, write) -> tuple[bool, str]:
+        """Play a task's workflows (its stages) one after the other for one attempt of that task. Progress goes into the
+        attempt's log as it happens. A stage that fails ends the attempt and the stages after it stay not started.
+        Returns whether every stage succeeded, and what the last one that ran concluded."""
         async with self.maker() as s:
-            wf = await s.get(Workflow, workflow_id) if workflow_id else None
+            plan = [
+                (st.id, st.workflow_id)
+                for st in await s.scalars(
+                    select(TaskStage).where(TaskStage.task_id == task_id).order_by(TaskStage.position)
+                )
+            ]
+            # what a task's stages show is always its latest attempt, so this one starts them all over
+            await s.execute(
+                update(TaskStage).where(TaskStage.task_id == task_id).values(workflow_run_id=None)
+            )
+            await s.commit()
+        if not plan:
+            await write(
+                "[Cell error] The workflow this task plays no longer exists. Pick another one in the task.\n"
+            )
+            return False, ""
+        ok, result = True, ""
+        for i, (stage_id, workflow_id) in enumerate(plan, start=1):
+            if len(plan) > 1:
+                await write(f"Stage {i} of {len(plan)}\n")
+            ok, result = await self._play_stage(project_id, task_id, workflow_id, stage_id, attempt_id, write)
+            if not ok:
+                break
+        return ok, result
+
+    async def _play_stage(
+        self, project_id: int, task_id: int, workflow_id: int, stage_id: int, attempt_id: int, write
+    ) -> tuple[bool, str]:
+        """Play one stage's workflow and wait for its run to end."""
+        async with self.maker() as s:
+            wf = await s.get(Workflow, workflow_id)
             if wf is None or wf.project_id != project_id:
                 await write(
                     "[Cell error] The workflow this task plays no longer exists. Pick another one in the task.\n"
@@ -526,6 +556,7 @@ class WorkflowRunner:
             return False, ""
         async with self.maker() as s:
             await s.execute(update(Attempt).where(Attempt.id == attempt_id).values(workflow_run_id=run_id))
+            await s.execute(update(TaskStage).where(TaskStage.id == stage_id).values(workflow_run_id=run_id))
             await s.commit()
         await write(f'Playing the workflow "{wf.name}" (run #{run_id})\n')
         seen: dict[int, str] = {}

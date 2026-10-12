@@ -514,7 +514,6 @@ class Scheduler:
             properties=task.properties,
             owner_id=project.owner_id,
             harness=agent.harness if agent else task.harness,
-            workflow_id=task.workflow_id,
             image=profile.image,
             script=hp.script if hp else None,
             writeback=hp.writeback if hp else (),
@@ -617,9 +616,7 @@ class Scheduler:
             return await self.cells.run(spec, sink)
         if self.workflows is None:
             raise CellError("Workflows are not available")
-        ok, result = await self.workflows.run_for_task(
-            spec.project_id, spec.task_id, spec.workflow_id, attempt_id, sink
-        )
+        ok, result = await self.workflows.run_for_task(spec.project_id, spec.task_id, attempt_id, sink)
         return CellResult(exit_code=0 if ok else 1, result=result)
 
     async def _finish(

@@ -4,14 +4,16 @@
 	import { chipStyle } from '$lib/colors'
 	import { dateTime, relative } from '$lib/format'
 	import { describeSchedule } from '$lib/recurrence'
+	import { applyView, type BoardView } from '$lib/boardView'
 	import { cn } from '$lib/utils'
 
-	let { tasks, board, defs, now, selectedId = null, onopen }: { tasks: Task[]; board: Board; defs: PropertyDef[]; now: number; selectedId?: number | null; onopen: (task: Task) => void } = $props()
+	let { tasks, board, defs, view, now, selectedId = null, onopen }: { tasks: Task[]; board: Board; defs: PropertyDef[]; view: BoardView; now: number; selectedId?: number | null; onopen: (task: Task) => void } = $props()
 
 	const order = ['running', 'ready', 'review', 'backlog', 'blocked', 'failed', 'done']
 	// a custom status is a parking column like Backlog, so its tasks are listed with the backlog
 	const rank = (status: string) => (order.includes(status) ? order.indexOf(status) : order.indexOf('backlog') + 0.5)
-	const sorted = $derived([...tasks].sort((a, b) => rank(a.status) - rank(b.status) || a.position - b.position))
+	const statuses = $derived([...new Set(tasks.map((t) => t.status))].sort((a, b) => rank(a) - rank(b)))
+	const shown = $derived(statuses.flatMap((status) => applyView(tasks.filter((t) => t.status === status), view).shown))
 
 	function schedule(t: Task) {
 		if (t.schedule_kind === 'cron') return describeSchedule(t.cron)
@@ -22,6 +24,8 @@
 
 {#if tasks.length === 0}
 	<p class="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground">No tasks yet.</p>
+{:else if shown.length === 0}
+	<p class="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground">No tasks match these search and filter settings.</p>
 {:else}
 	<div class="overflow-x-auto rounded-xl border bg-card/40">
 		<table class="w-full min-w-[40rem] text-sm">
@@ -38,7 +42,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each sorted as t (t.id)}
+				{#each shown as t (t.id)}
 					<tr class={cn('cursor-pointer border-b last:border-0 hover:bg-accent/40', t.id === selectedId && 'bg-primary/10 hover:bg-primary/10')} onclick={() => onopen(t)}>
 						<td class="max-w-72 truncate px-4 py-2.5 font-medium">
 							<button type="button" class="truncate text-start" onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>

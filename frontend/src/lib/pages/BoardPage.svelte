@@ -161,16 +161,16 @@
 					<Tabs.Trigger value="schedule">Schedule</Tabs.Trigger>
 					<Tabs.Trigger value="history">History</Tabs.Trigger>
 				</Tabs.List>
-				<!-- search, order and filters for the whole board; each status adds its own under its title -->
-				{#if tab === 'board'}
-					<div class="ms-auto"><BoardToolbar {view} {defs} {columns} onmanage={() => (statusesOpen = true)} /></div>
+				<!-- search, order and filters apply to both task views; status visibility only affects the board layout -->
+				{#if tab === 'board' || tab === 'list'}
+					<div class="ms-auto"><BoardToolbar {view} {defs} {columns} showStatuses={tab === 'board'} onmanage={() => (statusesOpen = true)} /></div>
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
 				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} focusedId={desk.focusedTaskId} onfocus={(id) => (desk.focusedTaskId = id)} onopen={(t) => desk.openTask(t)} onclosedetails={(then) => desk.closeTask(then)} ondelete={(ts) => desk.askDelete(...ts)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} onmovemany={(moves, status) => desk.moveTasks(moves, status)} onstatuschange={boardChanged} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
-				<TaskList {tasks} {board} {defs} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />
+				<TaskList {tasks} {board} {defs} view={view.board} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />
 			</Tabs.Content>
 			<Tabs.Content value="schedule">
 				<ScheduleTimeline projectId={id} now={desk.now} timezone={desk.system?.timezone ?? 'UTC'} revision={desk.revision} />

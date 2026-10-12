@@ -74,6 +74,7 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: plain Codex']) },
     { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent']), when: { key: 'agentId', oneOf: [''] } },
     { key: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'What should the agent do?' },
+    { key: 'brief', label: "Task goal", type: 'select', options: opts(['', "Tell this step the task's goal"], ['off', "Don't tell it"]), hint: "Adds the task's title and description (for example \"Improve Themis\") to this step's instructions. Keep it on for steps that research or build. Turn it off for housekeeping steps, like syncing or publishing, so they do not try to do the whole task themselves." },
     { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue works in the folder of the step before this one (or of the stage before this workflow), and is told what that step changed. Without anything before it, the agent gets a fresh folder.' },
     { key: 'onFailure', label: 'If it fails', type: 'select', options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on'])},
     { key: 'cellCpus', label: 'CPUs', type: 'text', advanced: true, placeholder: 'From the agent or project' },

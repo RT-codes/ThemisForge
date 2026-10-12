@@ -799,8 +799,12 @@ class WorkflowRunner:
         instructions = c.get("instructions", "").strip()
         if not instructions:
             raise NodeError("This agent has no instructions. Open the node and tell it what to do.")
-        async with self.maker() as s:
-            brief = await self._brief(s, ctx)
+        # a step opts out of the brief when the task's focus is not its business: a step that only does housekeeping
+        # (syncing a clone, publishing) would otherwise take the focus as its own job and go and do the whole task
+        brief = ""
+        if c.get("brief") != "off":
+            async with self.maker() as s:
+                brief = await self._brief(s, ctx)
         # the order is the method (the node), the focus (the task), then what the step before it produced
         if brief:
             instructions += f"\n\n{brief}"

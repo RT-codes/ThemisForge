@@ -78,3 +78,20 @@ async def test_a_test_run_has_no_task_so_nothing_is_added(client, runner, cells,
     assert "stage of the task" not in prompt_of(cells, "Solo") and "started by the task" not in prompt_of(
         cells, "Solo"
     )
+
+
+async def test_a_step_can_opt_out_of_the_brief(client, runner, cells, maker):
+    me, pid = await setup(client)
+    await connect(maker, me["id"])
+    wid = await make_workflow(client, pid, "Flow")
+    await save(
+        client,
+        wid,
+        [node("s", "start"), agent("a", "Sync", brief="off"), agent("b", "Build"), node("e", "end")],
+        [edge("s", "a"), edge("a", "b"), edge("b", "e")],
+    )
+    task = await play_task(client, pid, wid, title="Improve it", description="Focus on the village.")
+    assert (await attempt_of(client, task["id"]))["status"] == "succeeded"
+    assert "Focus on the village." not in prompt_of(cells, "Sync")  # housekeeping stays housekeeping
+    assert "This is a stage" not in prompt_of(cells, "Sync")
+    assert "Focus on the village." in prompt_of(cells, "Build")  # the other steps are unaffected

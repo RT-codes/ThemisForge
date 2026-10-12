@@ -120,6 +120,9 @@ the step before it, as "This is a stage of the task ...". So the same workflow c
 ticket, and the workflow's instructions can stay general ("improve the game toward the task's focus").
 
 - A task with no description still tells its agents its title.
+- A step that only does housekeeping (syncing a clone, publishing a change) should not take the task's focus as its own
+  job. Set its **Task goal** to **Don't tell it** and it is given nothing from the task. The default is **Tell this
+  step the task's goal**, so a step that thinks about the work needs nothing set.
 - A test run from the editor has no task, so nothing is added.
 - Under each stage in the task's panel, **Step instructions** shows what its agents are told (the workflow's instructions
   as they are now, and who does each). **Edit step** opens the workflow editor with that node selected and its panel open.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type NodeKind } from './workflow.ts'
+import { agentSteps, seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type Graph, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -20,7 +20,7 @@ test('fields appear only when they apply', () => {
   assert.deepEqual(keys('trigger', { type: 'schedule' }), ['type', 'repeat', 'time'])
   assert.deepEqual(keys('task', { action: 'run' }), ['action', 'title'])
   assert.deepEqual(keys('trigger', { type: 'task_status' }), ['type', 'status', 'where'])
-  assert.deepEqual(keys('task', { action: 'create' }), ['action', 'title', 'description', 'status', 'boardId', 'link'])
+  assert.deepEqual(keys('task', { action: 'create' }), ['action', 'title', 'description', 'status', 'boardId', 'link', 'workdir'])
   assert.deepEqual(keys('task', { action: 'move_trigger' }), ['action', 'status', 'boardId'])
   assert.deepEqual(keys('condition', { operator: 'empty' }), ['source', 'operator'])
 })
@@ -191,4 +191,22 @@ test('a trigger that watches one board or workspace only counts on that board', 
   ]
   assert.deepEqual(watchersByStatus(flows, board).done, [{ id: 1, name: 'Anywhere' }, { id: 2, name: 'Here' }])
   assert.equal(watchersByStatus(flows).done?.length, 3) // without a board, everything counts
+})
+
+test('a graph says which steps the agents are given and who does them', () => {
+  const graph = {
+    nodes: [
+      { id: 'n1', kind: 'start', label: 'Start', config: {}, position: { x: 0, y: 0 } },
+      { id: 'n2', kind: 'agent', label: 'Research', config: { agentId: '6', instructions: '  Look around.  ' }, position: { x: 0, y: 0 } },
+      { id: 'n3', kind: 'agent', label: ' ', config: { agentId: '', instructions: '' }, position: { x: 0, y: 0 } },
+      { id: 'n4', kind: 'agent', label: 'Gone', config: { agentId: '99', instructions: 'x' }, position: { x: 0, y: 0 } },
+      { id: 'n5', kind: 'task', label: 'Not an agent', config: {}, position: { x: 0, y: 0 } },
+    ],
+    edges: [],
+  } as Graph
+  assert.deepEqual(agentSteps(graph, [{ id: 6, name: 'Dev' }]), [
+    { nodeId: 'n2', label: 'Research', agent: 'Dev', instructions: 'Look around.' },
+    { nodeId: 'n3', label: 'Agent', agent: 'Plain Codex', instructions: '' },
+    { nodeId: 'n4', label: 'Gone', agent: 'Plain Codex', instructions: 'x' },
+  ])
 })

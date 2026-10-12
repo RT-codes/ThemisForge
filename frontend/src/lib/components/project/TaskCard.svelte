@@ -10,6 +10,7 @@
 	import ClockIcon from '@lucide/svelte/icons/clock'
 	import GitBranchIcon from '@lucide/svelte/icons/git-branch'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
+	import OctagonXIcon from '@lucide/svelte/icons/octagon-x'
 	import PencilIcon from '@lucide/svelte/icons/pencil'
 	import RepeatIcon from '@lucide/svelte/icons/repeat'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
@@ -28,6 +29,7 @@
 		onedit,
 		onpick,
 		ondelete,
+		onstop,
 		...rest
 	}: {
 		task: Task
@@ -47,6 +49,8 @@
 		/** ctrl, cmd or shift and click: the event says which (add or take out one, or a range) */
 		onpick: (e: MouseEvent | KeyboardEvent) => void
 		ondelete: () => void
+		/** the stop button of a running task (not shown when this is not given) */
+		onstop?: () => void
 		[key: string]: unknown
 	} = $props()
 
@@ -117,6 +121,20 @@
 		{/if}
 		{#if running}
 			<LoaderCircleIcon class="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
+			{#if onstop}
+				<!-- always in view while running: it is the way out of a task that loops, so it never hides behind hover -->
+				<button
+					type="button"
+					draggable="false"
+					class="-m-1 shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
+					aria-label="Stop task"
+					title="Stop this task"
+					onclick={(e) => (e.stopPropagation(), onstop())}
+					onkeydown={(e) => e.stopPropagation()}
+				>
+					<OctagonXIcon class="size-3.5" />
+				</button>
+			{/if}
 		{:else if task.last_attempt_status === 'failed' && task.status !== 'failed'}
 			<span title="The last attempt failed"><CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" /></span>
 		{/if}
@@ -164,8 +182,11 @@
 		<p class={cn('mt-1 text-xs text-muted-foreground', expanded ? 'whitespace-pre-wrap break-words' : 'line-clamp-2')}>{task.description}</p>
 	{/if}
 
-	{#if chips.length || showHarness}
+	{#if chips.length || showHarness || task.internal}
 		<div class="mt-2 flex flex-wrap gap-1">
+			{#if task.internal}
+				<span class="inline-flex items-center gap-1 rounded-md border border-dashed px-1.5 py-0.5 text-xs text-muted-foreground" title="Made by a workflow's Agent node to run its step">Workflow step</span>
+			{/if}
 			{#if task.harness === 'workflow'}
 				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary"><WorkflowIcon class="size-3" />Workflow</span>
 			{:else if task.harness === 'codex'}

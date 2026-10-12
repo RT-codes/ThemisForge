@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
-from ..models import NodeStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
+from ..models import NodeStatus, Project, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
 from ..workflows import Graph, WorkflowRunner
 from .projects import _project, _task
 
@@ -260,6 +260,8 @@ async def start_run(workflow_id: int, request: Request, session: SessionDep, use
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "Add a Start node first: a run begins at the Start nodes."
         )
+    if (project := await session.get(Project, wf.project_id)) and project.halted_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This project is halted. Resume it first.")
     run_id = await _runner(request).start(wf.project_id, wf.id, graph)
     await session.commit()  # end this read transaction so the next query sees the run the engine just wrote
     return _detail(await _run(session, run_id, user))

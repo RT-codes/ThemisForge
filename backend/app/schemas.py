@@ -161,6 +161,7 @@ class ProjectOut(BaseModel):
     properties: list[PropertyDef]
     cell_profile: dict[str, Any] | None
     automation: dict[str, Any] | None
+    halted_at: datetime | None  # set while nothing in the project may start (see app/halt.py)
     created_at: datetime
 
 
@@ -279,6 +280,7 @@ class BoardOut(BaseModel):
     position: float
     columns: list[ColumnOut]
     task_counts: dict[str, int]  # tasks per status key, for summaries
+    halted_at: datetime | None  # set while nothing on the board may start
     created_at: datetime
 
 
@@ -467,6 +469,7 @@ class TaskOut(BaseModel):
     review_on_success: bool
     harness: str
     agent_id: int | None
+    internal: bool  # the step of a workflow's Agent node: shown on a board only when asked for
     hops: int  # how many times in a row automation moved or made this task
     cooldown_seconds: int | None
     max_hops: int | None
@@ -491,6 +494,10 @@ class AttemptOut(BaseModel):
 
 class AttemptDetail(AttemptOut):
     workflow_id: int | None = None  # the workflow behind workflow_run_id, so the UI can link to the run
+    workdir_id: int | None = (
+        None  # the attempt whose working folder this one used (its own id unless continued)
+    )
+    changes: dict | None = None  # what the cell added, changed and removed there, see Attempt.changes
     log: str
     result: str
 

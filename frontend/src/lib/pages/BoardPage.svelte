@@ -24,6 +24,9 @@
 	import { structure } from '$lib/structure.svelte'
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import PlusIcon from '@lucide/svelte/icons/plus'
+	import HaltBanner from '$lib/components/project/HaltBanner.svelte'
+	import HaltControl from '$lib/components/project/HaltControl.svelte'
+	import StepsToggle from '$lib/components/project/StepsToggle.svelte'
 	import { onMount, untrack } from 'svelte'
 	import { fade } from 'svelte/transition'
 
@@ -102,6 +105,9 @@
 				{#if board.purpose}<p class="mt-0.5 truncate text-sm text-muted-foreground">{board.purpose}</p>{/if}
 			</div>
 			<div class="flex items-center gap-2">
+				<StepsToggle {desk} />
+				<HaltControl scope="board" id={board.id} name={board.name} haltedAt={board.halted_at} running={tasks.filter((t) => t.status === 'running').length} onchange={() => desk.reload()} />
+				<HaltControl scope="project" id={id} name={desk.project?.name ?? ''} haltedAt={desk.project?.halted_at ?? null} running={desk.tasks.filter((t) => t.status === 'running').length} onchange={() => desk.reload()} />
 				<Button onclick={() => desk.addTask(board.id)}><PlusIcon /> New task</Button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -126,6 +132,12 @@
 				</DropdownMenu.Root>
 			</div>
 		</div>
+
+		{#if desk.project?.halted_at}
+			<HaltBanner scope="project" name={desk.project.name} />
+		{:else if board.halted_at}
+			<HaltBanner scope="board" name={board.name} />
+		{/if}
 
 		<div class="flex flex-wrap items-center gap-2 text-xs">
 			<span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1">
@@ -167,7 +179,7 @@
 				{/if}
 			</div>
 			<Tabs.Content value="board" class="min-h-0 flex-1">
-				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} focusedId={desk.focusedTaskId} onfocus={(id) => (desk.focusedTaskId = id)} onopen={(t) => desk.openTask(t)} onclosedetails={(then) => desk.closeTask(then)} ondelete={(ts) => desk.askDelete(...ts)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} onmovemany={(moves, status) => desk.moveTasks(moves, status)} onstatuschange={boardChanged} />
+				<Board {tasks} boardId={board.id} {columns} {defs} now={desk.now} {view} projectId={id} watchers={watchersByStatus(desk.workflows, board)} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} focusedId={desk.focusedTaskId} onfocus={(id) => (desk.focusedTaskId = id)} onopen={(t) => desk.openTask(t)} onclosedetails={(then) => desk.closeTask(then)} ondelete={(ts) => desk.askDelete(...ts)} onstop={(t) => desk.stopTask(t)} onadd={(status) => desk.addTask(board.id, status)} onmove={(t, status, position, to) => desk.moveTask(t, status, position, to)} onmovemany={(moves, status) => desk.moveTasks(moves, status)} onstatuschange={boardChanged} />
 			</Tabs.Content>
 			<Tabs.Content value="list">
 				<TaskList {tasks} {board} {defs} view={view.board} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />

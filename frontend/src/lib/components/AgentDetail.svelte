@@ -53,7 +53,7 @@
 	const toneText = (s: McpServer) => (s.config_error ? 'Its file has a problem' : s.last_test === null ? 'Not tried yet' : `Tried ${relative(s.last_test.at)}: ${s.last_test.ok ? 'worked' : 'failed'}`)
 </script>
 
-<div class="grid gap-3">
+<div class="grid grid-cols-[minmax(0,1fr)] gap-3">
 	<section class="rounded-lg border bg-card p-4">
 		<div class="flex flex-wrap items-start gap-3">
 			<span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary"><BotIcon class="size-5" /></span>
@@ -71,7 +71,7 @@
 				<Button size="sm" onclick={onedit}><PencilIcon /> Edit</Button>
 			</div>
 		</div>
-		{#if agent.description}<p class="mt-3 text-sm whitespace-pre-line text-muted-foreground">{agent.description}</p>{/if}
+		{#if agent.description}<p class="mt-3 text-sm break-words whitespace-pre-line text-muted-foreground">{agent.description}</p>{/if}
 		{#if agent.config_error}
 			<p class="mt-4 flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-300" role="alert">
 				<AlertTriangleIcon class="mt-0.5 size-4 shrink-0" />

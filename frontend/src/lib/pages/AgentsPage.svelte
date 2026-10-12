@@ -91,7 +91,7 @@
 		<div class="mt-4 grid flex-1 gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
 			<!-- the column of agents: the button that makes one is at its top, where the list begins -->
 			<!-- same panel as the one beside it: it starts level with it (under the tabs row) and is as tall as it -->
-			<nav aria-label="Agents" class="grid content-start gap-1 rounded-xl border bg-background/40 p-2.5 lg:mt-10">
+			<nav aria-label="Agents" class="grid grid-cols-[minmax(0,1fr)] content-start gap-1 rounded-xl border bg-background/40 p-2.5 lg:mt-10">
 				<Button size="sm" class="w-full" disabled={isNew} onclick={() => router.navigate(`/projects/${projectId}/agents/new`)}><PlusIcon /> New agent</Button>
 				<div class="my-1.5 border-t"></div>
 				{#each agents as a (a.id)}

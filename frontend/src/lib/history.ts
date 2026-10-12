@@ -7,7 +7,7 @@ export type HistoryScope = { workspaceId?: number; boardId?: number; taskId?: nu
 
 export const KIND_GROUPS = [
   { id: 'all', label: 'Everything', kinds: [] as string[] },
-  { id: 'tasks', label: 'Tasks', kinds: ['task_created', 'task_status', 'task_moved', 'task_spawned', 'task_deleted', 'automation_stopped'] },
+  { id: 'tasks', label: 'Tasks', kinds: ['task_created', 'task_status', 'task_moved', 'task_spawned', 'task_deleted', 'automation_stopped', 'halted', 'resumed'] },
   {
     id: 'structure',
     label: 'Boards and statuses',
@@ -38,7 +38,9 @@ export function describeEvent(e: ProjectEvent): string {
   const d = e.data
   switch (e.kind) {
     case 'task_created':
-      return `Created the task "${e.title}" on ${name(d.to)}`
+      return d.copy_of
+        ? `Duplicated the task "${d.copy_of}" as "${e.title}" on ${name(d.to)}`
+        : `Created the task "${e.title}" on ${name(d.to)}`
     case 'task_status': {
       const from = place(d.from).status
       const to = place(d.to).status
@@ -56,6 +58,12 @@ export function describeEvent(e: ProjectEvent): string {
     }
     case 'automation_stopped':
       return `Stopped automation on the task "${e.title}": ${typeof d.reason === 'string' ? d.reason.replace(/^Stopped to keep automation from looping: /, '') : 'a loop'}`
+    case 'halted': {
+      const stopped = typeof d.stopped === 'number' && d.stopped > 0 ? `, stopping ${d.stopped} running ${d.stopped === 1 ? 'task' : 'tasks'}` : ''
+      return `Halted the ${d.scope === 'board' ? 'board' : 'project'} "${e.title}"${stopped}`
+    }
+    case 'resumed':
+      return `Resumed the ${d.scope === 'board' ? 'board' : 'project'} "${e.title}"`
     case 'workspace_created':
       return `Created the workspace "${e.title}"`
     case 'workspace_renamed':

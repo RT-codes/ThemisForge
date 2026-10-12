@@ -15,6 +15,8 @@ test('task events say where the task went', () => {
   assert.equal(describeEvent(event('task_moved', 'Ship', { from: { board: 'Dev' }, to: { board: 'QA' } })), 'Sent the task "Ship" from Dev to QA')
   assert.equal(describeEvent(event('task_status', 'Ship', { from: { status: 'ready' }, to: { status: 'review' } })), 'Moved the task "Ship" from Ready to Review')
   assert.equal(describeEvent(event('task_spawned', 'Build', { origin: { title: 'Research' }, to: { board: 'Dev' } })), 'Created the task "Build" on Dev as a follow-up of "Research"')
+  assert.equal(describeEvent(event('task_created', 'Copy of Ship', { copy_of: 'Ship', to: { board: 'Dev' } })), 'Duplicated the task "Ship" as "Copy of Ship" on Dev')
+  assert.equal(describeEvent(event('task_created', 'Ship', { to: { board: 'Dev' } })), 'Created the task "Ship" on Dev')
   assert.equal(describeEvent(event('task_deleted', 'Old', { status: 'review' })), 'Deleted the task "Old" (was in Review)')
 })
 
@@ -31,4 +33,11 @@ test('a kind this version does not know still shows its title', () => assert.equ
 test('a stopped loop says why, without the long beginning', () => {
   const e = event('automation_stopped', 'Ship', { reason: 'Stopped to keep automation from looping: it was moved 10 times.' })
   assert.equal(describeEvent(e), 'Stopped automation on the task "Ship": it was moved 10 times.')
+})
+
+test('a halt says what it covered and what it stopped', () => {
+  assert.equal(describeEvent(event('halted', 'Little Lives', { scope: 'project', stopped: 2 })), 'Halted the project "Little Lives", stopping 2 running tasks')
+  assert.equal(describeEvent(event('halted', 'QA', { scope: 'board', stopped: 0 })), 'Halted the board "QA"')
+  assert.equal(describeEvent(event('halted', 'QA', { scope: 'board', stopped: 1 })), 'Halted the board "QA", stopping 1 running task')
+  assert.equal(describeEvent(event('resumed', 'QA', { scope: 'board' })), 'Resumed the board "QA"')
 })

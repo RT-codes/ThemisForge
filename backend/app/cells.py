@@ -4,7 +4,8 @@ CellManager is the only boundary around Docker. Everything else (scheduler, API)
 interface, so Docker can later be swapped for Podman, a remote machine or another sandbox.
 
 The cell contract (what runs inside a cell, whatever the harness):
-  /workspace          this attempt's private working folder (read/write, removed after a retention period)
+  /workspace          the working folder (read/write, removed after a retention period). Private to this attempt
+                      unless the run asked to continue in the folder of an earlier step (see CellSpec.workdir_id)
   /workspace/NAME     a shared folder (volume) mounted inside it, read/write or read-only (see app/volumes.py)
   /cell/input.json    the task, written before the cell starts
   /cell/result.md     optional: the cell writes its result here; it is stored with the attempt
@@ -49,6 +50,11 @@ class CellError(Exception):
     """The cell could not run (Docker unavailable, image missing, timeout...)."""
 
 
+def workdir_path(project_id: int, workdir_id: int) -> Path:
+    """A working folder on the host. Named by numbers only, so nothing a person types can reach another folder."""
+    return settings.data_dir / "projects" / str(project_id) / "workspaces" / str(workdir_id)
+
+
 @dataclass(frozen=True)
 class Mount:
     """A volume as the cell sees it: the folder on the host, mounted at /workspace/NAME."""
@@ -85,6 +91,9 @@ class CellSpec:
     owner_id: int = 0  # the user whose connections the cell may use
     harness: str = ""
     mounts: list[Mount] = field(default_factory=list)  # shared folders, mounted at /workspace/NAME
+    # The attempt whose working folder this one uses: its own id, or an earlier attempt's when the run continues in
+    # that folder (0 = its own, for specs built without the scheduler)
+    workdir_id: int = 0
     skills: list[str] = field(
         default_factory=list
     )  # the agent's skills, copied in and mounted read only (app/skills.py)
@@ -100,7 +109,7 @@ class CellSpec:
 
     @property
     def workspace_dir(self) -> Path:
-        return settings.data_dir / "projects" / str(self.project_id) / "workspaces" / str(self.attempt_id)
+        return workdir_path(self.project_id, self.workdir_id or self.attempt_id)
 
     @property
     def skills_dir(self) -> Path:
@@ -153,6 +162,47 @@ def prepare_dirs(spec: CellSpec) -> None:
         encoding="utf-8",
         newline="\n",
     )
+
+
+# What a cell is not blamed for: mountpoints of shared folders and skills, and trees nobody wants listed
+_UNTRACKED_DIRS = {".agents", ".git", "node_modules"}
+_MAX_TRACKED = 20_000  # a runaway tree must not make the start or end of a cell slow
+_MAX_REPORTED = 100  # per kind, what is kept of a run's changes
+
+
+def snapshot_workdir(spec: CellSpec) -> dict[str, tuple[int, int]]:
+    """Every file in the working folder as {relative path: (size, mtime in ns)}, for telling what a cell changed.
+    Blocking (a directory walk): call it from a thread."""
+    root = spec.workspace_dir
+    skip = _UNTRACKED_DIRS | {m.name for m in spec.mounts}
+    out: dict[str, tuple[int, int]] = {}
+    for base, dirs, files in os.walk(root):
+        top = base == str(root)
+        dirs[:] = [d for d in dirs if d not in _UNTRACKED_DIRS and not (top and d in skip)]
+        for name in files:
+            if len(out) >= _MAX_TRACKED:
+                return out
+            path = Path(base, name)
+            try:
+                st = path.lstat()
+            except OSError:
+                continue
+            out[path.relative_to(root).as_posix()] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def changes_between(before: dict[str, tuple[int, int]], after: dict[str, tuple[int, int]]) -> dict:
+    """What a cell added, changed and removed, longest lists cut to _MAX_REPORTED (`more` counts what was left out)."""
+    added = sorted(p for p in after if p not in before)
+    changed = sorted(p for p in after if p in before and after[p] != before[p])
+    removed = sorted(p for p in before if p not in after)
+    more = sum(max(0, len(x) - _MAX_REPORTED) for x in (added, changed, removed))
+    return {
+        "added": added[:_MAX_REPORTED],
+        "changed": changed[:_MAX_REPORTED],
+        "removed": removed[:_MAX_REPORTED],
+        "more": more,
+    }
 
 
 def secrets_archive(files: dict[str, str], uid: int = 0, gid: int = 0) -> bytes:
@@ -238,6 +288,8 @@ class FakeCellManager:
         self.specs: list[CellSpec] = []  # every cell started, for tests
         self.writeback: dict[str, str] = {}  # what a cell "prints" on exit, for tests
         self.log_text = ""  # extra output a cell "prints", for tests
+        # what a cell "writes" into /workspace, for tests: task title -> {relative path: content}
+        self.files: dict[str, dict[str, str]] = {}
 
     async def run(self, spec: CellSpec, on_log: LogSink) -> CellResult:
         self.specs.append(spec)
@@ -246,6 +298,10 @@ class FakeCellManager:
             await on_log(self.log_text)
         await on_log(f"[fake cell] started for task {spec.task_id}: {spec.title}\n")
         await asyncio.sleep(self.duration * (0.5 + random.random()))
+        for rel, content in self.files.get(spec.title, {}).items():
+            target = spec.workspace_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
         if "fail" in spec.title.lower():
             await on_log("[fake cell] simulated failure\n")
             return CellResult(exit_code=1)

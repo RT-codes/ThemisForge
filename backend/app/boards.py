@@ -249,11 +249,12 @@ async def columns_for(session: AsyncSession, boards: list[Board]) -> dict[int, l
 
 
 async def task_counts(session: AsyncSession, boards: list[Board]) -> dict[int, dict[str, int]]:
-    """How many tasks each board has per status (a status without tasks is left out)."""
+    """How many tasks each board has per status (a status without tasks is left out). Workflow steps are not board
+    work, so they are not counted."""
     counts: dict[int, dict[str, int]] = {b.id: {} for b in boards}
     rows = await session.execute(
         select(Task.board_id, Task.status, func.count())
-        .where(Task.board_id.in_([b.id for b in boards]))
+        .where(Task.board_id.in_([b.id for b in boards]), Task.internal.is_(False))
         .group_by(Task.board_id, Task.status)
     )
     for board_id, status, n in rows:

@@ -1,5 +1,6 @@
 import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type WorkflowSummary } from './api'
 import { projects } from './projects.svelte'
+import { router } from './router.svelte'
 import { structure } from './structure.svelte'
 
 /** Everything a page that works on a project's tasks needs: the project, its tasks, the open task panel, moving and
@@ -35,7 +36,28 @@ export class ProjectDesk {
 
   sheetTask = $derived(this.tasks.find((t) => t.id === this.sheetTaskId) ?? null)
 
-  constructor(readonly projectId: number) {}
+  /** Also list the tasks workflow steps made (Agent nodes). Off by default; remembered for this project in this browser. */
+  showSteps = $state(false)
+
+  constructor(readonly projectId: number) {
+    try {
+      this.showSteps = localStorage.getItem(`themis.steps.${projectId}`) === '1'
+    } catch {
+      // no storage: steps stay hidden
+    }
+  }
+
+  setShowSteps(on: boolean) {
+    this.showSteps = on
+    try {
+      localStorage.setItem(`themis.steps.${this.projectId}`, on ? '1' : '0')
+    } catch {
+      // remembering is a convenience
+    }
+    // a step open in the panel would turn into a blank "new task" once it is no longer listed
+    if (!on && this.sheetTask?.internal) this.closeTask()
+    this.refreshTasks().then(() => this.revision++)
+  }
 
   /** Load now and keep the tasks, workflows and scheduler status fresh. Returns what stops it (for onMount). */
   start(): () => void {
@@ -43,6 +65,9 @@ export class ProjectDesk {
     const poll = setInterval(() => {
       if (document.hidden) return
       this.refreshTasks()
+      // a halt may have been made (or lifted) from another tab or by the API: the banners follow it
+      api.project(this.projectId).then((p) => (this.project = p)).catch(() => {})
+      structure.refresh(this.projectId).catch(() => {})
       api.workflows(this.projectId).then((w) => (this.workflows = w)).catch(() => {})
       api.systemStatus().then((s) => (this.system = s)).catch(() => {})
     }, 3000)
@@ -51,7 +76,7 @@ export class ProjectDesk {
   }
 
   private refreshTasks() {
-    return api.tasks(this.projectId).then((t) => (this.tasks = t)).catch(() => {})
+    return api.tasks(this.projectId, this.showSteps).then((t) => (this.tasks = t)).catch(() => {})
   }
 
   async load() {
@@ -59,7 +84,7 @@ export class ProjectDesk {
       const [project, , tasks, workflows, system] = await Promise.all([
         api.project(this.projectId),
         structure.refresh(this.projectId),
-        api.tasks(this.projectId),
+        api.tasks(this.projectId, this.showSteps),
         api.workflows(this.projectId),
         api.systemStatus(),
       ])
@@ -106,6 +131,30 @@ export class ProjectDesk {
       this.sheetStatus = status
       this.sheetOpen = true
     })
+  }
+
+  /** Stops one running task: its agent is cancelled, and it ends as any cancelled task does (see the docs). */
+  async stopTask(task: Task) {
+    try {
+      await api.cancelTask(task.id)
+    } catch {
+      // it finished (or was stopped) in the meantime: the reload below shows where it is
+    }
+    await this.reload()
+  }
+
+  /** Copies a task into the Backlog of its board and opens the copy. Throws when it could not be made. */
+  async duplicateTask(task: Task) {
+    const copy = await api.duplicateTask(task.id)
+    await this.reload() // the copy has to be among the tasks before its panel can show it
+    this.openTask(copy)
+  }
+
+  /** Goes to a workflow's editor, and to one of its nodes when `nodeId` is given. The panel closes first, which asks
+   * about changes that are not saved. */
+  openWorkflow(workflowId: number, nodeId?: string) {
+    const at = nodeId ? `#node=${encodeURIComponent(nodeId)}` : ''
+    this.closeTask(() => router.navigate(`/projects/${this.projectId}/workflows/${workflowId}${at}`))
   }
 
   /** "Keep editing": the panel stays as it is. */

@@ -3,27 +3,46 @@
 import asyncio
 import contextlib
 import logging
+import os
 import shutil
 import time
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .app_settings import AppSettings, load_settings
 from .automation import cooled_down
 from .budget import Cost, admit, never_fits
-from .cells import CellError, CellManager, CellResult, CellSpec, Mount
+from .cells import (
+    CellError,
+    CellManager,
+    CellResult,
+    CellSpec,
+    Mount,
+    changes_between,
+    snapshot_workdir,
+    workdir_path,
+)
 from .codex import CodexError, lease_codex, lease_is_busy
 from .config import settings
 from .connections import ConnectionProblem, RunConnection, plan_for_run, secret_values
 from .crypto import decrypt
-from .harness import CODEX_AUTH, HarnessPlan, agent_preamble, build_prompt, plan_for, renderer_for
+from .harness import (
+    CODEX_AUTH,
+    EarlierStep,
+    HarnessPlan,
+    agent_preamble,
+    build_prompt,
+    plan_for,
+    renderer_for,
+    workdir_note,
+)
 from .keys import Redactor, key_path, unique_env_names
 from .mcp import CONFIG_PATH, McpSpec, config_toml
-from .models import Agent, Attempt, AttemptStatus, McpServer, Project, Secret, Task, TaskStatus, utcnow
+from .models import Agent, Attempt, AttemptStatus, Board, McpServer, Project, Secret, Task, TaskStatus, utcnow
 from .profiles import Profile, resolve_profile
 from .project_config import sync_project
 from .scheduling import finish_task
@@ -33,6 +52,7 @@ from .volumes import MountError, plan_mounts
 log = logging.getLogger("themis.scheduler")
 
 MAX_LOG_CHARS = 200_000
+LOG_HEAD_CHARS = 20_000  # kept for good: how the run began (the prompt, the first commands)
 LOG_FLUSH_SECONDS = 1.0
 PRUNE_EVERY_SECONDS = 3600
 MAX_PLAYING = 8  # tasks playing a workflow at the same time
@@ -69,6 +89,10 @@ class _Plan:
         default_factory=dict
     )  # plain settings the connections give the cell
     connection_notes: list[str] = field(default_factory=list)  # what they tell the agent
+    # The earlier attempt whose working folder this run continues in (None = a fresh folder of its own), and what the
+    # agent is told about that folder (or about why it could not be continued)
+    workdir_id: int | None = None
+    workdir_note: str = ""
 
     @property
     def cost(self) -> Cost:
@@ -84,28 +108,44 @@ class _LogBuffer:
 
     def __init__(self, maker: async_sessionmaker[AsyncSession], attempt_id: int) -> None:
         self.maker, self.attempt_id = maker, attempt_id
-        self.text = ""
-        self._flushed_len = 0
+        # A run's log is its beginning plus its most recent output, never "the first N characters": a log that stops
+        # at a limit is blind for the rest of a long run, which is exactly when someone is watching it.
+        self._head = ""
+        self._tail = ""
+        self._dropped = 0  # characters between the head and the tail that were not kept
+        self._changed = False
         self._last_flush = 0.0
 
+    @property
+    def text(self) -> str:
+        if not self._dropped:
+            return self._head + self._tail
+        note = f"\n[... {self._dropped:,} characters from the middle of this log were not kept ...]\n"
+        return self._head + note + self._tail
+
     async def write(self, chunk: str) -> None:
-        if len(self.text) < MAX_LOG_CHARS:
-            self.text += chunk
-            if len(self.text) >= MAX_LOG_CHARS:
-                self.text = self.text[:MAX_LOG_CHARS] + "\n[log truncated]\n"
+        if chunk:
+            if not self._tail and len(self._head) < LOG_HEAD_CHARS:
+                room = LOG_HEAD_CHARS - len(self._head)
+                self._head, chunk = self._head + chunk[:room], chunk[room:]
+            self._tail += chunk
+            if (over := len(self._tail) - (MAX_LOG_CHARS - LOG_HEAD_CHARS)) > 0:
+                self._tail, self._dropped = self._tail[over:], self._dropped + over
+            self._changed = True
         if time.monotonic() - self._last_flush >= LOG_FLUSH_SECONDS:
             await self.flush()
 
     async def flush(self) -> None:
         self._last_flush = time.monotonic()
-        if len(self.text) == self._flushed_len:
+        if not self._changed:
             return
+        self._changed = False
+        text = self.text
         async with self.maker() as s:
             attempt = await s.get(Attempt, self.attempt_id)
             if attempt is not None:
-                attempt.log = self.text
+                attempt.log = text
                 await s.commit()
-        self._flushed_len = len(self.text)
 
 
 class Scheduler:
@@ -228,8 +268,13 @@ class Scheduler:
             ready = (
                 Task.status == TaskStatus.READY,
                 (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
-                # cooldown: updated_at moves whenever the task changes status, including when a run ends
-                cooled_down(cfg, int(now.timestamp())),
+                # cooldown: updated_at moves whenever the task changes status, including when a run ends. A workflow
+                # step is exempt: its workflow is already waiting for it and made it exactly once
+                Task.internal.is_(True) | cooled_down(cfg, int(now.timestamp())),
+                # a halt (see app/halt.py): a halted project holds everything, a halted board its own tasks; the steps
+                # of workflows (internal) only follow the project, since the board they sit on says nothing of them
+                Project.halted_at.is_(None),
+                Task.internal.is_(True) | Board.halted_at.is_(None),
             )
             order = (Task.next_run_at.asc().nulls_first(), Task.id)
             budget = cfg.budget.as_cost()
@@ -241,6 +286,7 @@ class Scheduler:
                     await s.scalars(
                         select(Task)
                         .join(Project, Project.id == Task.project_id)
+                        .join(Board, Board.id == Task.board_id)
                         .where(*ready, Task.harness != "workflow")
                         .order_by(*order)
                         .limit(MAX_WAITING)
@@ -252,6 +298,7 @@ class Scheduler:
                     await s.scalars(
                         select(Task)
                         .join(Project, Project.id == Task.project_id)
+                        .join(Board, Board.id == Task.board_id)
                         .where(*ready, Task.harness == "workflow")
                         .order_by(*order)
                         .limit(MAX_PLAYING - playing)
@@ -297,10 +344,14 @@ class Scheduler:
                 attempt = Attempt(task_id=task.id, started_at=now)
                 s.add(attempt)
                 await s.flush()
+                spec = self._spec(attempt.id, plan, cfg)
+                # a task that plays workflows runs no cell: its attempt takes the folder its stages end in instead
+                if spec.harness != "workflow":
+                    attempt.workdir_id = spec.workdir_id
                 task.status = TaskStatus.RUNNING
                 task.next_run_at = None
                 task.last_run_at = now
-                started.append((attempt.id, self._spec(attempt.id, plan, cfg), plan.locks))
+                started.append((attempt.id, spec, plan.locks))
             await s.commit()
         for attempt_id, spec, locks in started:
             live = _Live(
@@ -389,7 +440,46 @@ class Scheduler:
                 plan.mounts = await plan_mounts(s, project.id, refs, cfg)
             except MountError as e:
                 plan.error = str(e)
+            if wanted := extra.get("workdir"):
+                plan.workdir_id, plan.workdir_note = await Scheduler._continued_workdir(
+                    s, project.id, int(wanted), plan.mounts
+                )
         return plan
+
+    @staticmethod
+    async def _continued_workdir(
+        s: AsyncSession, project_id: int, wanted: int, mounts: list[Mount]
+    ) -> tuple[int | None, str]:
+        """The working folder of an earlier attempt that this run was asked to continue in, and the note that tells
+        the agent what is in it. Only a folder of this project that is still on disk can be continued; otherwise the
+        run starts fresh and says so, rather than failing a job over files that were pruned."""
+        rows = (
+            await s.execute(
+                select(Attempt, Task.title)
+                .join(Task, Task.id == Attempt.task_id)
+                .where(
+                    Task.project_id == project_id,
+                    Task.harness != "workflow",  # a task that plays workflows ran no cell of its own
+                    Attempt.status != AttemptStatus.RUNNING,
+                    or_(Attempt.id == wanted, Attempt.workdir_id == wanted),
+                )
+                .order_by(Attempt.id)
+            )
+        ).all()
+        folder = workdir_path(project_id, wanted)
+        if not rows or not folder.is_dir():
+            return None, (
+                "The working folder of the earlier steps of this job is gone (working folders are removed after a "
+                "retention period), so /workspace starts empty."
+            )
+        skip = {m.name for m in mounts} | {".agents"}
+
+        def top_level() -> list[str]:
+            names = sorted(n for n in os.listdir(folder) if n not in skip)
+            return [n + "/" if (folder / n).is_dir() else n for n in names[:40]]
+
+        steps = [EarlierStep(title, a.status, a.changes, a.result) for a, title in rows]
+        return wanted, workdir_note(steps, await asyncio.to_thread(top_level))
 
     @staticmethod
     async def _capabilities(
@@ -465,31 +555,36 @@ class Scheduler:
         finish_task(plan.task, AttemptStatus.FAILED, cfg.timezone, now)
 
     async def prune_workspaces(self) -> int:
-        """Remove the private working folders of attempts that finished more than the retention period ago,
-        and those whose attempt no longer exists. Returns how many folders were removed."""
+        """Remove the working folders that nothing has used for the retention period, and those that no attempt
+        refers to any more. A folder that later steps continued in lives as long as the last of them. Returns how many
+        folders were removed."""
         folders = [d for d in (settings.data_dir / "projects").glob("*/workspaces/*") if d.name.isdigit()]
         if not folders:
             return 0
+        ids = [int(d.name) for d in folders]
         async with self.maker() as s:
             cfg = await load_settings(s)
-            attempts = {
-                a.id: a
-                for a in (
-                    await s.scalars(select(Attempt).where(Attempt.id.in_([int(d.name) for d in folders])))
-                ).all()
-            }
+            # a folder is named by the attempt that made it; attempts that continued in it say so in workdir_id
+            users = (
+                await s.execute(
+                    select(Attempt.id, Attempt.workdir_id, Attempt.status, Attempt.finished_at).where(
+                        or_(Attempt.id.in_(ids), Attempt.workdir_id.in_(ids))
+                    )
+                )
+            ).all()
         cutoff = utcnow() - timedelta(days=cfg.keep_workspaces_days)
-        stale = []
-        for d in folders:
-            a = attempts.get(int(d.name))
-            if a is None or (
-                a.status != AttemptStatus.RUNNING and a.finished_at is not None and a.finished_at <= cutoff
-            ):
-                stale.append(d)
+        busy: set[int] = (
+            set()
+        )  # in use, or used recently enough; a folder no attempt names is not in here at all
+        for attempt_id, workdir_id, status, finished_at in users:
+            folder = workdir_id or attempt_id
+            if status == AttemptStatus.RUNNING or finished_at is None or finished_at > cutoff:
+                busy.add(folder)
+        stale = [d for d in folders if int(d.name) not in busy]
         for d in stale:
             await asyncio.to_thread(shutil.rmtree, d, True)
         if stale:
-            log.info("removed %d old attempt workspace(s)", len(stale))
+            log.info("removed %d old working folder(s)", len(stale))
         return len(stale)
 
     @staticmethod
@@ -503,7 +598,8 @@ class Scheduler:
                 task.properties,
                 preamble=agent_preamble(agent.name, agent.role, agent.instructions) if agent else "",
                 folders=[(m.name, m.read_only) for m in plan.mounts],
-                notes=plan.connection_notes,
+                notes=[*([plan.workdir_note] if plan.workdir_note else []), *plan.connection_notes],
+                continuing=plan.workdir_id is not None,
             )
         return CellSpec(
             attempt_id=attempt_id,
@@ -523,6 +619,7 @@ class Scheduler:
             timeout_seconds=profile.timeout_seconds,
             docker_host=cfg.docker_host,
             mounts=plan.mounts,
+            workdir_id=plan.workdir_id or attempt_id,
             skills=plan.skills,
             keys=plan.keys,
             mcp=plan.mcp,
@@ -535,6 +632,7 @@ class Scheduler:
     async def _execute(self, attempt_id: int, spec: CellSpec, tz: str) -> None:
         buf = _LogBuffer(self.maker, attempt_id)
         outcome, exit_code, result = AttemptStatus.FAILED, None, ""
+        before: dict[str, tuple[int, int]] | None = None  # the working folder as the cell found it
         redact = Redactor(
             []
         )  # replaces the values of the keys this run was given, in everything that is stored
@@ -565,6 +663,8 @@ class Scheduler:
                     elif text := renderer.feed(chunk):
                         await buf.write(redact(text))
 
+                if spec.harness != "workflow":
+                    before = await asyncio.to_thread(snapshot_workdir, spec)
                 res = await self._play_or_run(spec, attempt_id, sink)
                 if renderer is not None and (tail := renderer.flush()):
                     await buf.write(redact(tail))
@@ -591,7 +691,10 @@ class Scheduler:
         except Exception as e:
             log.exception("attempt %s crashed", attempt_id)
             await buf.write(f"\n[Unexpected error] {e}\n")
-        await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz)
+        changes = None
+        if before is not None:  # a failed or cancelled run may have left files too: the next step should know
+            changes = changes_between(before, await asyncio.to_thread(snapshot_workdir, spec))
+        await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes)
 
     async def _key_values(self, spec: CellSpec) -> dict[int, str]:
         """The readable values of the keys this run uses, by id."""
@@ -628,6 +731,7 @@ class Scheduler:
         exit_code: int | None,
         result: str,
         tz: str,
+        changes: dict | None = None,
     ) -> None:
         async with self.maker() as s:
             attempt = await s.get(Attempt, attempt_id)
@@ -639,11 +743,37 @@ class Scheduler:
                 attempt.exit_code = exit_code
                 attempt.log = buf.text
                 attempt.result = result
+                attempt.changes = changes
             if task is not None and task.status == TaskStatus.RUNNING:
                 finish_task(task, outcome, tz, now)
             await s.commit()
 
     # cancelling
+
+    async def stop_running(self, project_id: int, board_id: int | None = None) -> int:
+        """Cancel everything that is running in a project, or on one of its boards (a halt, see app/halt.py). Returns
+        how many tasks were stopped. Each ends as a cancelled task does: a one-off goes to Blocked, a recurring one
+        goes back to waiting for its next time."""
+        async with self.maker() as s:
+            query = (
+                select(Attempt.id, Task.internal)
+                .join(Task, Task.id == Attempt.task_id)
+                .where(Task.project_id == project_id, Attempt.status == AttemptStatus.RUNNING)
+            )
+            if board_id is not None:
+                query = query.where(Task.board_id == board_id, Task.internal.is_(False))
+            rows = (await s.execute(query)).all()
+        stopped = 0
+        # what plays workflows goes first: cancelling it ends its run, which stops the cells of the steps under it
+        for attempt_id in (a for a, internal in rows if not internal):
+            stopped += await self.cancel(attempt_id)
+        if self.workflows is not None:
+            # runs that no task of the scope is playing (a manual run, one a moved task started)
+            await self.workflows.cancel_runs(project_id, board_id)
+        if board_id is None:
+            for attempt_id in (a for a, internal in rows if internal):
+                stopped += await self.cancel(attempt_id)
+        return stopped
 
     async def cancel(self, attempt_id: int) -> bool:
         live = self._live.get(attempt_id)

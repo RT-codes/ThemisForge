@@ -27,7 +27,7 @@ from sqlalchemy import event, func, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload
 
-from . import automation, boards
+from . import automation, boards, halt
 from .app_settings import load_settings
 from .models import (
     Agent,
@@ -153,6 +153,9 @@ class Prev:
     label: str
     status: str
     result: str
+    # The working folder (an attempt id, see Attempt.workdir_id) the run is in after that node. Steps that do not work
+    # in a folder (a condition, an end) hand on the one they were given, so a later step can still continue in it.
+    workdir_id: int | None = None
 
 
 @dataclass
@@ -162,6 +165,7 @@ class Outcome:
     log: str = ""
     error: str = ""
     branch: str | None = None  # a Condition's answer, "yes" or "no"
+    workdir_id: int | None = None  # the working folder the node's cell used, when it ran one
 
 
 def _covers(where: str, board: Board) -> bool:
@@ -174,12 +178,29 @@ def _covers(where: str, board: Board) -> bool:
     return True
 
 
+async def task_workdir(s: AsyncSession, task: Task) -> int | None:
+    """The working folder a task worked in last (its latest attempt's), or the one it was made to continue in. A
+    workflow started by the task begins there, so steps that ask to continue pick up its files."""
+    latest = await s.scalar(
+        select(Attempt.workdir_id)
+        .where(Attempt.task_id == task.id, Attempt.workdir_id.is_not(None))
+        .order_by(Attempt.id.desc())
+        .limit(1)
+    )
+    return latest or (task.run_options or {}).get("workdir") or None
+
+
 @dataclass
 class _Ctx:
     run_id: int
     project_id: int
     graph: Graph
     trigger_task_id: int | None = None  # the task whose move into a status started this run
+    # the task this run is a stage of: it is the brief for the run (what to focus on), see `_brief`
+    stage_task_id: int | None = None
+    # the working folder the run starts in (from the stage before it, or the task that started it): the first step
+    # that asks to continue works there. Every step otherwise gets a fresh folder.
+    workdir_id: int | None = None
 
 
 class _Step:
@@ -361,8 +382,12 @@ class WorkflowRunner:
         parent_run_id: int | None = None,
         trigger_task_id: int | None = None,
         starts: list[str] | None = None,
+        workdir_id: int | None = None,
+        stage_task_id: int | None = None,
     ) -> int:
-        """`starts` limits the run to those start/trigger nodes (a status trigger must not also fire the others)."""
+        """`starts` limits the run to those start/trigger nodes (a status trigger must not also fire the others).
+        `workdir_id` is the working folder the run begins in, for steps that ask to continue in it. `stage_task_id`
+        is the task this run is a stage of, whose title and description its agents are given."""
         async with self.maker() as s:
             await self._check_chain(s, workflow_id, parent_run_id)
             run = WorkflowRun(
@@ -371,13 +396,16 @@ class WorkflowRunner:
                 parent_run_id=parent_run_id,
                 trigger=trigger,
                 trigger_task_id=trigger_task_id,
+                workdir_id=workdir_id,
                 graph=graph.model_dump(),
             )
             s.add(run)
             await s.commit()
             run_id = run.id
         task = asyncio.create_task(
-            self._run(_Ctx(run_id, project_id, graph, trigger_task_id), graph, starts),
+            self._run(
+                _Ctx(run_id, project_id, graph, trigger_task_id, stage_task_id, workdir_id), graph, starts
+            ),
             name=f"workflow-run-{run_id}",
         )
         self._live[run_id] = task
@@ -421,8 +449,10 @@ class WorkflowRunner:
                 async with self.maker() as s:
                     cfg = await load_settings(s)
                     task = await s.get(Task, task_id)
-                    if task is None or await self._belongs_to_agent_node(s, task_id):
+                    if task is None or task.internal:
                         continue  # gone, or the task an Agent node made for itself: part of that workflow, not board work
+                    if await halt.why_held(s, task):
+                        continue  # the project or the board is halted: nothing starts until it is resumed
                     board = await s.get_one(Board, task.board_id)
                     cooldown = automation.start_cooldown(cfg, await s.get(Project, project_id), task)
                     workflows = (
@@ -441,21 +471,12 @@ class WorkflowRunner:
                                 trigger="status",
                                 trigger_task_id=task_id,
                                 starts=starts,
+                                workdir_id=await task_workdir(s, task),
                             )
                         except LoopError:
                             log.warning("workflow %s not started by task %s: it would loop", wf.id, task_id)
         except Exception:
             log.exception("starting workflows for moved tasks failed")
-
-    @staticmethod
-    async def _belongs_to_agent_node(s: AsyncSession, task_id: int) -> bool:
-        return bool(
-            await s.scalar(
-                select(WorkflowNodeRun.id)
-                .where(WorkflowNodeRun.task_id == task_id, WorkflowNodeRun.kind == "agent")
-                .limit(1)
-            )
-        )
 
     @staticmethod
     async def _recently_started(s: AsyncSession, workflow_id: int, task_id: int, cooldown: int) -> bool:
@@ -468,6 +489,19 @@ class WorkflowRunner:
         return latest is not None and (
             latest.status == RunStatus.RUNNING or (utcnow() - latest.started_at).total_seconds() < cooldown
         )
+
+    async def cancel_runs(self, project_id: int, board_id: int | None = None) -> int:
+        """Cancel the runs going in a project, or those started by a task of one board (a halt). Returns how many."""
+        async with self.maker() as s:
+            query = select(WorkflowRun.id).where(
+                WorkflowRun.project_id == project_id, WorkflowRun.status == RunStatus.RUNNING
+            )
+            if board_id is not None:
+                query = query.join(Task, Task.id == WorkflowRun.trigger_task_id).where(
+                    Task.board_id == board_id
+                )
+            ids = list(await s.scalars(query))
+        return sum([await self.cancel(run_id) for run_id in ids])
 
     async def cancel(self, run_id: int) -> bool:
         task = self._live.get(run_id)
@@ -498,13 +532,25 @@ class WorkflowRunner:
     async def run_for_task(self, project_id: int, task_id: int, attempt_id: int, write) -> tuple[bool, str]:
         """Play a task's workflows (its stages) one after the other for one attempt of that task. Progress goes into the
         attempt's log as it happens. A stage that fails ends the attempt and the stages after it stay not started.
-        Returns whether every stage succeeded, and what the last one that ran concluded."""
+        Returns whether every stage succeeded, and the task's result: what each stage that ran concluded (see
+        `_stage_report`), one section per stage when there are several.
+
+        Each stage's run starts with the working folder the stage before it ended in (the first one with the folder
+        the task was made to continue in, if any). Whether a step really works there is up to the step: only one that
+        asks to continue does, so stages are connected without any of them losing its fresh folder by default."""
         async with self.maker() as s:
+            task = await s.get(Task, task_id)
+            workdir = ((task.run_options or {}).get("workdir") or None) if task else None
             plan = [
-                (st.id, st.workflow_id)
-                for st in await s.scalars(
-                    select(TaskStage).where(TaskStage.task_id == task_id).order_by(TaskStage.position)
-                )
+                (stage_id, workflow_id, name)
+                for stage_id, workflow_id, name in (
+                    await s.execute(
+                        select(TaskStage.id, TaskStage.workflow_id, Workflow.name)
+                        .join(Workflow, Workflow.id == TaskStage.workflow_id)
+                        .where(TaskStage.task_id == task_id)
+                        .order_by(TaskStage.position)
+                    )
+                ).all()
             ]
             # what a task's stages show is always its latest attempt, so this one starts them all over
             await s.execute(
@@ -516,26 +562,49 @@ class WorkflowRunner:
                 "[Cell error] The workflow this task plays no longer exists. Pick another one in the task.\n"
             )
             return False, ""
-        ok, result = True, ""
-        for i, (stage_id, workflow_id) in enumerate(plan, start=1):
+        ok = True
+        reports: list[tuple[str, str]] = []
+        for i, (stage_id, workflow_id, name) in enumerate(plan, start=1):
             if len(plan) > 1:
                 await write(f"Stage {i} of {len(plan)}\n")
-            ok, result = await self._play_stage(project_id, task_id, workflow_id, stage_id, attempt_id, write)
+            ok, report, ended_in = await self._play_stage(
+                project_id, task_id, workflow_id, stage_id, attempt_id, write, workdir
+            )
+            reports.append((name, report))
+            if ended_in:
+                # kept on the attempt as it goes, so whatever waits for this task can continue where it got to
+                workdir = ended_in
+                async with self.maker() as s:
+                    await s.execute(
+                        update(Attempt).where(Attempt.id == attempt_id).values(workdir_id=workdir)
+                    )
+                    await s.commit()
             if not ok:
                 break
-        return ok, result
+        # the result is what the stages produced (a PR link, a summary), so it is on the task without opening a run
+        if len(reports) == 1:
+            return ok, reports[0][1]
+        return ok, "\n\n".join(f"## {name}\n{report}".rstrip() for name, report in reports)
 
     async def _play_stage(
-        self, project_id: int, task_id: int, workflow_id: int, stage_id: int, attempt_id: int, write
-    ) -> tuple[bool, str]:
-        """Play one stage's workflow and wait for its run to end."""
+        self,
+        project_id: int,
+        task_id: int,
+        workflow_id: int,
+        stage_id: int,
+        attempt_id: int,
+        write,
+        workdir_id: int | None = None,
+    ) -> tuple[bool, str, int | None]:
+        """Play one stage's workflow, starting in the working folder `workdir_id`, and wait for its run to end.
+        Returns whether it succeeded, its outcome and the working folder it ended in."""
         async with self.maker() as s:
             wf = await s.get(Workflow, workflow_id)
             if wf is None or wf.project_id != project_id:
                 await write(
                     "[Cell error] The workflow this task plays no longer exists. Pick another one in the task.\n"
                 )
-                return False, ""
+                return False, "", workdir_id
             # a workflow node waiting for this task is the parent of the run we are about to start
             parent = await s.scalar(
                 select(WorkflowNodeRun.run_id)
@@ -548,12 +617,20 @@ class WorkflowRunner:
             await write(
                 f'[Cell error] The workflow "{wf.name}" has no Start node, so there is nowhere to begin.\n'
             )
-            return False, ""
+            return False, "", workdir_id
         try:
-            run_id = await self.start(project_id, wf.id, graph, trigger="task", parent_run_id=parent)
+            run_id = await self.start(
+                project_id,
+                wf.id,
+                graph,
+                trigger="task",
+                parent_run_id=parent,
+                workdir_id=workdir_id,
+                stage_task_id=task_id,
+            )
         except LoopError as e:
             await write(f"[Cell error] {e}\n")
-            return False, ""
+            return False, "", workdir_id
         async with self.maker() as s:
             await s.execute(update(Attempt).where(Attempt.id == attempt_id).values(workflow_run_id=run_id))
             await s.execute(update(TaskStage).where(TaskStage.id == stage_id).values(workflow_run_id=run_id))
@@ -588,7 +665,17 @@ class WorkflowRunner:
         if skipped:
             await write("Did not run: " + ", ".join(n.label for n in skipped) + "\n")
         await write(f"Workflow {run.status}{': ' + run.outcome if run.outcome else ''}\n")
-        return run.status == RunStatus.SUCCEEDED, run.outcome
+        return run.status == RunStatus.SUCCEEDED, self._stage_report(run), run.workdir_id or workdir_id
+
+    @staticmethod
+    def _stage_report(run: WorkflowRun) -> str:
+        """What a finished stage has to show: why it failed, or what its last agent or task reported. A workflow whose
+        steps produce nothing falls back to what its End node said."""
+        if run.status == RunStatus.SUCCEEDED:
+            for n in reversed(run.nodes):
+                if n.kind in ("agent", "task") and n.status == NodeStatus.SUCCEEDED and n.result.strip():
+                    return n.result.strip()
+        return run.outcome
 
     # the run
 
@@ -605,6 +692,9 @@ class WorkflowRunner:
         carried_on: set[str] = set()  # failed nodes the workflow continued after
         seq = 0
         hard_fail, note = False, ""
+        workdir = (
+            ctx.workdir_id
+        )  # where the run's last step worked: what the next stage of a task starts with
         try:
             while queue:
                 node_id, prev = queue.popleft()
@@ -614,6 +704,7 @@ class WorkflowRunner:
                 seq += 1
                 outcome = await self._execute_node(ctx, node, seq, prev)
                 done[node_id] = outcome
+                workdir = outcome.workdir_id or workdir
                 if node.kind == "end":
                     ended = node.config.get("outcome", "success")
                     note = node.config.get("note", "").strip() or {
@@ -632,16 +723,21 @@ class WorkflowRunner:
                 for e in outgoing.get(node_id, []):
                     if node.kind == "condition" and (e.sourceHandle or "yes") != outcome.branch:
                         continue
-                    queue.append((e.target, Prev(node.label or node.kind, outcome.status, outcome.result)))
+                    here = outcome.workdir_id or (prev.workdir_id if prev else ctx.workdir_id)
+                    queue.append(
+                        (e.target, Prev(node.label or node.kind, outcome.status, outcome.result, here))
+                    )
             await self._record_unreached(ctx, graph, done, carried_on, seq)
-            await self._finish(ctx.run_id, RunStatus.FAILED if hard_fail else RunStatus.SUCCEEDED, note)
+            await self._finish(
+                ctx.run_id, RunStatus.FAILED if hard_fail else RunStatus.SUCCEEDED, note, workdir
+            )
         except asyncio.CancelledError:
             if not self._stopping:
                 await self._cancelled(ctx.run_id)
             raise
         except Exception as e:
             log.exception("workflow run %s crashed", ctx.run_id)
-            await self._finish(ctx.run_id, RunStatus.FAILED, f"Unexpected error: {e}")
+            await self._finish(ctx.run_id, RunStatus.FAILED, f"Unexpected error: {e}", workdir)
 
     async def _execute_node(self, ctx: _Ctx, node: GraphNode, seq: int, prev: Prev | None) -> Outcome:
         label = node.label or node.kind.capitalize()
@@ -694,7 +790,7 @@ class WorkflowRunner:
             )
         if node.kind == "agent":
             return await self._agent(ctx, nr_id, node, prev)
-        return await self._task(ctx, nr_id, node)
+        return await self._task(ctx, nr_id, node, prev)
 
     # task and agent nodes
 
@@ -703,16 +799,19 @@ class WorkflowRunner:
         instructions = c.get("instructions", "").strip()
         if not instructions:
             raise NodeError("This agent has no instructions. Open the node and tell it what to do.")
+        async with self.maker() as s:
+            brief = await self._brief(s, ctx)
+        # the order is the method (the node), the focus (the task), then what the step before it produced
+        if brief:
+            instructions += f"\n\n{brief}"
         if prev and prev.result.strip():
             instructions += f"\n\nResult of the previous step ({prev.label}):\n{prev.result.strip()}"
         title = node.label or "Agent"
-        run_options = self._run_options(c, ctx.graph.mounts_for(node.id))
+        # "Continue" works in the folder the step before left (or the one the run started in); with none yet, or by
+        # default, the agent gets a fresh folder like any other run
+        workdir = (prev.workdir_id if prev else ctx.workdir_id) if c.get("workdir") == "inherit" else None
+        run_options = self._run_options(c, ctx.graph.mounts_for(node.id), workdir)
         async with self.maker() as s:
-            if ctx.trigger_task_id and (started_by := await s.get(Task, ctx.trigger_task_id)):
-                instructions += (
-                    f'\n\nThis workflow was started by the task "{started_by.title}":\n'
-                    f"{started_by.description.strip() or '(no description)'}"
-                )
             agent = None
             if agent_id := c.get("agentId", "").strip():
                 agent = await s.get(Agent, int(agent_id)) if agent_id.isdigit() else None
@@ -722,11 +821,11 @@ class WorkflowRunner:
                     )
             board = await boards.default_board(
                 s, ctx.project_id
-            )  # the task an Agent node makes shows on the board
+            )  # a task needs a board, but this one is internal: it only shows when asked for
             task = Task(
                 project_id=ctx.project_id, board_id=board.id, title=title, description=instructions,
                 status=TaskStatus.READY, harness=agent.harness if agent else c.get("harness", "codex"),
-                agent_id=agent.id if agent else None, run_options=run_options,
+                agent_id=agent.id if agent else None, run_options=run_options, internal=True,
                 position=await boards.next_position(s, board.id, TaskStatus.READY),
             )  # fmt: skip
             s.add(task)
@@ -740,10 +839,28 @@ class WorkflowRunner:
         return await self._wait_for_task(nr_id, task_id, before=0)
 
     @staticmethod
-    def _run_options(c: dict, attached: list[dict] | None = None) -> dict | None:
+    async def _brief(s: AsyncSession, ctx: _Ctx) -> str:
+        """What a step is told about the task behind its run. This is the steering wheel: a workflow says how to do
+        the work, and the task's own description says what this run should focus on, so the same workflow can be
+        pointed somewhere else by editing the ticket. A task that moved into a status started the run, or the run is
+        a stage of the task; a test run has no task."""
+        if ctx.trigger_task_id and (task := await s.get(Task, ctx.trigger_task_id)):
+            return (
+                f'This workflow was started by the task "{task.title}":\n'
+                f"{task.description.strip() or '(no description)'}"
+            )
+        if ctx.stage_task_id and (task := await s.get(Task, ctx.stage_task_id)):
+            if text := task.description.strip():
+                return f'This is a stage of the task "{task.title}". What the task asks for:\n{text}'
+            return f'This is a stage of the task "{task.title}".'
+        return ""
+
+    @staticmethod
+    def _run_options(c: dict, attached: list[dict] | None = None, workdir: int | None = None) -> dict | None:
         """The cell size and shared folders set on an Agent node, for this run only. Node settings are plain text:
         the cell fields are separate keys, the folders one string like "3:rw,5:ro" (volume id and mode). Folders handed
-        over by lines from Folder nodes (`attached`) come first; one named in the node's own list wins for that folder."""
+        over by lines from Folder nodes (`attached`) come first; one named in the node's own list wins for that folder.
+        `workdir` is the earlier attempt whose working folder this step continues in (see Attempt.workdir_id)."""
         try:
             fields = {
                 "cellImage": "image",
@@ -759,9 +876,10 @@ class WorkflowRunner:
                 mounts.append(MountRef(volume_id=int(volume_id), mode=mode or "rw").model_dump())
         except (ValidationError, ValueError):
             raise NodeError("The cell or folder settings of this agent node are not valid") from None
-        return {k: v for k, v in {"profile": profile, "mounts": mounts}.items() if v} or None
+        extras = {"profile": profile, "mounts": mounts, "workdir": workdir}
+        return {k: v for k, v in extras.items() if v} or None
 
-    async def _task(self, ctx: _Ctx, nr_id: int, node: GraphNode) -> Outcome:
+    async def _task(self, ctx: _Ctx, nr_id: int, node: GraphNode, prev: Prev | None = None) -> Outcome:
         c = node.config
         action = c.get("action", "create")
         title = c.get("title", "").strip()
@@ -787,7 +905,10 @@ class WorkflowRunner:
             step = await _Step.open(s, ctx, node)
             before = 0
             if action == "create":
-                task = await self._create(s, step, c, title, target, link)
+                workdir = (
+                    (prev.workdir_id if prev else ctx.workdir_id) if c.get("workdir") == "inherit" else None
+                )
+                task = await self._create(s, step, c, title, target, link, workdir)
                 note = (
                     f'Created task "{title}" on {(await s.get_one(Board, task.board_id)).name} in {target}.'
                 )
@@ -830,10 +951,18 @@ class WorkflowRunner:
         return Outcome(NodeStatus.SUCCEEDED, log=note + "\n", result=note)
 
     async def _create(
-        self, s: AsyncSession, step: "_Step", c: dict[str, str], title: str, target: str, link: bool
+        self,
+        s: AsyncSession,
+        step: "_Step",
+        c: dict[str, str],
+        title: str,
+        target: str,
+        link: bool,
+        workdir: int | None = None,
     ) -> Task:
         """Make the task of a Create step: on the chosen board, linked to the task that started the run when asked.
-        A step makes its task once, whatever happens: running it again finds the one it made."""
+        A step makes its task once, whatever happens: running it again finds the one it made. `workdir` is the working
+        folder the task continues in; the task (or its first stage) starts there instead of in a fresh one."""
         key = f"run:{step.ctx.run_id}:{step.node.id}"
         if made := await s.scalar(select(Task).where(Task.origin_key == key)):
             return made
@@ -842,14 +971,18 @@ class WorkflowRunner:
             board = step.chosen_board or await boards.board_for_status(s, step.ctx.project_id, target)
             if link:
                 assert step.trigger is not None
-                return await boards.spawn_task(
+                task = await boards.spawn_task(
                     s, step.trigger, board, step.actor, title, c.get("description", ""), target,
                     step.cause, key, step.hops,
                 )  # fmt: skip
+                if workdir:
+                    task.run_options = {**(task.run_options or {}), "workdir": workdir}
+                return task
             boards.check_status(board, target)
             task = Task(
                 project_id=step.ctx.project_id, board_id=board.id, title=title,
                 description=c.get("description", ""), status=target, origin_key=key, hops=step.hops,
+                run_options={"workdir": workdir} if workdir else None,
                 position=await boards.next_position(s, board.id, target),
             )  # fmt: skip
         except boards.BoardError as e:
@@ -900,14 +1033,19 @@ class WorkflowRunner:
                         nr_id, attempt_id=attempt.id, log=attempt.log, result=attempt.result
                     )
                 if attempt.status != AttemptStatus.RUNNING:
+                    here = attempt.workdir_id
                     if attempt.status == AttemptStatus.SUCCEEDED:
-                        return Outcome(NodeStatus.SUCCEEDED, result=attempt.result, log=attempt.log)
+                        return Outcome(
+                            NodeStatus.SUCCEEDED, result=attempt.result, log=attempt.log, workdir_id=here
+                        )
                     why = (
                         "The task was cancelled."
                         if attempt.status == AttemptStatus.CANCELLED
                         else _failed_message(attempt.exit_code)
                     )
-                    return Outcome(NodeStatus.FAILED, result=attempt.result, log=attempt.log, error=why)
+                    return Outcome(
+                        NodeStatus.FAILED, result=attempt.result, log=attempt.log, error=why, workdir_id=here
+                    )
             elif task is None:
                 raise NodeError("The task was deleted while the workflow was waiting for it.")
             elif task.status not in (TaskStatus.READY, TaskStatus.RUNNING):
@@ -966,12 +1104,12 @@ class WorkflowRunner:
                 return f"Not run: the condition '{name}' answered {outcome.branch}, which leads elsewhere."
         return "Not run: the run never reached a node that leads here."
 
-    async def _finish(self, run_id: int, status: str, outcome: str) -> None:
+    async def _finish(self, run_id: int, status: str, outcome: str, workdir_id: int | None = None) -> None:
         async with self.maker() as s:
             await s.execute(
                 update(WorkflowRun)
                 .where(WorkflowRun.id == run_id)
-                .values(status=status, finished_at=utcnow(), outcome=outcome)
+                .values(status=status, finished_at=utcnow(), outcome=outcome, workdir_id=workdir_id)
             )
             await s.commit()
 

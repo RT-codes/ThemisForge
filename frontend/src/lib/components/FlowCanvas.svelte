@@ -8,6 +8,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import { DRAG_TYPE, MOUNT, NODE_KINDS, canConnect, defaultConfig, fromGraph, kindInfo, mountsFromGraph, nextNodeNumber, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
 	import { onDestroy, onMount, setContext, untrack } from 'svelte'
+	import { router } from '$lib/router.svelte'
 	import { nodeIcons } from '$lib/workflowIcons'
 	import { slide } from 'svelte/transition'
 	import NodeConfigPanel from './NodeConfigPanel.svelte'
@@ -73,7 +74,15 @@
 		counter = nextNodeNumber(initialGraph.nodes.map((n) => n.id))
 		lastSaved = JSON.stringify(toGraph(nodes, edges)) // the starting point: only a difference from it counts as a change
 		loaded = true
-		setTimeout(() => fitView({ maxZoom: 1, padding: 0.08 }), 50)
+		// a link from a ticket ("Edit step") names a node in the address: it is selected, so its panel is open
+		const wanted = new URLSearchParams(router.hash).get('node')
+		if (wanted && nodes.some((n) => n.id === wanted)) {
+			nodes = nodes.map((n) => ({ ...n, selected: n.id === wanted }))
+			router.replace(router.path) // used up: reloading the page does not select it again
+			setTimeout(() => fitView({ nodes: [{ id: wanted }], maxZoom: 1, padding: 1.5 }), 50)
+		} else {
+			setTimeout(() => fitView({ maxZoom: 1, padding: 0.08 }), 50)
+		}
 	})
 
 	$effect(() => {

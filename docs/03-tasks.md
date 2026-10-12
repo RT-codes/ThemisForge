@@ -122,7 +122,9 @@ between **Details** and **History**. The status is changed right there and takes
 
 **General**
 
-- **Description**: what needs doing, in more words. It is passed to the cell.
+- **Description**: what needs doing, in more words. It is passed to the cell. For a task that plays workflows it is the
+  brief of the run: every agent step of its stages is given it, so it is where you say what this run should focus on
+  (see [Steering a run from the task](/docs/workflows#steering-a-run-from-the-task)).
 - **Run with**: what works on the task. The **placeholder program** prints the task and finishes (good for trying out
   scheduling). A **Codex agent** does the task for real in its own container, using the project owner's
   [Codex connection](/docs/codex). One or more **workflows** play in order, each as a stage you can follow in the
@@ -211,12 +213,48 @@ a task arrives in that status on another board.
 Open a task to find the actions:
 
 - **Run now**: makes the task Ready and wakes the scheduler. A recurring task still keeps its normal schedule afterwards.
-- **Cancel run**: stops the cell. The attempt is recorded as cancelled.
+- **Stop task**: stops the agent (and, for a task that plays workflows, its run and the cell under it). The attempt is
+  recorded as cancelled. A running card has the same button, a small square next to its spinner, so you do not have to
+  open the task. See [Stopping work](#stopping-work) for where the task goes afterwards.
+- **Duplicate**: the copy icon next to the trash icon in the task's title card makes a copy of the task and opens it. The copy
+  is called "Copy of ..." and always lands in the **Backlog** of the same board, so it never starts by itself. It has the
+  same description, properties, schedule, agent or stages (workflows), review setting and automation guard. It does not
+  have the original's attempts or history, the task it follows, or the working folder the original carried on in: a copy
+  starts fresh. A recurring task's copy keeps its schedule and takes it up when you move it to Ready. A workflow step
+  cannot be duplicated.
 - **Delete**: removes the task and its attempts, after you confirm. Use the trash icon that appears when you point at a card on the board, or the one in the task's title card. Files it wrote to a shared folder are not touched. The history keeps a note of every deleted task, with who deleted it, when, and what it was (description, status and schedule), so you can find it again.
+
+## Stopping work
+
+There are two levels, and they are different on purpose.
+
+**Stopping one task** (the square on a running card, or **Stop task** in its panel) stops that agent and nothing else.
+Where the task goes depends on what it is:
+
+| The task | After you stop it |
+| --- | --- |
+| One-off | **Blocked**: stopped by you, and it will not start again until you run it |
+| Recurring | Back to **Ready** on its schedule: only this run is skipped, the schedule is untouched |
+
+**Halting** is the emergency brake for a **board** (the octagon in its taskbar) or the whole **project** (next to the
+project menu on its pages). Until you press **Resume** nothing in it starts: not a Ready task, not a schedule, not a
+workflow trigger, not **Run now**, not a manual workflow run. A banner on the pages says so for as long as it lasts, and
+it survives a restart.
+
+- **Also stop what is running now** (on by default) stops everything running in it, workflows included. Switch it off to
+  let the current work finish and only hold back what is next.
+- What a halt interrupted goes to **Blocked**, like any stopped one-off task, so resuming never restarts it by itself:
+  the reason for a halt is often a task that misbehaves. Its working folder is kept, so you can see how far it got.
+- Tasks that were only waiting stay Ready, and go on when you resume. Recurring tasks do not catch up on what they missed
+  while halted: they carry on from their next time.
+- Halting a board holds that board's tasks only. Halting the project holds everything in it, including the steps of
+  workflows (these steps are tasks Agent nodes make, see [workflows](/docs/workflows)). A workflow started by a task of a
+  halted board is stopped with it.
+- Halting and resuming are written to the project's history, with who did it.
 
 ## Project history
 
-Themis keeps a history of what people do to a project: tasks created, moved to another column, sent to another board,
+Themis keeps a history of what people do to a project: tasks created (or duplicated), moved to another column, sent to another board,
 followed up and deleted, and boards, workspaces and statuses created, renamed and deleted. Each line says who did it and
 when. You can look at it at every level:
 
@@ -232,4 +270,6 @@ the scheduler does (starting a task, finishing it) is not repeated there: that i
 ## Attempts and history
 
 The **History** tab of a task lists every attempt with its status, start time and duration. Select one to see its
-**result** and its full **log**. While a task is running the log updates live.
+**result** and its full **log**. While a task is running the log updates live. For a task that plays workflows the result
+is what its stages reported (one section per stage when there are several), so a pull request link is there without
+opening the run.

@@ -41,6 +41,7 @@
 		onopen,
 		onclosedetails,
 		ondelete,
+		onstop,
 		onadd,
 		onmove,
 		onmovemany,
@@ -68,6 +69,8 @@
 		onclosedetails: (then: () => void) => void
 		/** ask to delete these tasks: one from a card's trash button, or the whole selection */
 		ondelete: (tasks: Task[]) => void
+		/** stops one running task (its card gets a stop button) */
+		onstop?: (task: Task) => void
 		onadd: (status: TaskStatus) => void
 		/** a card dropped here; it may come from another board (task.board_id differs from boardId) */
 		onmove: (task: Task, status: TaskStatus, position: number, boardId: number) => void
@@ -423,6 +426,7 @@
 						onedit={() => (clearPicked(), onopen(task))}
 						onpick={(e: MouseEvent | KeyboardEvent) => pick(task, e)}
 						ondelete={() => ondelete([task])}
+						onstop={onstop ? () => onstop(task) : undefined}
 						ondragstart={(e: DragEvent) => {
 							dragTask.start(task)
 							e.dataTransfer?.setData('text/plain', String(task.id))

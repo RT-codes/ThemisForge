@@ -123,6 +123,49 @@ def folders_note(folders: Sequence[tuple[str, bool]]) -> str:
     )
 
 
+@dataclass(frozen=True)
+class EarlierStep:
+    """One run that already worked in the working folder this run continues in."""
+
+    title: str
+    status: str
+    changes: dict | None  # see Attempt.changes; None for runs from before changes were kept
+    result: str
+
+
+_NOTE_STEPS = 8  # the most recent steps are told, older ones would only be noise
+_NOTE_FILES = 15  # files named per kind and step
+_NOTE_RESULT = 300  # characters of each step's own summary
+
+
+def workdir_note(steps: Sequence[EarlierStep], top_level: Sequence[str]) -> str:
+    """Tells an agent that its /workspace is the folder of earlier steps, and what they did in it, so it builds on that
+    instead of starting over. This is the answer to "which files belong to this job": Themis keeps the record."""
+    intro = (
+        "This working folder is continued from earlier steps of the same job. /workspace already holds their work: "
+        "build on it, and do not delete or redo what you did not make. What they did, oldest first:"
+    )
+    lines = [intro]
+    for step in steps[-_NOTE_STEPS:]:
+        parts = []
+        for verb in ("added", "changed", "removed"):
+            files = (step.changes or {}).get(verb) or []
+            if files:
+                shown = ", ".join(files[:_NOTE_FILES]) + (" and more" if len(files) > _NOTE_FILES else "")
+                parts.append(f"{verb} {shown}")
+        did = "; ".join(parts) or (
+            "no file changes" if step.changes is not None else "no record of its changes"
+        )
+        line = f'- "{step.title}" ({step.status}): {did}'
+        if step.result.strip():
+            summary = " ".join(step.result.split())
+            line += f'. It reported: "{summary[:_NOTE_RESULT]}{"..." if len(summary) > _NOTE_RESULT else ""}"'
+        lines.append(line)
+    if top_level:
+        lines.append("The top level of the folder now holds: " + ", ".join(top_level))
+    return "\n".join(lines)
+
+
 def build_prompt(
     title: str,
     description: str,
@@ -131,6 +174,7 @@ def build_prompt(
     preamble: str = "",
     folders: Sequence[tuple[str, bool]] = (),
     notes: Sequence[str] = (),
+    continuing: bool = False,
 ) -> str:
     parts = [preamble] if preamble else []
     parts.append(f"# {title}")
@@ -142,15 +186,41 @@ def build_prompt(
     if note := folders_note(folders):
         parts.append(note)
     parts.extend(notes)  # what the agent's connections give it (app/connections.py)
+    scope = (
+        "is the working folder of this job, continued from earlier steps (see above)"
+        if continuing
+        else "is private to this run"
+    )
     parts.append(
-        "You are running unattended inside a throwaway container. Your working directory /workspace is private to "
-        "this run. Do the task, then finish with a short summary of what you did and what you produced. Never read or "
-        "print anything under /run/themis-secrets: it holds credentials, and everything you print is stored in the log."
+        f"You are running unattended inside a throwaway container. Your working directory /workspace {scope}. Do the "
+        "task, then finish with a short summary of what you did and what you produced. Never read or print anything "
+        "under /run/themis-secrets: it holds credentials, and everything you print is stored in the log."
     )
     return "\n\n".join(parts) + "\n"
 
 
 _NOISE = {"Reading additional input from stdin..."}  # printed by codex exec whenever stdin is not a terminal
+
+# What the log keeps of one command's output. The agent saw all of it; the log is for the person watching, and a single
+# `cat` of a few documents would otherwise fill the whole log and hide the next ten minutes of what the agent did.
+_OUT_HEAD_LINES = 40
+_OUT_TAIL_LINES = 12
+_OUT_LINE_CHARS = 500  # a minified file is one enormous line
+
+
+def trim_output(out: str) -> str:
+    """The start and the end of a long command output, with a note of how much was left out between them."""
+    lines = [
+        line
+        if len(line) <= _OUT_LINE_CHARS
+        else f"{line[:_OUT_LINE_CHARS]} [... {len(line) - _OUT_LINE_CHARS:,} more characters]"
+        for line in out.split("\n")
+    ]
+    if len(lines) <= _OUT_HEAD_LINES + _OUT_TAIL_LINES:
+        return "\n".join(lines)
+    hidden = lines[_OUT_HEAD_LINES:-_OUT_TAIL_LINES]
+    note = f"[... {len(hidden):,} more lines not shown in this log: the agent saw all of the output ...]"
+    return "\n".join([*lines[:_OUT_HEAD_LINES], note, *lines[-_OUT_TAIL_LINES:]])
 
 
 class CodexRenderer:
@@ -220,7 +290,7 @@ class CodexRenderer:
             if item_type == "agent_message":
                 return item.get("text", "").rstrip() + "\n"
             if item_type == "command_execution":
-                out = (item.get("aggregated_output") or "").rstrip()
+                out = trim_output((item.get("aggregated_output") or "").rstrip())
                 code = item.get("exit_code")
                 tail = f"[exit {code}]" if code not in (0, None) else ""
                 return "".join(f"{s}\n" for s in (out, tail) if s)

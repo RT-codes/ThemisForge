@@ -97,6 +97,9 @@ class Project(Base):
     # Overrides of the global automation guard for this project: {"start_cooldown_seconds", "max_hops"}, only the
     # fields that differ (see app/automation.py). None = use the global settings.
     automation: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # Set while the project is halted: nothing in it starts (tasks, workflow runs, triggers) until it is resumed. It is
+    # a state of its own, not a task status, so resuming never has to remember what was where (see app/halt.py).
+    halted_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
     tasks: Mapped[list["Task"]] = relationship(back_populates="project", cascade="all, delete-orphan")
@@ -162,6 +165,7 @@ class Board(Base):
     # The board's columns left to right, as status keys: built-in values ("backlog"...) and custom "custom:<id>"
     # keys. The built-ins are always all here, in their fixed order; only custom keys move around them.
     columns: Mapped[list[str]] = mapped_column(JSON, default=lambda: [s.value for s in TaskStatus])
+    halted_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)  # see Project.halted_at
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
 
@@ -223,8 +227,13 @@ class Task(Base):
     harness: Mapped[str] = mapped_column(String(20), default="", server_default="")
     # The agent that does this task (its instructions, model, cell and folders), see Agent below.
     agent_id: Mapped[int | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), default=None)
-    # Extras for this one run, set by a workflow's Agent node: {"profile": {...}, "mounts": [{"volume_id", "mode"}]}.
+    # Extras for this one run, set by a workflow's Agent node:
+    # {"profile": {...}, "mounts": [{"volume_id", "mode"}], "workdir": <attempt id>}.
     run_options: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # Made by a workflow's Agent node to run its step: a task only so the scheduler, the budget and the history work
+    # on it. It is not board work, so it stays off the boards and out of the counts (unless asked for), never starts a
+    # workflow by being moved, and does not wait out the start delay: the workflow is already waiting for it.
+    internal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
@@ -275,6 +284,13 @@ class Attempt(Base):
     workflow_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow_runs.id", ondelete="SET NULL"), default=None
     )
+    # The working folder this attempt used, named by the attempt that made it (data/projects/<id>/workspaces/<n>).
+    # Its own id unless the run continued in an earlier folder; a task that plays workflows gets the folder its last
+    # stage ended in, so whatever waits for it can carry on there. Null on attempts from before folders were passed on.
+    workdir_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    # What the cell changed in that folder: {"added": [...], "changed": [...], "removed": [...], "more": n}. It is what
+    # the next run in the folder is told (see harness.workdir_note). Null for tasks that ran no cell.
+    changes: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     task: Mapped[Task] = relationship(back_populates="attempts")
 
@@ -422,6 +438,9 @@ class WorkflowRun(Base):
         ForeignKey("tasks.id", ondelete="SET NULL"), default=None
     )
     outcome: Mapped[str] = mapped_column(Text, default="")  # what the End node said, or why the run failed
+    # The working folder (see Attempt.workdir_id) the last step of this run ended in. The next stage of a task
+    # starts with it, so a node that asks to continue picks up where this run left off.
+    workdir_id: Mapped[int | None] = mapped_column(Integer, default=None)
     started_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     graph: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

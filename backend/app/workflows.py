@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import automation, boards, halt
 from .app_settings import load_settings
+from .harness import log_tail
 from .models import (
     Agent,
     Attempt,
@@ -667,6 +668,35 @@ class WorkflowRunner:
         await write(f"Workflow {run.status}{': ' + run.outcome if run.outcome else ''}\n")
         return run.status == RunStatus.SUCCEEDED, self._stage_report(run), run.workdir_id or workdir_id
 
+    async def failure_for_attempt(self, attempt_id: int) -> dict | None:
+        """Why a task that played workflows failed, for its ticket: the first step of the run it was playing that
+        failed, with that step's own reason and log tail when the step ran a task. None when no step failed (the run
+        was cancelled, or could not start), so the caller keeps what it knows."""
+        async with self.maker() as s:
+            attempt = await s.get(Attempt, attempt_id)
+            if attempt is None or attempt.workflow_run_id is None:
+                return None
+            node = await s.scalar(
+                select(WorkflowNodeRun)
+                .where(
+                    WorkflowNodeRun.run_id == attempt.workflow_run_id,
+                    WorkflowNodeRun.status == NodeStatus.FAILED,
+                )
+                .order_by(WorkflowNodeRun.seq)
+                .limit(1)
+            )
+            if node is None:
+                return None
+            step = await s.get(Attempt, node.attempt_id) if node.attempt_id else None
+        step_failure = (step.failure if step is not None else None) or {}
+        reason = step_failure.get("reason") or node.error or "The step failed."
+        return {
+            "source": step_failure.get("source", "themis"),
+            "reason": f"Step '{node.label}' failed: {reason}",
+            "action": step_failure.get("action", ""),
+            "tail": step_failure.get("tail") or log_tail(node.log),
+        }
+
     @staticmethod
     def _stage_report(run: WorkflowRun) -> str:
         """What a finished stage has to show: why it failed, or what its last agent or task reported. A workflow whose
@@ -1042,10 +1072,11 @@ class WorkflowRunner:
                         return Outcome(
                             NodeStatus.SUCCEEDED, result=attempt.result, log=attempt.log, workdir_id=here
                         )
+                    # the attempt knows why it failed (see Attempt.failure); the exit code is the fallback
                     why = (
                         "The task was cancelled."
                         if attempt.status == AttemptStatus.CANCELLED
-                        else _failed_message(attempt.exit_code)
+                        else (attempt.failure or {}).get("reason") or _failed_message(attempt.exit_code)
                     )
                     return Outcome(
                         NodeStatus.FAILED, result=attempt.result, log=attempt.log, error=why, workdir_id=here

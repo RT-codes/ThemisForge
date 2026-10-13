@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .. import project_config
 from ..app_settings import AppSettings, Budget, load_settings, save_settings
 from ..budget import Cost, cells_that_fit, recommend_budget
+from ..cell_package import DEFAULT_RULES, DEFAULT_SKILL, SKILL_NAME, effective_rules, effective_skill
 from ..config import DEFAULT_SECRET_KEY
 from ..config import settings as boot_settings
 from ..crypto import encrypt, hint_for
@@ -18,6 +19,7 @@ from ..deps import AdminUser, CurrentUser, SessionDep
 from ..docker_check import check_docker
 from ..models import AccessRequest, Agent, McpServer, Secret
 from ..schemas import SecretIn, SecretOut
+from ..skills import SkillError, parse_frontmatter
 from ..version import build_info
 
 router = APIRouter(tags=["system"])
@@ -154,6 +156,48 @@ async def system_resources(session: SessionDep, _: AdminUser) -> Resources:
 @router.get("/settings", response_model=AppSettings)
 async def get_settings(session: SessionDep, _: AdminUser) -> AppSettings:
     return await load_settings(session)
+
+
+class CellPackageDefaults(BaseModel):
+    rules: str
+    skill: str
+
+
+@router.get("/settings/cell-package", response_model=CellPackageDefaults)
+async def cell_package_defaults(_: AdminUser) -> CellPackageDefaults:
+    """The built-in text of the Themis package, shown in Settings next to whatever has been changed."""
+    return CellPackageDefaults(rules=DEFAULT_RULES, skill=DEFAULT_SKILL)
+
+
+class CellPackageInUse(BaseModel):
+    """What every Codex agent is given right now, for the agent editor: edits and switches in Settings are applied."""
+
+    skill_name: str
+    skill_enabled: bool
+    skill: str
+    description: str
+    rules_enabled: bool
+    rules: str
+
+
+@router.get("/cell-package", response_model=CellPackageInUse)
+async def cell_package_in_use(session: SessionDep, _: CurrentUser) -> CellPackageInUse:
+    """Readable by every signed-in user (the text holds no secrets) so an agent's Skills tab can show the package it
+    gets; only an administrator can change it, in Settings."""
+    package = (await load_settings(session)).cell_package
+    skill = effective_skill(package)
+    try:
+        description = parse_frontmatter(skill).get("description", "") if skill else ""
+    except SkillError:
+        description = ""
+    return CellPackageInUse(
+        skill_name=SKILL_NAME,
+        skill_enabled=package.skill_enabled,
+        skill=skill,
+        description=description,
+        rules_enabled=package.rules_enabled,
+        rules=effective_rules(package),
+    )
 
 
 @router.put("/settings", response_model=AppSettings)

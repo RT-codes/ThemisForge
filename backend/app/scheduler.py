@@ -16,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .app_settings import AppSettings, load_settings
 from .automation import cooled_down
 from .budget import Cost, admit, never_fits
+from .cell_package import effective_rules, effective_skill
 from .cells import (
     CellError,
     CellManager,
     CellResult,
     CellSpec,
+    CellTimeout,
     Mount,
     changes_between,
     snapshot_workdir,
@@ -32,10 +34,14 @@ from .connections import ConnectionProblem, RunConnection, plan_for_run, secret_
 from .crypto import decrypt
 from .harness import (
     CODEX_AUTH,
+    RETRY_NOTE,
+    CodexRenderer,
     EarlierStep,
     HarnessPlan,
     agent_preamble,
     build_prompt,
+    log_tail,
+    parse_blocked,
     plan_for,
     renderer_for,
     workdir_note,
@@ -105,6 +111,27 @@ class _Plan:
     @property
     def locks(self) -> frozenset[int]:
         return frozenset(m.volume_id for m in self.mounts if m.lock)
+
+
+_EXIT_UNKNOWN = "The program in the cell stopped with exit code {code} and did not say why."
+
+
+def _themis_failure(reason: str, action: str = "") -> dict:
+    return {"source": "themis", "reason": reason, "action": action}
+
+
+def _run_failure(renderer: CodexRenderer | None, exit_code: int, retries: int) -> dict:
+    """Why a run that ended with a failing exit code failed, from what the harness's own output said."""
+    error = renderer.error if renderer is not None else ""
+    if renderer is None or not error:
+        return _themis_failure(_EXIT_UNKNOWN.format(code=exit_code))
+    if renderer.transient_error:
+        return _themis_failure(
+            f"The model provider could not serve this run ({error})"
+            + (f", also after {retries} more {'try' if retries == 1 else 'tries'}." if retries else "."),
+            "Try again later, or choose another model for the agent (its Model field, or Settings, Codex agents).",
+        )
+    return _themis_failure(f"The agent stopped with an error: {error}")
 
 
 class _LogBuffer:
@@ -252,6 +279,12 @@ class Scheduler:
                 attempt.status = AttemptStatus.FAILED
                 attempt.finished_at = now
                 attempt.log += "\n[Themis restarted while this attempt was running]\n"
+                attempt.failure = {
+                    **_themis_failure(
+                        "Themis restarted while this attempt was running.", "Run it again with Run now."
+                    ),
+                    "tail": log_tail(attempt.log),
+                }
                 task = await s.get(Task, attempt.task_id)
                 if task is not None and task.status == TaskStatus.RUNNING:
                     finish_task(task, AttemptStatus.FAILED, cfg.timezone, now)
@@ -364,7 +397,9 @@ class Scheduler:
             await s.commit()
         for attempt_id, spec, locks in started:
             live = _Live(
-                task=asyncio.create_task(self._execute(attempt_id, spec, cfg.timezone)),
+                task=asyncio.create_task(
+                    self._execute(attempt_id, spec, cfg.timezone, tuple(cfg.cell_package.retry_waits))
+                ),
                 spec=spec,
                 cell=spec.harness != "workflow",
                 locks=locks,
@@ -580,6 +615,7 @@ class Scheduler:
                 started_at=now,
                 finished_at=now,
                 log=f"[Cell error] {reason}\n",
+                failure={**_themis_failure(reason), "tail": ""},
             )
         )
         plan.task.last_run_at = now
@@ -631,6 +667,7 @@ class Scheduler:
                 folders=[(m.name, m.read_only) for m in plan.mounts],
                 notes=[*([plan.workdir_note] if plan.workdir_note else []), *plan.connection_notes],
                 continuing=plan.workdir_id is not None,
+                rules=effective_rules(cfg.cell_package),
             )
         return CellSpec(
             attempt_id=attempt_id,
@@ -656,14 +693,23 @@ class Scheduler:
             mcp=plan.mcp,
             connections=plan.connections,
             env=dict(plan.connection_env),
+            package_skill=effective_skill(cfg.cell_package) if hp else "",
         )
 
     # running a cell
 
-    async def _execute(self, attempt_id: int, spec: CellSpec, tz: str) -> None:
+    async def _execute(
+        self, attempt_id: int, spec: CellSpec, tz: str, retry_waits: tuple[int, ...] = ()
+    ) -> None:
+        """Run the cell and record how it ended. When the model provider could not serve a run for a moment (the
+        harness says so, see CodexRenderer.transient_error) the run starts again in the same attempt after each of
+        `retry_waits`: whether an error is such a moment is the harness's call, how patient to be is the setting."""
         buf = _LogBuffer(self.maker, attempt_id)
         outcome, exit_code, result = AttemptStatus.FAILED, None, ""
+        failure: dict | None = None  # why it failed, once it has (see Attempt.failure)
         before: dict[str, tuple[int, int]] | None = None  # the working folder as the cell found it
+        retries = 0  # how many times the provider's trouble made this attempt start its run again
+        renderer = None
         redact = Redactor(
             []
         )  # replaces the values of the keys this run was given, in everything that is stored
@@ -690,46 +736,91 @@ class Scheduler:
                         for env, value in tokens.items():
                             spec.secret_files[key_path(env)] = value
                         redact = Redactor([*values.values(), *from_connections.values(), *tokens.values()])
-                renderer = renderer_for(spec.harness)
-
-                async def sink(chunk: str) -> None:
-                    if renderer is None:
-                        await buf.write(redact(chunk))
-                    elif text := renderer.feed(chunk):
-                        await buf.write(redact(text))
-
                 if spec.harness != "workflow":
                     before = await asyncio.to_thread(snapshot_workdir, spec)
-                res = await self._play_or_run(spec, attempt_id, sink)
-                if renderer is not None and (tail := renderer.flush()):
-                    await buf.write(redact(tail))
-                if (
-                    lease is not None
-                    and (fresh := res.writeback.get(CODEX_AUTH))
-                    and fresh != lease.auth_json
-                ):
-                    try:
-                        await lease.save_back(fresh)
-                    except CodexError as e:
-                        await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
+                while True:
+                    # one renderer per run: it remembers the error that ended it
+                    renderer = renderer_for(spec.harness)
+
+                    async def sink(chunk: str, renderer=renderer) -> None:
+                        if renderer is None:
+                            await buf.write(redact(chunk))
+                        elif text := renderer.feed(chunk):
+                            await buf.write(redact(text))
+
+                    res = await self._play_or_run(spec, attempt_id, sink)
+                    if renderer is not None and (tail := renderer.flush()):
+                        await buf.write(redact(tail))
+                    if (
+                        lease is not None
+                        and (fresh := res.writeback.get(CODEX_AUTH))
+                        and fresh != lease.auth_json
+                    ):
+                        try:
+                            await lease.save_back(fresh)
+                        except CodexError as e:
+                            await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
+                    trouble = renderer.transient_error if renderer is not None and res.exit_code != 0 else ""
+                    if not trouble or retries >= len(retry_waits):
+                        break
+                    wait = retry_waits[retries]
+                    retries += 1
+                    await buf.write(
+                        f"\n[Themis] The provider could not serve this run: {redact(trouble)}\n"
+                        f"[Themis] Starting it again in {wait} s (retry {retries} of {len(retry_waits)}). "
+                        "What it already did stays in the working folder.\n"
+                    )
+                    await asyncio.sleep(wait)
+                    # the next run starts from the login the last one refreshed, and is told it is a continuation
+                    if lease is not None:
+                        spec.secret_files[CODEX_AUTH] = lease.auth_json
+                    if RETRY_NOTE not in spec.prompt:
+                        spec.prompt = f"{spec.prompt.rstrip()}\n\n{RETRY_NOTE}\n"
             exit_code, result = res.exit_code, redact(res.result)
             outcome = AttemptStatus.SUCCEEDED if res.exit_code == 0 else AttemptStatus.FAILED
+            if res.blocked.strip():
+                # the agent stopped and said why: that is the answer, whatever the exit code of the program was
+                reason, fix = parse_blocked(redact(res.blocked))
+                outcome = AttemptStatus.FAILED
+                failure = {
+                    "source": "agent",
+                    "reason": reason or "The agent stopped without saying why.",
+                    "action": fix,
+                }
+            elif outcome == AttemptStatus.FAILED:
+                failure = _run_failure(renderer, res.exit_code, retries)
         except asyncio.CancelledError:
             reason = self._live[attempt_id].cancel_reason if attempt_id in self._live else None
             if reason == "shutdown":
                 await buf.write("\n[Themis shut down while this attempt was running]\n")
+                failure = _themis_failure(
+                    "Themis shut down while this attempt was running.", "Run it again with Run now."
+                )
             else:
                 outcome = AttemptStatus.CANCELLED
                 await buf.write("\n[Cancelled]\n")
+        except CellTimeout as e:
+            await buf.write(f"\n[Cell error] {e}\n")
+            failure = _themis_failure(
+                str(e), "Raise the cell time limit in Settings, or give the agent a smaller job."
+            )
         except (CellError, CodexError, ConnectionProblem) as e:
             await buf.write(f"\n[Cell error] {e}\n")
+            failure = _themis_failure(str(e))
         except Exception as e:
             log.exception("attempt %s crashed", attempt_id)
             await buf.write(f"\n[Unexpected error] {e}\n")
+            failure = _themis_failure(
+                f"Themis hit an unexpected error: {e}",
+                "This is a bug in Themis: the server log has the details.",
+            )
         changes = None
         if before is not None:  # a failed or cancelled run may have left files too: the next step should know
             changes = changes_between(before, await asyncio.to_thread(snapshot_workdir, spec))
-        await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes)
+        if outcome == AttemptStatus.FAILED and spec.harness == "workflow" and self.workflows is not None:
+            # a task that plays workflows failed because of a step: that step's reason is the one to show
+            failure = await self.workflows.failure_for_attempt(attempt_id) or failure
+        await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes, failure)
 
     async def _login_tokens(self, spec: CellSpec) -> dict[str, str]:
         """The bearer token of each tool of the run that signs in, by the variable the cell reads it from."""
@@ -779,7 +870,19 @@ class Scheduler:
         result: str,
         tz: str,
         changes: dict | None = None,
+        failure: dict | None = None,
     ) -> None:
+        if outcome == AttemptStatus.FAILED:
+            # a failure always says something, even when nobody worked out why: the last lines of the log are then the
+            # best there is. One that came from a workflow step brings that step's lines.
+            failure = {
+                "source": "themis",
+                "action": "",
+                **(failure or {"reason": _EXIT_UNKNOWN.format(code=exit_code)}),
+            }
+            failure.setdefault("tail", log_tail(buf.text))
+        else:
+            failure = None
         async with self.maker() as s:
             attempt = await s.get(Attempt, attempt_id)
             task = await s.get(Task, task_id)
@@ -791,6 +894,7 @@ class Scheduler:
                 attempt.log = buf.text
                 attempt.result = result
                 attempt.changes = changes
+                attempt.failure = failure
             if task is not None and task.status == TaskStatus.RUNNING:
                 finish_task(task, outcome, tz, now)
             await s.commit()

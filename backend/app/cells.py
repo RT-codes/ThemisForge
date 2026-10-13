@@ -9,6 +9,8 @@ The cell contract (what runs inside a cell, whatever the harness):
   /workspace/NAME     a shared folder (volume) mounted inside it, read/write or read-only (see app/volumes.py)
   /cell/input.json    the task, written before the cell starts
   /cell/result.md     optional: the cell writes its result here; it is stored with the attempt
+  /cell/blocked.md    optional: an agent that cannot do the task writes why here and stops. The attempt then fails with
+                      that reason on the ticket, whatever the exit code (see harness.parse_blocked)
   exit code 0         success, anything else is a failure
   /run/themis-secrets credentials for this attempt (see CellSpec.secret_files): in memory only, gone with the cell
 """
@@ -28,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from . import cell_package as package
 from . import skills as skill_store
 from .config import settings
 from .docker_check import docker_bin, docker_env
@@ -48,6 +51,10 @@ DEFAULT_CELL_SCRIPT = (
 
 class CellError(Exception):
     """The cell could not run (Docker unavailable, image missing, timeout...)."""
+
+
+class CellTimeout(CellError):
+    """The cell ran past its time limit and was stopped."""
 
 
 def workdir_path(project_id: int, workdir_id: int) -> Path:
@@ -106,6 +113,9 @@ class CellSpec:
     connections: list = field(
         default_factory=list
     )  # connections the run uses (RunConnection, app/connections.py); their secrets are filled in at start
+    # The text of the themis-cell skill every cell is given (app/cell_package.py), "" for none. It is staged once for
+    # the installation and mounted read only, so it is not in this run's /cell where the agent could change it.
+    package_skill: str = ""
 
     @property
     def workspace_dir(self) -> Path:
@@ -124,6 +134,7 @@ class CellSpec:
 class CellResult:
     exit_code: int
     result: str = ""
+    blocked: str = ""  # what the agent wrote to /cell/blocked.md: why it could not do the task
     writeback: dict[str, str] = field(default_factory=dict, repr=False)  # secret file path -> final content
 
 
@@ -138,6 +149,12 @@ class CellManager(Protocol):
 def prepare_dirs(spec: CellSpec) -> None:
     spec.workspace_dir.mkdir(parents=True, exist_ok=True)
     spec.cell_dir.mkdir(parents=True, exist_ok=True)
+    # A run that is started again after a provider error finds the folder of the one before it: what that run said
+    # must not be mistaken for what this one says.
+    for stale in ("result.md", "blocked.md"):
+        (spec.cell_dir / stale).unlink(missing_ok=True)
+    if spec.package_skill:
+        package.stage_skill(spec.package_skill)
     if spec.skills:
         skill_store.stage(spec.project_id, spec.skills, spec.skills_dir)
         (spec.workspace_dir / ".agents" / "skills").mkdir(
@@ -219,9 +236,17 @@ def secrets_archive(files: dict[str, str], uid: int = 0, gid: int = 0) -> bytes:
     return out.getvalue()
 
 
-def read_result(spec: CellSpec) -> str:
-    path = spec.cell_dir / "result.md"
+def _read_cell_file(spec: CellSpec, name: str) -> str:
+    path = spec.cell_dir / name
     return path.read_text(encoding="utf-8", errors="replace")[:100_000] if path.is_file() else ""
+
+
+def read_result(spec: CellSpec) -> str:
+    return _read_cell_file(spec, "result.md")
+
+
+def read_blocked(spec: CellSpec) -> str:
+    return _read_cell_file(spec, "blocked.md")
 
 
 WRITEBACK_BEGIN = "@@THEMIS-WRITEBACK-BEGIN "
@@ -290,6 +315,11 @@ class FakeCellManager:
         self.log_text = ""  # extra output a cell "prints", for tests
         # what a cell "writes" into /workspace, for tests: task title -> {relative path: content}
         self.files: dict[str, dict[str, str]] = {}
+        # for tests: how many runs of a task (by title) end in the provider saying it is at capacity before one works,
+        # and what a task's agent writes to /cell/blocked.md
+        self.capacity_errors: dict[str, int] = {}
+        self.blocked: dict[str, str] = {}
+        self._runs: dict[str, int] = {}
 
     async def run(self, spec: CellSpec, on_log: LogSink) -> CellResult:
         self.specs.append(spec)
@@ -302,15 +332,27 @@ class FakeCellManager:
             target = spec.workspace_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
+        self._runs[spec.title] = self._runs.get(spec.title, 0) + 1
+        if self._runs[spec.title] <= self.capacity_errors.get(spec.title, 0):
+            event = {
+                "type": "error",
+                "message": "Selected model is at capacity. Please try a different model.",
+            }
+            await on_log(json.dumps(event) + "\n")
+            return CellResult(exit_code=1)
         if "fail" in spec.title.lower():
             await on_log("[fake cell] simulated failure\n")
             return CellResult(exit_code=1)
+        if spec.title in self.blocked:
+            (spec.cell_dir / "blocked.md").write_text(
+                self.blocked[spec.title], encoding="utf-8", newline="\n"
+            )
         (spec.cell_dir / "result.md").write_text(
             f"Task {spec.task_id} ({spec.title}) finished.\n", encoding="utf-8", newline="\n"
         )
         await on_log("[fake cell] finished\n")
         wb = {p: c for p, c in self.writeback.items() if p in spec.writeback}
-        return CellResult(exit_code=0, result=read_result(spec), writeback=wb)
+        return CellResult(exit_code=0, result=read_result(spec), blocked=read_blocked(spec), writeback=wb)
 
     async def kill(self, spec: CellSpec) -> None:
         return None
@@ -363,6 +405,7 @@ class DockerCellManager:
             *mount_arg(spec.workspace_dir, "/workspace"),
             *[a for m in spec.mounts for a in mount_arg(m.source, f"/workspace/{m.name}", read_only=m.read_only)],
             *(mount_arg(spec.skills_dir, skill_store.MOUNT_AT, read_only=True) if spec.skills else []),
+            *(mount_arg(package.skills_root(), package.SKILLS_MOUNT_AT, read_only=True) if spec.package_skill else []),
             *mount_arg(spec.cell_dir, "/cell"),
             "-e", f"THEMIS_TASK_ID={spec.task_id}",
             "-e", f"THEMIS_TASK_TITLE={spec.title}",
@@ -404,7 +447,7 @@ class DockerCellManager:
                 code = await proc.wait()
         except TimeoutError:
             await self.kill(spec)
-            raise CellError(f"Cell timed out after {spec.timeout_seconds}s and was stopped") from None
+            raise CellTimeout(f"Cell timed out after {spec.timeout_seconds}s and was stopped") from None
         except asyncio.CancelledError:
             await self.kill(spec)
             raise
@@ -413,7 +456,9 @@ class DockerCellManager:
                 with contextlib.suppress(ProcessLookupError):
                     proc.kill()
                 await proc.wait()
-        return CellResult(exit_code=code, result=read_result(spec), writeback=wb.files)
+        return CellResult(
+            exit_code=code, result=read_result(spec), blocked=read_blocked(spec), writeback=wb.files
+        )
 
     async def kill(self, spec: CellSpec) -> None:
         proc = await asyncio.create_subprocess_exec(

@@ -61,5 +61,15 @@ Set a task's **Run with** to **Codex agent**. When it runs, Themis:
 The installer gets the image for you (and `themis upgrade` gets the one that matches each new version). In a development checkout, build it once with `./themis build-images`. Each run gets its own private working folder at `/workspace`,
 so two agents never edit the same files. If the owner has not connected Codex, the attempt fails and says so.
 
+## What the agent's computer has
+
+The Codex image has git, ripgrep, the GitHub CLI, Node with `npm` and `npx`, `uv` and `uvx`, and Chromium (for checking a
+page or taking a screenshot). A cell runs without root, so there is no `apt` and no installing system packages; `npm`,
+`npx` and `uv` still work inside `/workspace`. A short skill, `themis-cell`, tells every agent this and how to launch the
+browser, so the agent does not try to install one. Themis adds it to every cell itself (it is not one of an agent's own
+skills and agents cannot change it), and an administrator can read it, edit it or switch it off under **Settings, Cell
+package**, without rebuilding the image. If you use your own image, edit it to match what your image has. The browser makes
+the default image about 700 MB larger on disk.
+
 Runs of the same user take turns: Codex rotates its refresh tokens, so two cells refreshing the same login at once
 could lock each other out. A second run waits and says so in its log.

@@ -166,6 +166,46 @@ def workdir_note(steps: Sequence[EarlierStep], top_level: Sequence[str]) -> str:
     return "\n".join(lines)
 
 
+# A run that is started again after a provider error finds the work of the one before it in /workspace
+RETRY_NOTE = (
+    "An earlier run of this job stopped early because the model provider had a problem, not because of anything you "
+    "did. /workspace holds what it already did: continue from there instead of starting over."
+)
+
+_BLOCKED_FIELD_CHARS = 400  # a reason is a sentence or two; the log has the rest
+
+
+def parse_blocked(text: str) -> tuple[str, str]:
+    """(reason, fix) from what an agent wrote to /cell/blocked.md. Lines other than `Reason:` and `Fix:` count as the
+    reason, so an agent that wrote free text is still understood."""
+    reason: list[str] = []
+    fix: list[str] = []
+    into = reason
+    for line in text.strip().splitlines():
+        head, _, rest = line.partition(":")
+        key = head.strip().lower().lstrip("*-# ").rstrip("*")
+        if key in ("reason", "fix"):
+            into, line = (reason if key == "reason" else fix), rest.lstrip("*")  # "**Reason:** ..."
+        into.append(line.strip())
+
+    def clean(lines: list[str]) -> str:
+        return " ".join(" ".join(lines).split())[:_BLOCKED_FIELD_CHARS]
+
+    return clean(reason), clean(fix)
+
+
+_TAIL_LINES = 80  # what the ticket shows of the end of the log of a failure
+_TAIL_LINE_CHARS = 300
+
+
+def log_tail(log: str) -> str:
+    """The last lines of a log, each shortened: what a person looks at first when something failed."""
+    lines = log.rstrip().split("\n")[-_TAIL_LINES:]
+    return "\n".join(
+        line if len(line) <= _TAIL_LINE_CHARS else f"{line[:_TAIL_LINE_CHARS]} [...]" for line in lines
+    )
+
+
 def build_prompt(
     title: str,
     description: str,
@@ -175,6 +215,7 @@ def build_prompt(
     folders: Sequence[tuple[str, bool]] = (),
     notes: Sequence[str] = (),
     continuing: bool = False,
+    rules: str = "",
 ) -> str:
     parts = [preamble] if preamble else []
     parts.append(f"# {title}")
@@ -196,6 +237,8 @@ def build_prompt(
         "task, then finish with a short summary of what you did and what you produced. Never read or print anything "
         "under /run/themis-secrets: it holds credentials, and everything you print is stored in the log."
     )
+    if rules.strip():  # the Themis package's rules (app/cell_package.py), switched off or edited in Settings
+        parts.append(rules.strip())
     return "\n\n".join(parts) + "\n"
 
 
@@ -223,6 +266,21 @@ def trim_output(out: str) -> str:
     return "\n".join([*lines[:_OUT_HEAD_LINES], note, *lines[-_OUT_TAIL_LINES:]])
 
 
+# Codex errors that mean the provider could not serve the run right now, so the same run may well work in a minute.
+# Matched on the message Codex prints. Not a usage or plan limit ("try again at ..." can be days away) and not a
+# rejected login or model name: those need a person.
+_CODEX_TRANSIENT = (
+    "at capacity",
+    "overloaded",
+    "temporarily unavailable",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "internal server error",
+    "stream disconnected",
+)
+
+
 class CodexRenderer:
     """Turns `codex exec --json` events into a readable log, line by line. Unknown events are kept, shortened."""
 
@@ -230,6 +288,13 @@ class CodexRenderer:
         self._buf = ""
         self._emitted = False
         self.usage: dict[str, int] = {}
+        self.error = ""  # the message of the last error event: why the run ended, when it did not end well
+
+    @property
+    def transient_error(self) -> str:
+        """The error that ended this run when it is one worth starting the run again for, else ''."""
+        lowered = self.error.lower()
+        return self.error if any(marker in lowered for marker in _CODEX_TRANSIENT) else ""
 
     def feed(self, text: str) -> str:
         self._buf += text
@@ -280,6 +345,7 @@ class CodexRenderer:
             return f"[codex] done - {u.get('input_tokens', 0)} tokens in, {u.get('output_tokens', 0)} out\n"
         if kind in ("turn.failed", "error"):
             detail = e.get("message") or (e.get("error") or {}).get("message") or ""
+            self.error = detail
             return f"[codex] error: {detail}\n"
         item_type = item.get("type", "")
         if kind == "item.started":

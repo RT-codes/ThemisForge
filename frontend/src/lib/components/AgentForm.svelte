@@ -34,6 +34,7 @@
 		servers = $bindable(),
 		tab = $bindable('general'),
 		counts = $bindable({ skills: 0, tools: 0, hasSkills: true, hasTools: true }),
+		actionsHost = null,
 		onsaved,
 		onclose,
 		ondeleted,
@@ -49,11 +50,21 @@
 		servers: McpServer[]
 		tab?: AgentTab // which part is shown: the page puts the tabs above the panel
 		counts?: AgentCounts // what the tabs say about this agent, for the page
+		actionsHost?: HTMLElement | null // where the page wants Delete, Discard and Save: beside its tabs, above the panel
 		onsaved: (agent: Agent, created: boolean) => void
 		onclose: () => void // back to the overview of the agent (or the list, for a new one)
 		ondeleted: () => void
 		onchanged: () => void // a skill or tool was deleted, which changed other agents too
 	} = $props()
+
+	const FORM_ID = 'agent-form'
+	// An attachment that moves its element into another one (the page's action slot). Svelte only removes the nodes it
+	// put in place itself, so the node must take itself out again when the form goes away: otherwise every visit to the
+	// editor leaves another copy of the bar behind.
+	const moveTo = (target: HTMLElement) => (node: HTMLElement) => {
+		target.appendChild(node)
+		return () => node.remove()
+	}
 
 	const blank = (): AgentInput => ({
 		name: '',
@@ -197,7 +208,7 @@
 
 <svelte:window onbeforeunload={(e) => anything && e.preventDefault()} />
 
-<form onsubmit={save} class="flex min-h-0 flex-1 flex-col gap-3">
+<form id={FORM_ID} onsubmit={save} class="flex min-h-0 flex-1 flex-col gap-3">
 	<!-- every tab stays mounted and is only hidden, so a skill or tool being edited keeps its place while another tab is open -->
 	<div role="tabpanel" hidden={tab !== 'general'} class="grid gap-5">
 	<section class="grid gap-3 border-t pt-5 first:border-t-0 first:pt-0">
@@ -317,7 +328,7 @@
 			<section class="flex min-h-0 flex-1 flex-col gap-3">
 				<div>
 					<h3 class="text-sm font-semibold tracking-tight">Skills</h3>
-					<p class="text-xs text-muted-foreground">Guides it reads when a task calls for them. Every skill of the project is here: switch on the ones this agent should have, and open one to read or change it.</p>
+					<p class="text-xs text-muted-foreground">Guides it reads when a task calls for them. Every skill of the project is here: switch on the ones this agent should have, and open one to read or change it. The locked one is built in and every Codex agent has it.</p>
 				</div>
 				<SkillPicker {projectId} bind:selected={draft.skills} bind:skills bind:dirty={skillsDirty} canEdit onremoved={(name) => rebase((a) => (a.skills = a.skills.filter((x) => x !== name)))} />
 			</section>
@@ -330,7 +341,7 @@
 			<section class="flex min-h-0 flex-1 flex-col gap-3">
 				<div>
 					<h3 class="text-sm font-semibold tracking-tight">Tools</h3>
-					<p class="text-xs text-muted-foreground">Extra tools it can use while it works (MCP servers). Switch on the ones this agent should have, and open one to change it or test the connection.</p>
+					<p class="text-xs text-muted-foreground">Extra tools it can use while it works (MCP servers). The list is the project's tools, installed once for every agent; the switches are this agent's own choice. Open one to change it or test the connection.</p>
 				</div>
 				<ToolPicker {projectId} bind:selected={draft.mcp_servers} bind:servers {keys} bind:dirty={toolsDirty} canEdit onremoved={(id) => rebase((a) => (a.mcp_servers = a.mcp_servers.filter((x) => x !== id)))} />
 				{#each warnings as warning (warning)}
@@ -341,13 +352,16 @@
 	
 	</div>
 
-	<div class="sticky bottom-0 z-10 mt-auto pt-1">
-		<div class="flex items-center gap-2 rounded-lg border bg-popover/95 px-3 py-2 shadow-lg backdrop-blur">
+	<!-- Delete, Discard and Save live in the page's top row beside the tabs, so they stay in view whichever tab is open and
+	     however long it is. The node is moved there, and Save still submits this form through its form attribute. -->
+	{#if actionsHost}
+		{@const status = saveError || (anything ? (dirty ? 'You have unsaved changes' : 'A file you are editing is not saved yet') : justSaved ? 'Saved' : '')}
+		<div class="flex min-w-0 flex-1 items-center gap-2" {@attach moveTo(actionsHost)}>
 			{#if agent}
 				<Button type="button" size="sm" variant="ghost" class="text-destructive hover:text-destructive" onclick={() => (confirmOpen = true)}><Trash2Icon /> Delete</Button>
 			{/if}
-			<p class={cn('flex-1 text-sm', saveError ? 'text-destructive' : justSaved && !anything ? 'text-emerald-400' : 'text-muted-foreground')} role={saveError ? 'alert' : 'status'}>
-				{saveError || (anything ? (dirty ? 'You have unsaved changes' : 'A file you are editing is not saved yet') : justSaved ? 'Saved' : '')}
+			<p class={cn('min-w-0 flex-1 truncate text-end text-sm', saveError ? 'text-destructive' : justSaved && !anything ? 'text-emerald-400' : 'text-muted-foreground')} role={saveError ? 'alert' : 'status'} title={status}>
+				{status}
 			</p>
 			{#if isNew}
 				<Button type="button" size="sm" variant="ghost" onclick={onclose}>Cancel</Button>
@@ -355,9 +369,9 @@
 				<Button type="button" size="sm" variant="ghost" disabled={!dirty || saving} onclick={() => agent && show(toInput(agent))}>Discard</Button>
 				<Button type="button" size="sm" variant="outline" onclick={onclose}>Done</Button>
 			{/if}
-			<Button type="submit" size="sm" disabled={saving || !draft.name.trim() || (!isNew && !dirty)}>{isNew ? 'Create agent' : 'Save changes'}</Button>
+			<Button type="submit" form={FORM_ID} size="sm" disabled={saving || !draft.name.trim() || (!isNew && !dirty)}>{isNew ? 'Create agent' : 'Save changes'}</Button>
 		</div>
-	</div>
+	{/if}
 </form>
 
 <AlertDialog.Root bind:open={confirmOpen}>

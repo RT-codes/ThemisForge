@@ -2,6 +2,7 @@
 	import { api, type Attempt, type AttemptDetail, type AttemptStatus } from '$lib/api'
 	import { attemptLabel, dateTime, duration } from '$lib/format'
 	import LogPanel from '$lib/components/LogPanel.svelte'
+	import FailureNote from './FailureNote.svelte'
 	import ResultView from '$lib/components/ResultView.svelte'
 	import { cn } from '$lib/utils'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
@@ -109,6 +110,9 @@
 					<span class="min-w-0 flex-1 truncate">Played workflow run #{detail.workflow_run_id}</span>
 					<span class="shrink-0 text-xs text-primary">See every node</span>
 				</a>
+			{/if}
+			{#if detail.failure}
+				<FailureNote failure={detail.failure} />
 			{/if}
 			{#if detail.result}
 				{#key detail.id}

@@ -24,6 +24,15 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Chromium, for agents that check a UI or take screenshots. A cell has no root, so the browser and the system libraries
+# it needs (nss, glib, gbm...) can only come from here: a `playwright install` at run time downloads a browser that then
+# cannot start. Playwright and Puppeteer can use this one (executablePath); the themis-cell skill that tells agents
+# so is Themis's own (backend/app/cell_package.py), so it can be read and edited in Settings without a rebuild.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+ENV CHROME_BIN=/usr/bin/chromium PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 # uv, so a tool server published on PyPI can be started with `uvx` (tools added from the MCP registry, see
 # backend/app/mcp_registry.py). uv downloads the Python it needs when the tool first starts, so the image has none.
 COPY --from=uv /uv /uvx /usr/local/bin/

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Skill } from '$lib/api'
+	import { api, ApiError, type CellPackageInUse, type Skill } from '$lib/api'
+	import { auth } from '$lib/auth.svelte'
 	import ConfigFilePane from '$lib/components/ConfigFilePane.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -11,6 +12,7 @@
 	import { cn } from '$lib/utils'
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert'
 	import FileIcon from '@lucide/svelte/icons/file'
+	import LockIcon from '@lucide/svelte/icons/lock'
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import SparklesIcon from '@lucide/svelte/icons/sparkles'
@@ -47,7 +49,14 @@
 		dirty = paneDirty
 	})
 
+	// the Themis package every Codex agent gets: shown first, locked, so what the agent is given can be read here. It is
+	// changed in Settings (administrators), never per agent.
+	const BUILTIN = '@themis-cell' // a skill name cannot hold "@", so it never clashes with a project skill
+	let pkg = $state<CellPackageInUse | null>(null)
+	let builtinView = $state<'skill' | 'rules'>('skill')
+
 	onMount(async () => {
+		api.cellPackage().then((p) => (pkg = p)).catch(() => {}) // only the extra row is lost
 		try {
 			volumeId = (await api.configFolder(projectId)).id
 		} catch (e) {
@@ -152,6 +161,23 @@
 	     New skill stays at its foot -->
 	<div class="flex h-[26rem] min-w-0 flex-col overflow-hidden rounded-lg border bg-background/40 lg:h-auto">
 		<div class="slim-scrollbar grid min-h-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto p-2">
+		{#if pkg}
+			<div
+				class={cn('flex min-w-0 items-center gap-2.5 cursor-pointer overflow-hidden rounded-md border px-2.5 py-2 transition-colors hover:border-primary/40 hover:bg-accent/40', focus === BUILTIN && 'border-primary/40 bg-accent/60')}
+				onclick={() => pick(BUILTIN)}
+				role="presentation"
+			>
+				<button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-start" aria-pressed={focus === BUILTIN}>
+					<span class={cn('flex size-7 shrink-0 items-center justify-center rounded-md', pkg.skill_enabled ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground')}>
+						<LockIcon class="size-4" />
+					</span>
+					<span class="min-w-0 flex-1">
+						<span class="block truncate font-mono text-sm font-medium">{pkg.skill_name}</span>
+						<span class="block truncate text-xs text-muted-foreground">{pkg.skill_enabled ? 'Built in, every Codex agent has it' : 'Built in, switched off in Settings'}</span>
+					</span>
+				</button>
+			</div>
+		{/if}
 		{#each skills as skill (skill.name)}
 			{@const on = selected.includes(skill.name)}
 			<div
@@ -195,7 +221,37 @@
 	</div>
 
 	<div class="relative flex h-[26rem] min-w-0 flex-col overflow-hidden rounded-lg border bg-background/40 lg:h-auto">
-		{#if current && volumeId !== null}
+		{#if focus === BUILTIN && pkg}
+			{@const text = builtinView === 'skill' ? pkg.skill : pkg.rules}
+			<div class="flex flex-wrap items-center gap-2 border-b px-4 py-2.5" in:fade={{ duration: 150 }}>
+				<div class="min-w-0 flex-1">
+					<p class="truncate font-mono text-sm font-medium">{pkg.skill_name}</p>
+					<p class="text-xs text-muted-foreground">
+						Built in and locked here: every Codex agent gets it, so it is the same for all of them.
+						{#if auth.user?.is_admin}
+							Edit or switch it off under <a class="text-primary hover:underline" href="/settings#package">Settings, Cell package</a>.
+						{:else}
+							An administrator can change it under Settings, Cell package.
+						{/if}
+					</p>
+				</div>
+			</div>
+			<div class="flex flex-wrap gap-1 border-b px-3 py-2" role="tablist" aria-label="Parts of the Themis package">
+				<Button variant={builtinView === 'skill' ? 'secondary' : 'ghost'} size="sm" class="h-7 gap-1.5 px-2 font-mono text-xs" role="tab" aria-selected={builtinView === 'skill'} onclick={() => (builtinView = 'skill')}>
+					<FileIcon class="size-3.5" />SKILL.md
+				</Button>
+				<Button variant={builtinView === 'rules' ? 'secondary' : 'ghost'} size="sm" class="h-7 gap-1.5 px-2 text-xs" role="tab" aria-selected={builtinView === 'rules'} onclick={() => (builtinView = 'rules')}>
+					<FileIcon class="size-3.5" />Rules in the prompt
+				</Button>
+			</div>
+			<div class="relative m-4 flex min-h-0 flex-1 flex-col">
+				{#if text}
+					<pre class="slim-scrollbar min-h-0 flex-1 overflow-auto rounded-lg border bg-card p-3 text-xs break-words whitespace-pre-wrap">{text}</pre>
+				{:else}
+					<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">This part is switched off in Settings, so agents do not get it.</p>
+				{/if}
+			</div>
+		{:else if current && volumeId !== null}
 			<div class="flex flex-wrap items-center gap-2 border-b px-4 py-2.5" in:fade={{ duration: 150 }}>
 				<div class="min-w-0 flex-1">
 					<p class="truncate font-mono text-sm font-medium">{current.name}</p>

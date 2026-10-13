@@ -8,7 +8,7 @@ const task = (id: number, overrides: Partial<Task> = {}): Task => ({
   status: 'backlog', position: id, properties: {}, schedule_kind: 'none', cron: null, run_at: null,
   next_run_at: null, last_run_at: null, review_on_success: false, harness: '', agent_id: null,
   stages: [], hops: 0, cooldown_seconds: null, max_hops: null, created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z', last_attempt_status: null, workflow_run: null, ...overrides,
+  updated_at: '2026-01-01T00:00:00Z', last_attempt_status: null, last_failure_reason: '', workflow_run: null, ...overrides,
 })
 
 test('review and failed tasks across boards each have one reason', () => {

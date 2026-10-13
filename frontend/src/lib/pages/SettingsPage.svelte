@@ -3,6 +3,7 @@
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import ConnectionsSettings from '$lib/components/ConnectionsSettings.svelte'
+	import CellPackageSettings from '$lib/components/CellPackageSettings.svelte'
 	import McpAuthSettings from '$lib/components/McpAuthSettings.svelte'
 	import RegistrySettings from '$lib/components/RegistrySettings.svelte'
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte'
@@ -51,7 +52,13 @@
 	})()
 	const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 	// the budget is a nested object, so a plain spread would share it between the form and the saved copy
-	const copy = (s: AppSettings): AppSettings => ({ ...s, budget: { ...s.budget }, mcp_auth: { ...s.mcp_auth }, mount_roots: s.mount_roots.map((r) => ({ ...r })) })
+	const copy = (s: AppSettings): AppSettings => ({
+		...s,
+		budget: { ...s.budget },
+		mcp_auth: { ...s.mcp_auth },
+		cell_package: { ...s.cell_package, retry_waits: [...s.cell_package.retry_waits] },
+		mount_roots: s.mount_roots.map((r) => ({ ...r })),
+	})
 	const dirty = $derived(JSON.stringify(form) !== JSON.stringify(saved))
 
 	async function checkDocker(host?: string) {
@@ -179,6 +186,11 @@
 		form.mount_roots = [...form.mount_roots, { path, allow_write: false }]
 		newRoot = ''
 	}
+	const packageSummary = $derived(
+		form
+			? `Rules ${form.cell_package.rules_enabled ? 'on' : 'off'} · skill ${form.cell_package.skill_enabled ? 'on' : 'off'} · ${form.cell_package.retry_waits.length} retr${form.cell_package.retry_waits.length === 1 ? 'y' : 'ies'}`
+			: ''
+	)
 	const agentSummary = $derived(form ? `${form.codex_model} · ${form.codex_reasoning_effort} effort` : '')
 	const keySummary = $derived(`${secrets.length} ${secrets.length === 1 ? 'key' : 'keys'}`)
 
@@ -524,6 +536,10 @@
 								</Select.Root>
 							</div>
 						</div>
+					</SettingsSection>
+
+					<SettingsSection id="package" title="Cell package" description="What Themis adds to every Codex run: its rules, the themis-cell skill and retries." summary={packageSummary}>
+						<CellPackageSettings bind:pkg={form.cell_package} />
 					</SettingsSection>
 
 					</div>

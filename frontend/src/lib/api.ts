@@ -136,6 +136,8 @@ export interface Task {
   created_at: string
   updated_at: string
   last_attempt_status: AttemptStatus | null
+  /** why the latest attempt failed, in a sentence for the card; empty when it did not fail */
+  last_failure_reason: string
   /** the workflow run this task started that is still going, if any */
   workflow_run: { run_id: number; workflow_id: number; workflow_name: string; step: string } | null
 }
@@ -185,8 +187,19 @@ export interface Attempt {
   exit_code: number | null
 }
 
+/** Why an attempt failed: found by Themis from what it saw, or written by the agent that stopped and said so */
+export interface AttemptFailure {
+  source: 'themis' | 'agent'
+  reason: string
+  /** what the person can change; empty when nobody knows */
+  action: string
+  /** the last lines of the log of what failed */
+  tail: string
+}
+
 export interface AttemptDetail extends Attempt {
   workflow_id: number | null
+  failure: AttemptFailure | null
   log: string
   result: string
 }
@@ -429,6 +442,31 @@ export interface McpAuthPolicy {
   client_name: string // shown on the service's consent screen
 }
 
+/** What Themis puts into every Codex cell by itself; empty text means the built-in one (see app/cell_package.py) */
+export interface CellPackage {
+  rules_enabled: boolean
+  rules: string
+  skill_enabled: boolean
+  skill: string
+  /** seconds to wait before each new try when the model provider could not serve a run; empty = never retry */
+  retry_waits: number[]
+}
+
+export interface CellPackageDefaults {
+  rules: string
+  skill: string
+}
+
+// what every Codex agent is given right now (edits and switches in Settings applied), readable by any user
+export interface CellPackageInUse {
+  skill_name: string
+  skill_enabled: boolean
+  skill: string
+  description: string
+  rules_enabled: boolean
+  rules: string
+}
+
 export interface AppSettings {
   timezone: string
   docker_host: string
@@ -441,6 +479,7 @@ export interface AppSettings {
   codex_image: string
   codex_model: string
   codex_reasoning_effort: 'low' | 'medium' | 'high'
+  cell_package: CellPackage
   github_client_id: string // the OAuth App that "Sign in with GitHub" uses, empty until an administrator adds it
   mcp_auth: McpAuthPolicy
   check_for_updates: boolean // ask GitHub once a day whether a newer release exists
@@ -900,6 +939,8 @@ export const api = {
   docker: (host?: string) =>
     request<DockerStatus>(`/system/docker${host === undefined ? '' : `?host=${encodeURIComponent(host)}`}`),
   settings: () => request<AppSettings>('/settings'),
+  cellPackage: () => request<CellPackageInUse>('/cell-package'),
+  cellPackageDefaults: () => request<CellPackageDefaults>('/settings/cell-package'),
   saveSettings: (body: AppSettings) => request<AppSettings>('/settings', send('PUT', body)),
   secrets: () => request<Secret[]>('/secrets'),
   createSecret: (name: string, kind: string, value: string) =>

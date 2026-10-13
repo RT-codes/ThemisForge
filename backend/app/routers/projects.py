@@ -71,20 +71,26 @@ async def _task(session: AsyncSession, task_id: int, user: CurrentUser) -> Task:
 async def _task_out(session: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     """Tasks plus the status of their latest attempt (one query for all of them)."""
     latest: dict[int, AttemptStatus] = {}
+    reasons: dict[int, str] = {}
     if tasks:
         newest = (
             select(func.max(Attempt.id))
             .where(Attempt.task_id.in_([t.id for t in tasks]))
             .group_by(Attempt.task_id)
         )
-        rows = await session.execute(select(Attempt.task_id, Attempt.status).where(Attempt.id.in_(newest)))
-        latest = {task_id: AttemptStatus(attempt_status) for task_id, attempt_status in rows}
+        rows = await session.execute(
+            select(Attempt.task_id, Attempt.status, Attempt.failure).where(Attempt.id.in_(newest))
+        )
+        for task_id, attempt_status, failure in rows:
+            latest[task_id] = AttemptStatus(attempt_status)
+            reasons[task_id] = (failure or {}).get("reason", "")
     running = await _running_workflow_runs(session, [t.id for t in tasks])
     stages = await _stages_out(session, tasks)
     out = []
     for t in tasks:
         item = TaskOut.model_validate(t)
         item.last_attempt_status = latest.get(t.id)
+        item.last_failure_reason = reasons.get(t.id, "")
         item.workflow_run = running.get(t.id)
         item.stages = stages.get(t.id, [])
         out.append(item)

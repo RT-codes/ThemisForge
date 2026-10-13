@@ -36,9 +36,14 @@ Themis is deliberately small: **one server process** that does everything, plus 
 2. The scheduler creates an **attempt**, marks the task **Running** and builds the cell's settings.
 3. The cell manager writes `/cell/input.json` and runs `docker run` with the work folder and cell folder mounted.
 4. Output streams into the attempt's log, saved about once a second.
-5. The cell exits. The result file and exit code are read, the container is removed.
+5. The cell exits. The result file and exit code are read, the container is removed. If the provider was only briefly
+   unable to serve the run, steps 3 to 5 repeat in the same attempt, as many times as Settings allows, after a wait.
 6. The attempt is closed (succeeded, failed or cancelled) and the task moves on: recurring tasks back to Ready with the
-   next occurrence, one-off tasks to Done, Review, Failed or Blocked.
+   next occurrence, one-off tasks to Done, Review, Failed or Blocked. A failed attempt keeps the reason it failed and the
+   last lines of its log.
+
+An agent that cannot do its task writes why to `/cell/blocked.md` (`Reason:` and `Fix:` lines) and stops. The attempt
+then fails with that reason, whatever the exit code.
 
 ## Data model
 

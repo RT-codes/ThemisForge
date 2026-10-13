@@ -10,6 +10,7 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import CopyIcon from '@lucide/svelte/icons/copy'
 	import AttemptHistory from './AttemptHistory.svelte'
+	import TaskFailure from './TaskFailure.svelte'
 	import HistoryList from './HistoryList.svelte'
 	import SendDialog from './SendDialog.svelte'
 	import TaskForm, { TASK_FORM_ID } from './TaskForm.svelte'
@@ -245,6 +246,10 @@
 				<!-- above the tabs, so where the task is stays in view whichever tab is open -->
 				{#if task.stages.length}
 					<TaskStages stages={task.stages} projectId={task.project_id} {onopenworkflow} />
+				{/if}
+				<!-- the History tab lists every attempt with its own reason, so it is only repeated here -->
+				{#if tab !== 'history'}
+					<TaskFailure taskId={task.id} attemptStatus={task.last_attempt_status} reason={task.last_failure_reason} />
 				{/if}
 				{#if error}
 					<p class="mx-4 mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>

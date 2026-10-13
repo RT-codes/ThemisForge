@@ -291,6 +291,11 @@ class Attempt(Base):
     # What the cell changed in that folder: {"added": [...], "changed": [...], "removed": [...], "more": n}. It is what
     # the next run in the folder is told (see harness.workdir_note). Null for tasks that ran no cell.
     changes: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # Why a failed attempt failed, for the person looking at the ticket: {"source": "themis" | "agent", "reason",
+    # "action", "tail"}. `source` says who worked it out (Themis from what it saw, or the agent that stopped and said so
+    # in /cell/blocked.md); `action` is what to change, empty when nobody knows; `tail` is the last lines of the log.
+    # Null on a run that did not fail, and on attempts from before reasons were kept.
+    failure: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
     task: Mapped[Task] = relationship(back_populates="attempts")
 

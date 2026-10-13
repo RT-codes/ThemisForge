@@ -7,14 +7,13 @@
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { router } from '$lib/router.svelte'
 	import { cn } from '$lib/utils'
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left'
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert'
 	import BotIcon from '@lucide/svelte/icons/bot'
 	import PlusIcon from '@lucide/svelte/icons/plus'
 	import { onMount } from 'svelte'
 
-	// The agents of a project: a list on the left, and on the right the chosen agent. Choosing one only shows it (an
-	// overview); Edit opens the editor, where skills and tools can be read, changed and switched on or off.
+	// The agents of a project: a list on the left, and on the right the chosen agent, with the tabs Overview (what it is,
+	// as saved), General, Skills and Tools (the editor, where skills and tools can be read, changed and switched on or off).
 	let { projectId, agentId, isNew, editing }: { projectId: number; agentId: number | null; isNew: boolean; editing: boolean } = $props()
 
 	let agents = $state<Agent[]>([])
@@ -30,10 +29,37 @@
 
 	let tab = $state<AgentTab>('general')
 	let counts = $state<AgentCounts>({ skills: 0, tools: 0, hasSkills: true, hasTools: true })
-	// every agent (and every visit to the editor) starts on the first tab
+	let actionsHost = $state<HTMLElement | null>(null) // the editor puts Delete, Discard and Save here, beside the tabs
+	// every agent starts on the first tab of the editor (Edit does too, see below)
 	$effect(() => {
-		void [agentId, editing]
+		void agentId
 		tab = 'general'
+	})
+
+	// The tabs are always there: Overview is the agent as it is saved, the others are the editor. Which one is shown follows
+	// the address (editing or not), so Overview and the editor keep their own links and unsaved changes are guarded by the
+	// router like any other way out of the editor.
+	const shown = $derived<AgentTab | 'overview'>(editing ? tab : 'overview')
+	function pickTab(value: string) {
+		if (value === 'overview') return show()
+		tab = value as AgentTab
+		if (!editing && agentId !== null) router.navigate(`/projects/${projectId}/agents/${agentId}/edit`)
+	}
+	const edit = () => {
+		tab = 'general'
+		router.navigate(`/projects/${projectId}/agents/${agentId}/edit`)
+	}
+
+	// what the tabs say: the editor knows it live (unsaved switches included), the overview reads the saved agent
+	const tabCounts = $derived.by(() => {
+		if (editing || !current) return counts
+		const harness = harnesses.find((h) => h.id === current.harness)
+		return {
+			skills: current.skills.length,
+			tools: current.mcp_servers.length,
+			hasSkills: harness?.supports_skills ?? true,
+			hasTools: harness?.supports_mcp ?? true,
+		}
 	})
 
 	const current = $derived(agents.find((a) => a.id === agentId) ?? null)
@@ -119,29 +145,28 @@
 
 			<!-- the chosen agent, on a background of its own so the two columns read as two panels; its sections fill the width -->
 			<div class="flex min-w-0 flex-col">
-				<!-- above the panel: the tabs of the editor on the left, what is shown (and the way back) on the right. The row is
-				     always there so the agents column beside it can start level with the panel -->
+				<!-- above the panel: the tabs on the left, and beside them the editor's Delete, Discard and Save. The row is always
+				     there so the agents column beside it can start level with the panel -->
 				<div class="mb-2 flex h-8 items-center gap-2">
-					{#if editing && (isNew || current)}
-						<Tabs.Root bind:value={tab}>
+					{#if isNew || current}
+						<Tabs.Root bind:value={() => shown, pickTab}>
 							<Tabs.List>
+								{#if !isNew}<Tabs.Trigger value="overview">Overview</Tabs.Trigger>{/if}
 								<Tabs.Trigger value="general">General</Tabs.Trigger>
-								{#if counts.hasSkills}<Tabs.Trigger value="skills">Skills{counts.skills ? ` (${counts.skills})` : ''}</Tabs.Trigger>{/if}
-								{#if counts.hasTools}<Tabs.Trigger value="tools">Tools{counts.tools ? ` (${counts.tools})` : ''}</Tabs.Trigger>{/if}
+								{#if tabCounts.hasSkills}<Tabs.Trigger value="skills">Skills{tabCounts.skills ? ` (${tabCounts.skills})` : ''}</Tabs.Trigger>{/if}
+								{#if tabCounts.hasTools}<Tabs.Trigger value="tools">Tools{tabCounts.tools ? ` (${tabCounts.tools})` : ''}</Tabs.Trigger>{/if}
 							</Tabs.List>
 						</Tabs.Root>
 					{/if}
-					{#if isNew || current}
-						<h3 class="ms-auto text-sm font-medium text-muted-foreground">{isNew ? 'New agent' : editing ? 'Edit agent' : 'Agent details'}</h3>
-						{#if editing && !isNew}
-							<Button variant="outline" size="sm" onclick={show}><ArrowLeftIcon /> Back to details</Button>
-						{/if}
+					<div bind:this={actionsHost} class="flex min-w-0 flex-1 justify-end"></div>
+					{#if isNew}
+						<h3 class="shrink-0 text-sm font-medium text-muted-foreground">New agent</h3>
 					{/if}
 				</div>
 			<div class="flex min-w-0 flex-1 flex-col rounded-xl border bg-background/40 p-4">
 				{#if isNew}
 					{#key 'new'}
-						<AgentForm {projectId} agent={null} {harnesses} {project} {defaults} {keys} bind:skills bind:servers bind:tab bind:counts onsaved={saved} onclose={show} ondeleted={deleted} onchanged={load} />
+						<AgentForm {projectId} agent={null} {harnesses} {project} {defaults} {keys} bind:skills bind:servers bind:tab bind:counts {actionsHost} onsaved={saved} onclose={show} ondeleted={deleted} onchanged={load} />
 					{/key}
 				{:else if agents.length === 0}
 					<div class="rounded-xl border border-dashed px-6 py-10 text-center">
@@ -159,11 +184,11 @@
 					</div>
 				{:else if editing}
 					{#key current.id}
-						<AgentForm {projectId} agent={current} {harnesses} {project} {defaults} {keys} bind:skills bind:servers bind:tab bind:counts onsaved={saved} onclose={show} ondeleted={deleted} onchanged={load} />
+						<AgentForm {projectId} agent={current} {harnesses} {project} {defaults} {keys} bind:skills bind:servers bind:tab bind:counts {actionsHost} onsaved={saved} onclose={show} ondeleted={deleted} onchanged={load} />
 					{/key}
 				{:else}
 					{#key current.id}
-						<AgentDetail agent={current} {harnesses} {skills} {servers} {keys} {volumes} {project} {defaults} onedit={() => router.navigate(`/projects/${projectId}/agents/${current.id}/edit`)} />
+						<AgentDetail agent={current} {harnesses} {skills} {servers} {keys} {volumes} {project} {defaults} onedit={edit} />
 					{/key}
 				{/if}
 			</div>

@@ -1,21 +1,27 @@
 <script lang="ts">
 	import { api, ApiError, type KeyInfo, type McpServer } from '$lib/api'
+	import { auth } from '$lib/auth.svelte'
 	import McpForm from '$lib/components/McpForm.svelte'
+	import RegistryAdd from '$lib/components/RegistryAdd.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Switch } from '$lib/components/ui/switch/index.js'
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js'
 	import { relative } from '$lib/format'
 	import { cn } from '$lib/utils'
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open'
+	import CircleHelpIcon from '@lucide/svelte/icons/circle-help'
 	import GlobeIcon from '@lucide/svelte/icons/globe'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import PlugZapIcon from '@lucide/svelte/icons/plug-zap'
 	import PlusIcon from '@lucide/svelte/icons/plus'
+	import SearchIcon from '@lucide/svelte/icons/search'
 	import TerminalIcon from '@lucide/svelte/icons/terminal'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
+	import XIcon from '@lucide/svelte/icons/x'
 	import { fade, slide } from 'svelte/transition'
 
 	// Every tool server (MCP) of the project, with a switch for the ones this agent has. Picking one shows what it is, lets
@@ -48,7 +54,10 @@
 	})
 
 	const current = $derived(typeof focus === 'number' ? (servers.find((s) => s.id === focus) ?? null) : null)
-	const toggled = (id: number, on: boolean) => (selected = on ? [...selected, id] : selected.filter((x) => x !== id))
+	const toggled = (id: number, on: boolean) => {
+		selected = on ? [...selected, id] : selected.filter((x) => x !== id)
+		if (on && installed?.id === id) installed = null // it was what the note asked for
+	}
 	const missing = $derived(selected.filter((id) => !servers.some((s) => s.id === id)))
 
 	let pending = $state<(() => void) | null>(null)
@@ -64,6 +73,18 @@
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the tools'
 		}
+	}
+
+	// ----- installing one from the registry -----
+
+	// A tool from the registry is installed on the project, not on this agent: it shows up in the list with its switch off,
+	// and the agent has it only once that is switched on. Only administrators browse the registry (as in Settings).
+	let registryOpen = $state(false)
+	let installed = $state<{ id: number; name: string; needsSignIn: boolean } | null>(null)
+	function added(server: McpServer) {
+		installed = { id: server.id, name: server.name, needsSignIn: !!server.auth }
+		reload()
+		guarded(() => (focus = server.id))
 	}
 
 	async function saved(server: McpServer) {
@@ -118,6 +139,18 @@
 	<!-- the list is a panel like the one beside it, as tall as it: the tools scroll inside it, and the toolbar with New
 	     tool stays at its foot -->
 	<div class="flex h-[26rem] min-w-0 flex-col overflow-hidden rounded-lg border bg-background/40 lg:h-auto">
+		{#if installed}
+			<div class="m-2 mb-0 flex items-start gap-2 rounded-md bg-emerald-500/10 px-2.5 py-2 text-xs text-emerald-400" role="status" transition:slide={{ duration: 160 }}>
+				<CircleCheckIcon class="mt-0.5 size-3.5 shrink-0" />
+				<span class="min-w-0 flex-1">
+					<span class="font-mono">{installed.name}</span> is installed in the project. Switch it on below to give it to this agent.
+					{#if installed.needsSignIn}
+						It also needs a sign in: <a class="underline" href="/projects/{projectId}/settings#tools">project Settings, Tools</a>.
+					{/if}
+				</span>
+				<button type="button" class="shrink-0 cursor-pointer opacity-70 hover:opacity-100" aria-label="Dismiss" onclick={() => (installed = null)}><XIcon class="size-3.5" /></button>
+			</div>
+		{/if}
 		<div class="slim-scrollbar grid min-h-0 flex-1 grid-cols-1 content-start gap-1.5 overflow-y-auto p-2">
 		{#each servers as s (s.id)}
 			{@const on = selected.includes(s.id)}
@@ -156,8 +189,35 @@
 		{#if error}<p class="px-1 text-sm text-destructive" role="alert">{error}</p>{/if}
 		</div>
 		{#if canEdit}
-			<div class="border-t p-2">
-				<Button type="button" variant="outline" size="sm" class="w-full" onclick={() => pick('new')}><PlusIcon /> New tool</Button>
+			<div class="grid gap-1.5 border-t p-2">
+				<!-- the two levels people mix up: the list is the project's tools, the switches are this agent's. It sits inside
+				     the first button, so the buttons keep the width of the panel -->
+				{#snippet help()}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<button {...props} type="button" class="absolute inset-y-0 end-1.5 my-auto flex size-6 cursor-help items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground" aria-label="How tools are shared between a project and its agents">
+									<CircleHelpIcon class="size-4" />
+								</button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content side="top" class="max-w-64 text-balance">
+							Installing or adding a tool puts it in the project, so every agent of the project can be given it. The switch beside a tool is this agent's own opt-in: it only has the ones switched on.
+						</Tooltip.Content>
+					</Tooltip.Root>
+				{/snippet}
+				{#if auth.user?.is_admin}
+					<div class="relative">
+						<Button type="button" variant="outline" size="sm" class="w-full" onclick={() => (registryOpen = true)}><SearchIcon /> Add from registry</Button>
+						{@render help()}
+					</div>
+					<Button type="button" variant="outline" size="sm" class="w-full" onclick={() => pick('new')}><PlusIcon /> New tool</Button>
+				{:else}
+					<div class="relative">
+						<Button type="button" variant="outline" size="sm" class="w-full" onclick={() => pick('new')}><PlusIcon /> New tool</Button>
+						{@render help()}
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -224,6 +284,8 @@
 		{/if}
 	</div>
 </div>
+
+<RegistryAdd bind:open={registryOpen} {projectId} {keys} onadded={added} />
 
 <AlertDialog.Root open={doomed !== null} onOpenChange={(o) => !o && (doomed = null)}>
 	<AlertDialog.Content>

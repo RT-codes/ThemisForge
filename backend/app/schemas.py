@@ -476,6 +476,7 @@ class TaskOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_attempt_status: AttemptStatus | None = None
+    last_failure_reason: str = ""  # why the latest attempt failed, for the card; empty when it did not
     workflow_run: TaskWorkflowRun | None = None
     stages: list[TaskStageOut] = Field(default_factory=list)  # filled in by the router, in play order
 
@@ -492,12 +493,24 @@ class AttemptOut(BaseModel):
     workflow_run_id: int | None = None  # the run that did the work, when the task played a workflow
 
 
+class AttemptFailure(BaseModel):
+    """Why an attempt failed, see Attempt.failure."""
+
+    source: Literal[
+        "themis", "agent"
+    ]  # who worked it out: Themis from what it saw, or the agent that stopped
+    reason: str
+    action: str = ""  # what the person can change; empty when nobody knows
+    tail: str = ""  # the last lines of the log of what failed
+
+
 class AttemptDetail(AttemptOut):
     workflow_id: int | None = None  # the workflow behind workflow_run_id, so the UI can link to the run
     workdir_id: int | None = (
         None  # the attempt whose working folder this one used (its own id unless continued)
     )
     changes: dict | None = None  # what the cell added, changed and removed there, see Attempt.changes
+    failure: AttemptFailure | None = None
     log: str
     result: str
 

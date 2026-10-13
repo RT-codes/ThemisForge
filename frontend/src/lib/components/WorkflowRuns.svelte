@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, ApiError, type NodeRun, type NodeRunStatus, type RunStatus, type WorkflowRunDetail, type WorkflowRunSummary } from '$lib/api'
 	import LogPanel from '$lib/components/LogPanel.svelte'
+	import ResultView from '$lib/components/ResultView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { dateTime, duration, relative } from '$lib/format'
 	import { cn } from '$lib/utils'
@@ -248,10 +249,7 @@
 			</div>
 		{/if}
 		{#if n.result && n.result !== n.log}
-			<div>
-				<p class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Result</p>
-				<pre class="max-h-48 overflow-auto rounded-lg border bg-card p-3 text-xs break-words whitespace-pre-wrap">{n.result}</pre>
-			</div>
+			<ResultView text={n.result} />
 		{/if}
 		{#if n.log}
 			<div>

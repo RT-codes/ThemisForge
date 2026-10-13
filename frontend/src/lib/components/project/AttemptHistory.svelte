@@ -3,6 +3,7 @@
 	import { attemptLabel, dateTime, duration } from '$lib/format'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import FailureNote from './FailureNote.svelte'
+	import ResultView from '$lib/components/ResultView.svelte'
 	import { cn } from '$lib/utils'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
@@ -114,10 +115,9 @@
 				<FailureNote failure={detail.failure} />
 			{/if}
 			{#if detail.result}
-				<div>
-					<h4 class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Result</h4>
-					<pre class="max-h-48 overflow-auto rounded-lg border bg-card p-3 text-xs break-words whitespace-pre-wrap">{detail.result}</pre>
-				</div>
+				{#key detail.id}
+					<ResultView text={detail.result} />
+				{/key}
 			{/if}
 			<div>
 				<h4 class="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">

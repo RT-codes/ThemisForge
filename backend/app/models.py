@@ -453,6 +453,20 @@ class Workflow(Base):
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow, onupdate=utcnow)
 
 
+class NodePreset(Base):
+    """A configured workflow node a project keeps in the editor's palette ("saved nodes"). It holds ids of the
+    project's own agents, folders and boards, so it only makes sense inside that project."""
+
+    __tablename__ = "node_presets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    label: Mapped[str] = mapped_column(String(100), default="")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class WorkflowRun(Base):
     """One execution of a workflow, with the graph as it was when the run began."""
 

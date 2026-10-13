@@ -9,8 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
-from ..models import NodeStatus, Project, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
-from ..workflows import Graph, WorkflowRunner
+from ..models import NodePreset, NodeStatus, Project, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
+from ..workflows import Graph, Kind, NodeConfig, WorkflowRunner
 from .projects import _project, _task
 
 router = APIRouter(tags=["workflows"])
@@ -211,6 +211,65 @@ async def create_workflow(
     session.add(wf)
     await session.commit()
     return _out(wf)
+
+
+# ----- saved nodes: configured nodes a project keeps in the editor's palette -----
+
+MAX_NODE_PRESETS = 100  # per project; a palette longer than this is no longer a shortcut
+
+
+class NodePresetIn(BaseModel):
+    kind: Kind
+    label: str = Field(default="", max_length=100)
+    config: NodeConfig = Field(default_factory=dict)
+
+
+class NodePresetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: Kind
+    label: str
+    config: NodeConfig
+    created_at: datetime
+
+
+@router.get("/projects/{project_id}/node-presets", response_model=list[NodePresetOut])
+async def list_node_presets(project_id: int, session: SessionDep, user: CurrentUser) -> list[NodePreset]:
+    await _project(session, project_id, user)
+    query = select(NodePreset).where(NodePreset.project_id == project_id).order_by(NodePreset.id)
+    return list((await session.scalars(query)).all())
+
+
+@router.post(
+    "/projects/{project_id}/node-presets", response_model=NodePresetOut, status_code=status.HTTP_201_CREATED
+)
+async def create_node_preset(
+    project_id: int, body: NodePresetIn, session: SessionDep, user: CurrentUser
+) -> NodePreset:
+    await _project(session, project_id, user)
+    count = await session.scalar(
+        select(func.count()).select_from(NodePreset).where(NodePreset.project_id == project_id)
+    )
+    if (count or 0) >= MAX_NODE_PRESETS:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"A project keeps at most {MAX_NODE_PRESETS} saved nodes. Remove one first.",
+        )
+    preset = NodePreset(project_id=project_id, kind=body.kind, label=body.label.strip(), config=body.config)
+    session.add(preset)
+    await session.commit()
+    return preset
+
+
+@router.delete("/node-presets/{preset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_node_preset(preset_id: int, session: SessionDep, user: CurrentUser) -> None:
+    preset = await session.get(NodePreset, preset_id)
+    if preset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Saved node not found")
+    await _project(session, preset.project_id, user)  # only the owner of the project may look
+    await session.delete(preset)
+    await session.commit()
 
 
 @router.get("/workflows/{workflow_id}", response_model=WorkflowOut)

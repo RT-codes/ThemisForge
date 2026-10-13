@@ -1,12 +1,16 @@
 <script lang="ts">
-	import { Background, Controls, MarkerType, MiniMap, SvelteFlow, useSvelteFlow, type Connection, type Edge, type Node } from '@xyflow/svelte'
+	import { Background, Controls, MarkerType, MiniMap, Panel, SvelteFlow, useSvelteFlow, type Connection, type Edge, type Node } from '@xyflow/svelte'
 	import '@xyflow/svelte/dist/style.css'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import { Switch } from '$lib/components/ui/switch/index.js'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
 	import PlayIcon from '@lucide/svelte/icons/play'
+	import XIcon from '@lucide/svelte/icons/x'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
-	import { DRAG_TYPE, MOUNT, NODE_KINDS, canConnect, defaultConfig, fromGraph, kindInfo, mountsFromGraph, nextNodeNumber, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
+	import { api, type NodePreset } from '$lib/api'
+	import { DRAG_TYPE, MOUNT, NODE_KINDS, PRESET_DRAG_TYPE, canConnect, defaultConfig, fromGraph, isSavedNode, kindInfo, mountsFromGraph, nextNodeNumber, presetNodeData, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
 	import { onDestroy, onMount, setContext, untrack } from 'svelte'
 	import { router } from '$lib/router.svelte'
 	import { nodeIcons } from '$lib/workflowIcons'
@@ -47,6 +51,43 @@
 	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
+	// the dotted background and the snapping share one grid, so a snapped node sits exactly on the dots (Svelte Flow
+	// snaps whenever it is given a snapGrid, so switching snapping off means giving it none)
+	const GRID = 24
+
+	// Small settings of the editor, remembered in this browser (a convenience: no storage just means the default)
+	function readFlag(key: string, fallback: boolean) {
+		try {
+			const v = localStorage.getItem(key)
+			return v === null ? fallback : v === '1'
+		} catch {
+			return fallback
+		}
+	}
+	function writeFlag(key: string, on: boolean) {
+		try {
+			localStorage.setItem(key, on ? '1' : '0')
+		} catch {
+			// remembering is a convenience
+		}
+	}
+	// Snapping a dragged node to the grid: on unless turned off
+	const SNAP_KEY = 'themis.workflow.snap'
+	let snapToGrid = $state(readFlag(SNAP_KEY, true))
+	$effect(() => writeFlag(SNAP_KEY, snapToGrid))
+
+	// Saved nodes: configured nodes of this project, kept on the server. Each is listed in the palette under the built-in
+	// node of its kind, which unfolds to show them; what is unfolded is remembered in this browser.
+	const presetOpenKey = (kind: NodeKind) => `themis.workflow.saved.${kind}`
+	let presets = $state<NodePreset[]>([])
+	let openKinds = $state<Record<string, boolean>>(Object.fromEntries(NODE_KINDS.map((k) => [k.kind, readFlag(presetOpenKey(k.kind), false)])))
+	let presetError = $state('')
+	const presetsOf = (kind: NodeKind) => presets.filter((p) => p.kind === kind)
+	function setKindOpen(kind: NodeKind, on: boolean) {
+		openKinds[kind] = on
+		writeFlag(presetOpenKey(kind), on)
+	}
+
 	let nodes = $state.raw<Node[]>([])
 	let edges = $state.raw<Edge[]>([])
 
@@ -72,6 +113,7 @@
 		nodes = flow.nodes
 		edges = flow.edges
 		counter = nextNodeNumber(initialGraph.nodes.map((n) => n.id))
+		api.nodePresets(projectId).then((p) => (presets = p)).catch(() => (presetError = 'Could not load the saved nodes'))
 		lastSaved = JSON.stringify(toGraph(nodes, edges)) // the starting point: only a difference from it counts as a change
 		loaded = true
 		// a link from a ticket ("Edit step") names a node in the address: it is selected, so its panel is open
@@ -142,45 +184,76 @@
 	}
 	const deselectAll = () => (nodes = nodes.map((n) => ({ ...n, selected: false })))
 
-	function addNode(kind: NodeKind, position: { x: number; y: number }) {
-		const label = kindInfo(kind).label
-		nodes = [...nodes.map((n) => ({ ...n, selected: false })), { id: `n${++counter}`, type: 'workflow', position, selected: true, data: { kind, label, config: defaultConfig(kind) } }]
+	// the star in a node's panel: lit while the node is exactly a saved one, and pressing it then takes that one out
+	const activeSaved = $derived(active ? presets.find((p) => isSavedNode(p, active.data as WorkflowNodeData)) : undefined)
+	async function toggleSaved() {
+		if (!active) return
+		presetError = ''
+		try {
+			if (activeSaved) {
+				const gone = activeSaved.id
+				await api.deleteNodePreset(gone)
+				presets = presets.filter((p) => p.id !== gone)
+			} else {
+				const d = active.data as WorkflowNodeData
+				presets = [...presets, await api.createNodePreset(projectId, { kind: d.kind, label: d.label.trim(), config: d.config })]
+				setKindOpen(d.kind, true) // so the new one is seen
+			}
+		} catch (e) {
+			presetError = e instanceof Error ? e.message : 'Could not save the node'
+		}
+	}
+	async function removeSaved(p: NodePreset) {
+		presetError = ''
+		try {
+			await api.deleteNodePreset(p.id)
+			presets = presets.filter((x) => x.id !== p.id)
+		} catch (e) {
+			presetError = e instanceof Error ? e.message : 'Could not remove the saved node'
+		}
 	}
 
-	// step to the right until the spot is not on top of another node (nodes are about 208 x 56)
+	// a node of a kind starts from the kind's own name and defaults; a saved node starts from what was saved
+	function addNode(kind: NodeKind, position: { x: number; y: number }, saved?: NodePreset) {
+		const data: WorkflowNodeData = saved ? presetNodeData(saved) : { kind, label: kindInfo(kind).label, config: defaultConfig(kind) }
+		nodes = [...nodes.map((n) => ({ ...n, selected: false })), { id: `n${++counter}`, type: 'workflow', position, selected: true, data }]
+	}
+
+	// step down until the spot is not on top of another node (nodes are about 208 x 56)
 	function freeSpot(at: { x: number; y: number }) {
-		const taken = (x: number) => nodes.some((n) => Math.abs(n.position.x - x) < 232 && Math.abs(n.position.y - at.y) < 72)
-		let x = at.x
-		while (taken(x)) x += 248
-		return { x, y: at.y }
+		const taken = (y: number) => nodes.some((n) => Math.abs(n.position.x - at.x) < 232 && Math.abs(n.position.y - y) < 96)
+		let y = at.y
+		while (taken(y)) y += 120
+		return { x: at.x, y }
 	}
 
-	// a click on the palette drops the node in the middle of the canvas, beside any node already there
-	function addAtCenter(kind: NodeKind) {
-		// next to the selected (or latest) node, so a flow reads left to right; the canvas centre when it is empty
+	// a click on the palette drops the node in the middle of the canvas, clear of any node already there
+	function addAtCenter(kind: NodeKind, saved?: NodePreset) {
+		// below the selected (or latest) node, so a flow reads top to bottom; the canvas centre when it is empty
 		const anchor = active ?? nodes.at(-1)
 		let at: { x: number; y: number }
-		if (anchor) at = { x: anchor.position.x + 248, y: anchor.position.y }
+		if (anchor) at = { x: anchor.position.x, y: anchor.position.y + 120 }
 		else {
 			const r = wrapper.getBoundingClientRect()
 			const p = screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
 			at = { x: p.x - 104, y: p.y - 28 }
 		}
-		addNode(kind, freeSpot(at))
+		addNode(kind, freeSpot(at), saved)
 		// bring the whole graph into view; wait for the config panel to finish sliding in, which resizes the canvas
 		setTimeout(() => fitView({ maxZoom: 1, padding: 0.2, duration: 350 }), 240)
 	}
 
 	function onDrop(e: DragEvent) {
-		const kind = e.dataTransfer?.getData(DRAG_TYPE) as NodeKind | undefined
+		const saved = presets.find((p) => String(p.id) === e.dataTransfer?.getData(PRESET_DRAG_TYPE))
+		const kind = saved?.kind ?? (e.dataTransfer?.getData(DRAG_TYPE) as NodeKind | undefined)
 		if (!kind) return
 		e.preventDefault()
 		const p = screenToFlowPosition({ x: e.clientX, y: e.clientY })
-		addNode(kind, { x: p.x - 104, y: p.y - 28 })
+		addNode(kind, { x: p.x - 104, y: p.y - 28 }, saved)
 	}
 
 	function onDragOver(e: DragEvent) {
-		if (!e.dataTransfer?.types.includes(DRAG_TYPE)) return
+		if (!e.dataTransfer?.types.some((t) => t === DRAG_TYPE || t === PRESET_DRAG_TYPE)) return
 		e.preventDefault()
 		e.dataTransfer.dropEffect = 'move'
 	}
@@ -220,7 +293,7 @@
 <svelte:window {onkeydown} onpointerup={() => (selecting = false)} onblur={() => (selecting = false)} />
 
 <div class="flex min-h-0 flex-1">
-	<aside class="flex w-44 shrink-0 flex-col gap-1 border-e p-2">
+	<aside class="flex w-52 shrink-0 flex-col gap-1 border-e p-2">
 		<Button class="h-8 w-full" disabled={!loaded || testing || runView.active || !hasStart} onclick={test}>
 			{#if testing || runView.active}<LoaderCircleIcon class="animate-spin" />{:else}<PlayIcon />{/if} {runView.active ? 'Running' : 'Test run'}
 		</Button>
@@ -240,22 +313,71 @@
 		<p class="px-1.5 pb-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Nodes</p>
 		{#each NODE_KINDS as k (k.kind)}
 			{@const Icon = nodeIcons[k.kind]}
-			<button
-				type="button"
-				draggable="true"
-				title={k.description}
-				class="flex cursor-grab items-center gap-2 rounded-md border bg-card px-2 py-1.5 text-start text-sm transition-colors hover:border-primary/50 hover:bg-accent/40 active:cursor-grabbing"
-				ondragstart={(e) => {
-					e.dataTransfer?.setData(DRAG_TYPE, k.kind)
-					if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-				}}
-				onclick={() => addAtCenter(k.kind)}
-			>
-				<span class="flex size-5 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"><Icon class="size-3" /></span>
-				<span class="truncate">{k.label}</span>
-			</button>
+			{@const saved = presetsOf(k.kind)}
+			{@const open = saved.length > 0 && openKinds[k.kind]}
+			<div class="relative">
+				<button
+					type="button"
+					draggable="true"
+					title={k.description}
+					class="flex w-full cursor-grab items-center gap-2 rounded-md border bg-card px-2 py-1.5 text-start text-sm transition-colors hover:border-primary/50 hover:bg-accent/40 active:cursor-grabbing {saved.length ? 'pe-11' : ''}"
+					ondragstart={(e) => {
+						e.dataTransfer?.setData(DRAG_TYPE, k.kind)
+						if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+					}}
+					onclick={() => addAtCenter(k.kind)}
+				>
+					<span class="flex size-5 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"><Icon class="size-3" /></span>
+					<span class="truncate">{k.label}</span>
+				</button>
+				<!-- only a kind with saved nodes can be unfolded: how many there are, and a chevron -->
+				{#if saved.length}
+					<button
+						type="button"
+						class="absolute end-1 top-1/2 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+						aria-expanded={open}
+						aria-label="{open ? 'Hide' : 'Show'} the saved {k.label} nodes"
+						onclick={() => setKindOpen(k.kind, !open)}
+					>
+						<span class="tabular-nums">{saved.length}</span>
+						<ChevronRightIcon class="size-3 transition-transform {open ? 'rotate-90' : ''}" />
+					</button>
+				{/if}
+			</div>
+			{#if open}
+				<div transition:slide={{ duration: 160 }} class="ms-3 flex flex-col gap-1 border-s ps-2">
+					{#each saved as p (p.id)}
+						{@const name = p.label || k.label}
+						<div class="group/saved relative">
+							<button
+								type="button"
+								draggable="true"
+								title="{k.label} node: {name}"
+								class="flex w-full cursor-grab items-center gap-2 rounded-md border bg-card py-1 ps-2 pe-6 text-start text-xs transition-colors hover:border-green-300/50 hover:bg-accent/40 active:cursor-grabbing"
+								ondragstart={(e) => {
+									e.dataTransfer?.setData(PRESET_DRAG_TYPE, String(p.id))
+									if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+								}}
+								onclick={() => addAtCenter(p.kind, p)}
+							>
+								<span class="flex size-4 shrink-0 items-center justify-center rounded bg-green-300/15 text-green-300"><Icon class="size-2.5" /></span>
+								<span class="truncate">{name}</span>
+							</button>
+							<button
+								type="button"
+								class="absolute end-1 top-1/2 hidden size-4 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-destructive group-hover/saved:flex focus-visible:flex"
+								aria-label="Remove {name} from the saved nodes"
+								onclick={() => removeSaved(p)}
+							>
+								<XIcon class="size-3" />
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
 		{/each}
-		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Drag between the dots to connect. A Folder joins an agent at the teal squares. The Test run starts at every Start node.</p>
+		{#if presetError}<p class="px-1.5 text-xs leading-snug text-destructive" role="alert">{presetError}</p>{/if}
+		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Star a node in its panel to keep it under its kind. Drag between the dots to connect. A Folder joins an agent at the teal squares. The Test run starts at every Start node.</p>
 		<div class="mt-auto flex flex-col gap-1.5">
 			<Button variant="outline" size="sm" class="h-7 text-xs" disabled={!hasSelection} onclick={deleteSelected}><Trash2Icon class="size-3.5" /> Delete selected</Button>
 			<Button variant="outline" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" disabled={nodes.length === 0} onclick={() => (clearOpen = true)}>Clear canvas</Button>
@@ -279,11 +401,22 @@
 			fitView
 			fitViewOptions={{ maxZoom: 1, padding: 0.12 }}
 			minZoom={0.2}
+			snapGrid={snapToGrid ? [GRID, GRID] : undefined}
+			proOptions={{ hideAttribution: true }}
 		>
-			<Background gap={24} />
+			<Background gap={GRID} />
+			<!-- editor options floating over the canvas: one option per row, stacked in a column. Add new ones as more rows. -->
+			<Panel position="top-right">
+				<div class="flex flex-col gap-2 rounded-lg border bg-card/90 p-2.5 text-xs shadow-sm backdrop-blur">
+					<label class="flex cursor-pointer items-center justify-between gap-3">
+						Snap to grid
+						<Switch size="sm" bind:checked={snapToGrid} />
+					</label>
+				</div>
+			</Panel>
 			<Controls showLock={false} />
 			<SelectionBox selected={selectedNodes} ondelete={deleteSelectedNodes} onclear={deselectAll} />
-			<MiniMap pannable zoomable class="max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? '#888'} nodeStrokeWidth={0} />
+			<MiniMap pannable zoomable class="workflow-minimap max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? '#888'} nodeStrokeWidth={0} />
 		</SvelteFlow>
 	</div>
 	{#if active}
@@ -294,6 +427,8 @@
 					id={active.id}
 					data={active.data as WorkflowNodeData}
 					attached={mountsFromGraph(nodes, edges, active.id)}
+					saved={!!activeSaved}
+					onsave={toggleSaved}
 					onchange={(patch) => updateNode(active.id, patch)}
 					onclose={deselectAll}
 					ondelete={() => deleteElements({ nodes: [{ id: active.id }] })}

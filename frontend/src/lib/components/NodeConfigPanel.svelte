@@ -11,6 +11,7 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
 	import { formatMounts, kindInfo, parseMounts, visibleFields, type FieldDef, type MountChoice, type WorkflowNodeData } from '$lib/workflow'
 	import { nodeIcons } from '$lib/workflowIcons'
+	import StarIcon from '@lucide/svelte/icons/star'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
 	import XIcon from '@lucide/svelte/icons/x'
@@ -22,6 +23,8 @@
 		id,
 		data,
 		attached = [],
+		saved = false,
+		onsave,
 		onchange,
 		onclose,
 		ondelete,
@@ -30,6 +33,8 @@
 		id: string
 		data: WorkflowNodeData
 		attached?: MountChoice[] // folders handed to this agent by lines from Folder nodes on the canvas
+		saved?: boolean // the node is exactly one of the project's saved nodes
+		onsave: () => void // star pressed: save the node, or take it out of the saved nodes again
 		onchange: (patch: Partial<WorkflowNodeData>) => void
 		onclose: () => void
 		ondelete: () => void
@@ -141,7 +146,19 @@
 	<div class="flex items-center gap-3 border-b px-4 py-3">
 		<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary"><Icon class="size-4" /></div>
 		<div class="min-w-0 flex-1">
-			<p class="truncate text-sm font-medium">{info.label} node</p>
+			<div class="flex items-center gap-1">
+				<p class="truncate text-sm font-medium">{info.label} node</p>
+				<button
+					type="button"
+					class="flex size-5 shrink-0 items-center justify-center rounded transition-colors {saved ? 'text-green-300' : 'text-muted-foreground hover:text-foreground'}"
+					aria-pressed={saved}
+					aria-label={saved ? 'Remove this node from the saved nodes' : 'Save this node for reuse'}
+					title={saved ? 'Saved. Press to remove it from the saved nodes' : 'Save this node, with its settings, to the palette'}
+					onclick={onsave}
+				>
+					<StarIcon class="size-3.5 {saved ? 'fill-current' : ''}" />
+				</button>
+			</div>
 			<p class="truncate text-xs text-muted-foreground">{info.description}</p>
 		</div>
 		<Button variant="ghost" size="icon-sm" aria-label="Close the panel" onclick={onclose}><XIcon /></Button>

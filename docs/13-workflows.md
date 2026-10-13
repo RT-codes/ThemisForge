@@ -44,6 +44,28 @@ move them all together. **Esc** lets go of the selection.
 
 Select a node to configure it in the panel on the right.
 
+Select a connection (click the line) to choose how it is drawn: **Organic**, a smooth curve, or **Angular**, a line that
+only runs straight up, down or sideways. The choice belongs to that one connection and is saved with the workflow. It
+does not change how the workflow runs.
+
+The small box floating in the top right of the canvas holds editor options. **Snap to grid** (on by default) makes a node
+you drag land on the dotted grid; switch it off to place nodes freely. It is remembered in this browser, not in the workflow.
+
+### Saved nodes
+
+A node you set up once can be kept for reuse. Select the node and press the **star** next to its title in the panel: the
+node, with its name and every setting, is kept under the built-in node of its kind in the palette. A kind that has saved
+nodes shows how many, with a chevron: unfold the Agent node, for example, to see the saved agents. Click a saved node or
+drag it onto the canvas to get a copy. The star stays lit while the node is exactly what was saved; press it again to
+remove it from the saved nodes. A saved node also has a small **x** when you point at it.
+
+- Saved nodes belong to the **project**, and everyone working in the project sees them. They keep the ids of that
+  project's agents, folders and boards, so they would mean nothing in another project.
+- Which kinds are unfolded is remembered in this browser, not in the workflow.
+- A project keeps up to 100 saved nodes.
+- A copy is an ordinary node: changing it does not change the saved one, and the other way round. If an agent or folder a
+  saved node points at is deleted, the copy fails with a note, like any node would.
+
 ### The Agent node
 
 Pick an **agent** and write the **instructions** for this step. The agent's own instructions, model, cell and folders apply,
@@ -68,7 +90,7 @@ every earlier step changed there (see [Continuing in a working folder](/docs/cel
 ### Handing folders to an agent
 
 A **Folder** node chooses one of the project's shared folders and how the agent may use it (read and write, or read only).
-Join it to an agent by dragging from the teal square on the Folder node to the teal square under the Agent node. The line is
+Join it to an agent by dragging from the teal square on the Folder node to the teal square on the left of the Agent node. The line is
 dashed and teal and has no arrow, because it is not a step: it only says "this agent gets this folder".
 
 - The agent gets the folder for that step, **on top of** its own folders and the project's `shared` folder. Several Folder

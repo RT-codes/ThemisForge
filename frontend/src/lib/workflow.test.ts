@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { agentSteps, seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type Graph, type NodeKind } from './workflow.ts'
+import { agentSteps, seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, isSavedNode, presetNodeData, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type Graph, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -209,4 +209,33 @@ test('a graph says which steps the agents are given and who does them', () => {
     { nodeId: 'n3', label: 'Agent', agent: 'Plain Codex', instructions: '' },
     { nodeId: 'n4', label: 'Gone', agent: 'Plain Codex', instructions: 'x' },
   ])
+})
+
+test('a connection keeps its line style, and an organic one stays as plain as before', () => {
+  const edges = [
+    { id: 'a', source: 'n1', target: 'n2', sourceHandle: null, data: { curve: 'angular' } },
+    { id: 'b', source: 'n2', target: 'n3', sourceHandle: null, data: { curve: 'organic' } },
+    { id: 'c', source: 'n3', target: 'n4', sourceHandle: null },
+  ]
+  const saved = toGraph([], edges).edges
+  assert.equal(saved[0].curve, 'angular')
+  assert.ok(!('curve' in saved[1]) && !('curve' in saved[2])) // the default is not written down
+  const graph: Graph = { nodes: [], edges: saved }
+  assert.deepEqual(fromGraph(graph).edges.map((e) => (e as { data?: unknown }).data), [{ curve: 'angular' }, undefined, undefined])
+})
+
+test('a saved node places with its own name and settings, topped up with the defaults', () => {
+  const data = presetNodeData({ kind: 'task', label: '', config: { title: 'Ship it' } })
+  assert.equal(data.label, 'Task') // no name saved: the kind's own
+  assert.deepEqual(data.config, { ...defaultConfig('task'), title: 'Ship it' })
+})
+
+test('a node reads as saved only while it is exactly what was saved', () => {
+  const saved = { kind: 'task' as const, label: 'Ship', config: { action: 'create', title: 'Ship it' } }
+  const same = presetNodeData(saved)
+  assert.ok(isSavedNode(saved, same))
+  assert.ok(isSavedNode(saved, { ...same, label: ' Ship ' })) // spaces around the name do not matter
+  assert.ok(!isSavedNode(saved, { ...same, label: 'Ship 2' }))
+  assert.ok(!isSavedNode(saved, { ...same, config: { ...same.config, title: 'Other' } }))
+  assert.ok(!isSavedNode(saved, { ...same, kind: 'agent' }))
 })

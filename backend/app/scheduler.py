@@ -41,7 +41,8 @@ from .harness import (
     workdir_note,
 )
 from .keys import Redactor, key_path, unique_env_names
-from .mcp import CONFIG_PATH, McpSpec, config_toml
+from .mcp import CONFIG_PATH, McpSpec, config_toml, login_env_name
+from .mcp_auth import ACTIVE, login_for
 from .models import Agent, Attempt, AttemptStatus, Board, McpServer, Project, Secret, Task, TaskStatus, utcnow
 from .profiles import Profile, resolve_profile
 from .project_config import sync_project
@@ -55,6 +56,9 @@ MAX_LOG_CHARS = 200_000
 LOG_HEAD_CHARS = 20_000  # kept for good: how the run began (the prompt, the first commands)
 LOG_FLUSH_SECONDS = 1.0
 PRUNE_EVERY_SECONDS = 3600
+KEEP_ALIVE_EVERY_SECONDS = (
+    3600  # how often to look for tool sign ins that need renewing (the policy is in days)
+)
 MAX_PLAYING = 8  # tasks playing a workflow at the same time
 MAX_WAITING = 50  # how many waiting tasks one tick looks at when handing out the budget
 
@@ -161,6 +165,8 @@ class Scheduler:
         self._loop_task: asyncio.Task | None = None
         self._wake = asyncio.Event()
         self._last_prune = float("-inf")
+        self._last_keep_alive = float("-inf")
+        self.mcp_logins = None  # the McpLogins, set by the app; gives runs the tokens of tools that sign in
         self.workflows = None  # the WorkflowRunner, set by the app; plays the workflows of tasks that run one
         self.cells_ready = True  # False while Docker cannot run cells: set by the app's preflight check
 
@@ -220,6 +226,9 @@ class Scheduler:
                 if time.monotonic() - self._last_prune >= PRUNE_EVERY_SECONDS:
                     self._last_prune = time.monotonic()
                     await self.prune_workspaces()
+                if self.mcp_logins and time.monotonic() - self._last_keep_alive >= KEEP_ALIVE_EVERY_SECONDS:
+                    self._last_keep_alive = time.monotonic()
+                    await self.mcp_logins.keep_alive()
             except Exception:
                 log.exception("scheduler tick failed")
             with contextlib.suppress(TimeoutError):
@@ -396,7 +405,9 @@ class Scheduler:
         skills, mcp, keys, error = await Scheduler._capabilities(s, project, agent)
         used = await plan_for_run(s, project.id, agent)
         error = error or used.error
-        secret_envs = {env for c in used.connections for env in c.env_names}
+        secret_envs = {env for c in used.connections for env in c.env_names} | {
+            spec.login_env for spec in mcp if spec.login_env
+        }
         if clash := secret_envs & set(keys.values()):
             error = error or (
                 f"A key of this agent is called {min(clash)}, which a connection of the agent already provides. "
@@ -504,19 +515,39 @@ class Scheduler:
             )
             if len(rows) != len(set(agent.mcp_servers)):
                 return [], [], {}, "A tool server this agent uses no longer exists. Check the agent's Tools."
-        specs = [
-            McpSpec(
-                name=r.name,
-                kind=r.kind,
-                command=r.command,
-                args=tuple(r.args),
-                url=r.url,
-                env=dict(r.env),
-                secret_env=dict(r.secret_env),
-                bearer_secret_id=r.bearer_secret_id,
+        specs = []
+        for r in rows:
+            login_id, login_env = None, ""
+            if r.auth:
+                # A tool that signs in runs as the project's owner, like their connections do. It is checked here,
+                # before a cell is started, so what the person sees is "sign in", not a tool that fails inside a run.
+                login = await login_for(s, project.owner_id, r.url)
+                if login is None or login.status != ACTIVE:
+                    why = f" ({login.error})" if login is not None and login.error else ""
+                    return (
+                        [],
+                        [],
+                        {},
+                        (
+                            f"The tool '{r.name}' needs a sign in{why}. "
+                            "Open the project's Tools and press Sign in."
+                        ),
+                    )
+                login_id, login_env = login.id, login_env_name(r.name)
+            specs.append(
+                McpSpec(
+                    name=r.name,
+                    kind=r.kind,
+                    command=r.command,
+                    args=tuple(r.args),
+                    url=r.url,
+                    env=dict(r.env),
+                    secret_env=dict(r.secret_env),
+                    bearer_secret_id=r.bearer_secret_id,
+                    login_id=login_id,
+                    login_env=login_env,
+                )
             )
-            for r in rows
-        ]
         wanted = set(agent.secrets) | {spec.bearer_secret_id for spec in specs if spec.bearer_secret_id}
         every = wanted | {i for spec in specs for i in spec.key_ids}
         found = (
@@ -654,7 +685,11 @@ class Scheduler:
                         from_connections = await secret_values(self.maker, spec.connections)
                         for env, value in from_connections.items():
                             spec.secret_files[key_path(env)] = value
-                        redact = Redactor([*values.values(), *from_connections.values()])
+                        # a tool that signs in gets a token that lasts the whole run, renewed first when it would not
+                        tokens = await self._login_tokens(spec)
+                        for env, value in tokens.items():
+                            spec.secret_files[key_path(env)] = value
+                        redact = Redactor([*values.values(), *from_connections.values(), *tokens.values()])
                 renderer = renderer_for(spec.harness)
 
                 async def sink(chunk: str) -> None:
@@ -695,6 +730,18 @@ class Scheduler:
         if before is not None:  # a failed or cancelled run may have left files too: the next step should know
             changes = changes_between(before, await asyncio.to_thread(snapshot_workdir, spec))
         await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes)
+
+    async def _login_tokens(self, spec: CellSpec) -> dict[str, str]:
+        """The bearer token of each tool of the run that signs in, by the variable the cell reads it from."""
+        wanted = [server for server in spec.mcp if server.login_id is not None]
+        if not wanted:
+            return {}
+        if self.mcp_logins is None:
+            raise CellError("Signing in to tools is not set up in this Themis")
+        return {
+            server.login_env: await self.mcp_logins.bearer(server.login_id, spec.timeout_seconds)
+            for server in wanted
+        }
 
     async def _key_values(self, spec: CellSpec) -> dict[int, str]:
         """The readable values of the keys this run uses, by id."""

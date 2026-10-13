@@ -12,6 +12,7 @@ from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
 from .connections import DeviceLogins
 from .db import SessionLocal
+from .mcp_auth import McpLogins
 from .migrate import upgrade_database
 from .preflight import Preflight
 from .project_config import sync_all_configs
@@ -21,6 +22,7 @@ from .routers import (
     auth,
     codex,
     connections,
+    mcp_auth,
     projects,
     skills,
     system,
@@ -98,6 +100,8 @@ app.state.preflight = Preflight()
 app.state.updates = UpdateChecker()
 app.state.codex_logins = CodexLogins(SessionLocal)
 app.state.device_logins = DeviceLogins(SessionLocal)
+app.state.mcp_logins = McpLogins(SessionLocal)
+app.state.scheduler.mcp_logins = app.state.mcp_logins
 app.state.workflows = WorkflowRunner(SessionLocal, lambda: app.state.scheduler)
 app.state.scheduler.workflows = app.state.workflows
 
@@ -114,6 +118,7 @@ api.include_router(volumes.router)
 api.include_router(agents.router)
 api.include_router(skills.router)
 api.include_router(tools.router)
+api.include_router(mcp_auth.router)
 
 
 @api.get("/health")

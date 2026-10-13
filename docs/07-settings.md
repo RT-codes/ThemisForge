@@ -104,6 +104,30 @@ never told to upgrade, since it is updated with `git pull`.
 The **time zone** used to evaluate recurring schedules. Pick the zone where you want "every morning" to happen. The
 button next to the field offers the zone of your current browser. See [Scheduling](/docs/scheduling).
 
+## Tool registry
+
+Under **Connections**, administrators have **Tool registry**: a way into the official MCP registry from Settings, for
+finding tools without going through a project first. It opens the same browser as **Add from registry** on a project (see
+[Agents](/docs/agents)). Tools belong to a project, so after you pick one Themis asks which project it is for and then
+shows the usual tool form with the fields filled in.
+
+## Tool sign ins
+
+Under **Connections**, **Tool sign ins** lists your sign ins to hosted tools that ask for one, such as Notion, with when
+each token is next renewed, and signs out of them. Administrators also have **Sign in rules**, saved with the Save bar:
+
+| Setting | What it does |
+| --- | --- |
+| **Renew early by** | A token must still last this long on top of a run's time limit when the run starts, or it is renewed first. |
+| **Assumed token life** | How long a token is taken to last when the service does not say. Services normally do, and their answer wins. |
+| **Keep unused sign ins alive** | Renews a sign in nobody used for this many days, so the service does not let it lapse. 0 switches it off. |
+| **A sign in waits for** | How long a started sign in waits for you to approve on the service's page. |
+| **Wait for a service** | How long each call to a service may take. |
+| **Name on the consent page** | What the service shows as the app asking for access. |
+| **Themis' public address** | Where the service sends you back after you approve. Empty uses the address the page was opened on. Set it behind a reverse proxy. |
+
+See [Agents](/docs/agents#tools-that-sign-in) for how a tool signs in.
+
 ## Keys
 
 Store credentials that are shared by the whole installation, such as a model provider's API key or a key for a tool. They

@@ -1,5 +1,9 @@
 # The cell image for Codex agents: Codex CLI plus the basics a coding agent expects.
 # Build it with: ./themis build-images
+# uv (and uvx) come from Astral's own image, copied in below.
+ARG UV_VERSION=0.12.15
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM node:22-bookworm-slim
 
 ARG CODEX_VERSION=0.160.1
@@ -19,6 +23,10 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
+
+# uv, so a tool server published on PyPI can be started with `uvx` (tools added from the MCP registry, see
+# backend/app/mcp_registry.py). uv downloads the Python it needs when the tool first starts, so the image has none.
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 # Cells run as the host user's uid with no home directory of their own.
 ENV HOME=/tmp

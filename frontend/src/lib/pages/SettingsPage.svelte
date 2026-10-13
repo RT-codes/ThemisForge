@@ -3,6 +3,8 @@
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import ConnectionsSettings from '$lib/components/ConnectionsSettings.svelte'
+	import McpAuthSettings from '$lib/components/McpAuthSettings.svelte'
+	import RegistrySettings from '$lib/components/RegistrySettings.svelte'
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -49,7 +51,7 @@
 	})()
 	const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 	// the budget is a nested object, so a plain spread would share it between the form and the saved copy
-	const copy = (s: AppSettings): AppSettings => ({ ...s, budget: { ...s.budget }, mount_roots: s.mount_roots.map((r) => ({ ...r })) })
+	const copy = (s: AppSettings): AppSettings => ({ ...s, budget: { ...s.budget }, mcp_auth: { ...s.mcp_auth }, mount_roots: s.mount_roots.map((r) => ({ ...r })) })
 	const dirty = $derived(JSON.stringify(form) !== JSON.stringify(saved))
 
 	async function checkDocker(host?: string) {
@@ -240,6 +242,9 @@
 		<SettingsSection id="connections" title="Your connections" description="Your sign ins to AI models and services like GitHub. Projects and their agents use them." defaultOpen>
 			<ConnectionsSettings setup={auth.user?.is_admin ? signInSetup : undefined} />
 		</SettingsSection>
+		<SettingsSection id="tool-sign-ins" title="Tool sign ins" description="Your sign ins to tool servers that ask for one, such as Notion. The tools of your projects use them.">
+			{#if form}<McpAuthSettings bind:policy={form.mcp_auth} />{:else}<McpAuthSettings />{/if}
+		</SettingsSection>
 		{#if auth.user?.is_admin}
 		<SettingsSection id="keys" title="Keys" description="Credentials for model providers and tools. They are encrypted and never shown again." summary={keySummary}>
 			{#if secrets.length}
@@ -273,6 +278,9 @@
 			{#if secretError}<p class="text-sm text-destructive sm:col-span-2" role="alert">{secretError}</p>{/if}
 			<Button type="submit" variant="secondary" class="justify-self-start sm:col-span-2">Add key</Button>
 		</form>
+		</SettingsSection>
+		<SettingsSection id="tool-registry" title="Tool registry" description="Find tools for agents in the official MCP registry and add them to a project.">
+			<RegistrySettings />
 		</SettingsSection>
 		{/if}
 	</div>

@@ -11,6 +11,7 @@
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { router } from '$lib/router.svelte'
+	import { taskResultHref } from '$lib/routes'
 	import { structure } from '$lib/structure.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { relative } from '$lib/format'
@@ -188,12 +189,13 @@
 					{#each attention.items as { task, reason } (task.id)}
 						{@const board = findBoard(workspaces, task.board_id)}
 						<li>
-							<a href="/projects/{id}/boards/{task.board_id}" class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md px-2 py-3 text-sm transition-colors hover:bg-accent/50">
+							<a href={taskResultHref(id, task.board_id, task.id)} aria-label={`View result for ${task.title}`} class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md px-2 py-3 text-sm transition-colors hover:bg-accent/50">
 								<div class="min-w-0 flex-1">
 									<p class="truncate font-medium" title={task.title}>{task.title}</p>
 									<p class="truncate text-xs text-muted-foreground">{board ? destinationLabel(workspaces, board) : 'Open board'}</p>
 								</div>
 								<span class={reason === 'Last run failed' ? 'text-destructive' : 'text-muted-foreground'}>{reason}</span>
+								<span class="shrink-0 font-medium text-primary">View result</span>
 							</a>
 						</li>
 					{/each}

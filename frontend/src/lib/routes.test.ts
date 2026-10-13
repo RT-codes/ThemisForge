@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parse } from './routes.ts'
+import { parse, parseTaskTarget, taskResultHref } from './routes.ts'
 
 test('a project path opens the overview', () => assert.deepEqual(parse('/projects/3'), { name: 'project', id: 3, page: 'overview' }))
 test('a trailing slash is fine', () => assert.deepEqual(parse('/projects/3/'), { name: 'project', id: 3, page: 'overview' }))
@@ -39,4 +39,20 @@ test('the agents list, one agent, editing it, and a new one', () => {
   assert.deepEqual(parse('/projects/3/agents/nope'), { name: 'not-found' })
   assert.deepEqual(parse('/projects/3/agents/new/edit'), { name: 'not-found' })
   assert.deepEqual(parse('/projects/3/agents/9/other'), { name: 'not-found' })
+})
+
+test('attention links target the exact task on History', () => {
+  const href = taskResultHref(3, 8, 42)
+  const [path, hash] = href.split('#')
+  assert.deepEqual(parse(path), { name: 'project', id: 3, page: 'board', boardId: 8 })
+  assert.deepEqual(parseTaskTarget(hash), { taskId: 42, tab: 'history' })
+  assert.deepEqual(parseTaskTarget('task=42&tab=details'), { taskId: 42, tab: 'details' })
+})
+
+test('task targets reject invalid ids, unknown tabs and unrelated fragments', () => {
+  for (const hash of ['', 'node=42', 'task=0&tab=history', 'task=-1&tab=history',
+    'task=1.5&tab=history', 'task=abc&tab=history', 'task=9007199254740992&tab=history',
+    'task=42', 'task=42&tab=unknown', 'task=42&tab=history&extra=1']) {
+    assert.equal(parseTaskTarget(hash), null, hash)
+  }
 })

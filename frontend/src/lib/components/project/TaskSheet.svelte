@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button/index.js'
 	import XIcon from '@lucide/svelte/icons/x'
 	import { fly } from 'svelte/transition'
+	import type { TaskTab } from '$lib/routes'
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
 	import { dateTime, relative } from '$lib/format'
 	import PlayIcon from '@lucide/svelte/icons/play'
@@ -28,6 +29,7 @@
 		tasks,
 		workspaces,
 		defaultStatus,
+		initialTab = 'details',
 		defs,
 		timezone,
 		now,
@@ -50,6 +52,7 @@
 		/** the project's tasks and workspaces, for the links between tasks and the boards to send one to */
 		tasks: Task[]
 		workspaces: Workspace[]
+		initialTab?: TaskTab
 		defaultStatus: TaskStatus
 		defs: PropertyDef[]
 		timezone: string
@@ -98,9 +101,11 @@
 	// a fresh form every time the sheet opens on a different task
 	const formKey = $derived(task ? `task-${task.id}-${task.board_id}` : 'new')
 
+	// Polling refreshes the task object; only opening or switching tasks resets the selected tab.
+	const panelKey = $derived(open ? (task?.id ?? 'new') : null)
 	$effect(() => {
-		if (open) {
-			tab = 'details'
+		if (panelKey !== null) {
+			tab = initialTab
 			error = ''
 		}
 	})

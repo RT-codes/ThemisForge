@@ -33,6 +33,7 @@
 		tasks={desk.tasks}
 		{workspaces}
 		defaultStatus={desk.sheetStatus}
+		initialTab={desk.sheetTab}
 		defs={desk.project.properties}
 		timezone={desk.system?.timezone ?? 'UTC'}
 		now={desk.now}

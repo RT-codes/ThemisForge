@@ -41,3 +41,15 @@ export function parse(path: string): Route {
   if (m) return { name: 'project', id: Number(m[1]), page: (m[2] as ProjectPageName | undefined) ?? 'overview' }
   return { name: 'not-found' }
 }
+
+export type TaskTab = 'details' | 'history'
+
+export function taskResultHref(projectId: number, boardId: number, taskId: number): string {
+  return `/projects/${projectId}/boards/${boardId}#task=${taskId}&tab=history`
+}
+
+export function parseTaskTarget(hash: string): { taskId: number; tab: TaskTab } | null {
+  const match = hash.match(/^task=([1-9]\d*)&tab=(details|history)$/)
+  if (!match || !Number.isSafeInteger(Number(match[1]))) return null
+  return { taskId: Number(match[1]), tab: match[2] as TaskTab }
+}

@@ -63,6 +63,6 @@
 		{#if loaded}<p class="text-sm text-muted-foreground">No folders yet.</p>{/if}
 	{/each}
 	{#if loaded && volumes.length <= 1}
-		<p class="text-xs text-muted-foreground">Add more folders under <a class="text-primary hover:underline" href="/projects/{projectId}#folders">Shared folders</a> on the project overview.</p>
+		<p class="text-xs text-muted-foreground">Add more folders under <a class="text-primary hover:underline" href="/projects/{projectId}/settings#folders">Shared folders</a> in the project's Settings.</p>
 	{/if}
 </div>

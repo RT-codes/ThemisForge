@@ -8,7 +8,7 @@
 	import { accessLabel } from '$lib/format'
 	import { slide } from 'svelte/transition'
 
-	// The form for a new shared folder of a project. The overview and the Files page both use it.
+	// The form for a new shared folder of a project. The project's Settings and the Files page both use it.
 	let { projectId, onadded, oncancel }: { projectId: number; onadded: (volume: Volume) => void; oncancel: () => void } = $props()
 
 	let name = $state('')

@@ -12,7 +12,7 @@
 	import { untrack } from 'svelte'
 	import { slide } from 'svelte/transition'
 
-	// The fields of a tool server (MCP), for making one or changing one. It is used in a dialog on the project overview
+	// The fields of a tool server (MCP), for making one or changing one. It is used in a dialog on the project's Settings
 	// and inline in the agent editor, so it saves by itself and reports back. The parent keys it by tool, so it always
 	// starts from the tool it was given.
 	let {

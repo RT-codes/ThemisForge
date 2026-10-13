@@ -6,11 +6,11 @@ summary: Draw a workflow, test it, and look back at every run, node by node.
 
 # Workflows
 
-A project keeps a **library of workflows**, listed in the **Workflows** section of its overview. Click a workflow there
+A project keeps a **library of workflows**, listed in the **Workflows** section of its Settings. Click a workflow there
 to edit it, or use the trash icon to delete it (with its run history). Each workflow belongs to the project it was made
 in.
 
-**Workflows** in the sidebar, and **New workflow** on the overview, open an empty editor with a Start node. A new
+**Workflows** in the sidebar, and **New workflow** in the project's Settings, open an empty editor with a Start node. A new
 workflow is **only saved once you change something in it**, so opening one and walking away leaves nothing behind. It
 gets the first free name, "Workflow 1", "Workflow 2" and so on, which you can change at the top.
 
@@ -208,7 +208,7 @@ nothing. When the count would pass the limit (10 by default) the step stops with
 project's history says why. Two things can be tuned, each in three layers (**Settings**, then the **project**, then a
 single **task**; an empty box follows the layer above):
 
-- **Most automatic moves in a row**: the limit above. Set it on a project in **Edit project**, on a task in its
+- **Most automatic moves in a row**: the limit above. Set it on a project in its Settings, **Cells and automation**, on a task in its
   **Automation guard** box.
 - **Wait before starting**: how long after a change a task, or a workflow for it, may start. This is the same delay as
   **Settings, Wait before a Ready task starts**.

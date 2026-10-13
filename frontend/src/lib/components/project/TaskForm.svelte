@@ -303,7 +303,7 @@
 						{/each}
 						{#if workflows.length === 0}
 							<p class="text-xs text-muted-foreground">
-								This project has no workflows yet. <a class="text-primary hover:underline" href="/projects/{projectId}#workflows">Create one</a> on the overview.
+								This project has no workflows yet. <a class="text-primary hover:underline" href="/projects/{projectId}/settings#workflows">Create one</a> in the project's Settings.
 							</p>
 						{:else if workflowIds.length < MAX_STAGES}
 							<Button type="button" variant="ghost" size="sm" class="justify-self-start" onclick={() => workflowIds.push('')}><PlusIcon /> Add a stage</Button>

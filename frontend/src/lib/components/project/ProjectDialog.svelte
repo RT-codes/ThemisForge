@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { api, ApiError, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
 	import CellChoice from '$lib/components/CellChoice.svelte'
-	import GuardFields from '$lib/components/GuardFields.svelte'
 	import IconField from '$lib/components/IconField.svelte'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -11,19 +10,17 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js'
 	import { untrack } from 'svelte'
 
+	// Makes a new project. A project that exists is edited on its Settings page, so this dialog only creates.
 	let {
 		open = $bindable(false),
-		project = null,
 		onsaved,
-	}: { open: boolean; project?: Project | null; onsaved: (project: Project) => void } = $props()
+	}: { open: boolean; onsaved: (project: Project) => void } = $props()
 
 	let name = $state('')
 	let purpose = $state('')
 	let description = $state('')
 	let icon = $state('')
 	let profile = $state<ProfileOverrides | null>(null)
-	let cooldown = $state<number | null>(null)
-	let hops = $state<number | null>(null)
 	let formVersion = $state(0) // bumped each time the dialog opens, so the cell control starts from this project
 	let defaults = $state<CellDefaults | null>(null)
 	let error = $state('')
@@ -31,13 +28,8 @@
 
 	$effect(() => {
 		if (open) {
-			name = project?.name ?? ''
-			purpose = project?.purpose ?? ''
-			description = project?.description ?? ''
-			icon = project?.icon ?? ''
-			profile = project?.cell_profile ? { ...project.cell_profile } : null
-			cooldown = project?.automation?.start_cooldown_seconds ?? null
-			hops = project?.automation?.max_hops ?? null
+			name = purpose = description = icon = ''
+			profile = null
 			untrack(() => formVersion++)
 			error = ''
 			api.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
@@ -49,10 +41,7 @@
 		error = ''
 		saving = true
 		try {
-			const saved = project
-				? await api.updateProject(project.id, { name, purpose, description, icon, cell_profile: profile, automation: cooldown === null && hops === null ? null : { start_cooldown_seconds: cooldown, max_hops: hops } })
-				: await api.createProject({ name, purpose, description, icon, cell_profile: profile })
-			onsaved(saved)
+			onsaved(await api.createProject({ name, purpose, description, icon, cell_profile: profile }))
 			open = false
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not save the project'
@@ -65,10 +54,8 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
-			<Dialog.Title>{project ? 'Edit project' : 'New project'}</Dialog.Title>
-			<Dialog.Description>
-				{project ? 'Rename the project or change what it is about.' : 'A project is one agentic system: its tasks, boards and schedules.'}
-			</Dialog.Description>
+			<Dialog.Title>New project</Dialog.Title>
+			<Dialog.Description>A project is one agentic system: its tasks, boards and schedules.</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={save} class="grid gap-4">
 			<div class="grid gap-2">
@@ -100,19 +87,12 @@
 					/>
 				{/key}
 			</div>
-			{#if project}
-				<div class="grid gap-2">
-					<Label>Automation guard</Label>
-					<p class="-mt-1 text-xs text-muted-foreground">Keeps workflows from moving the same task around for ever. Empty boxes use the values from Settings; a single task can set its own.</p>
-					<GuardFields bind:cooldown bind:hops prefix="project" fallback="Settings" />
-				</div>
-			{/if}
 			{#if error}
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>
 			{/if}
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit" disabled={saving || !name.trim()}>{project ? 'Save' : 'Create project'}</Button>
+				<Button type="submit" disabled={saving || !name.trim()}>Create project</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>

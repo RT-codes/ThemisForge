@@ -13,6 +13,7 @@
 	import FilesPage from '$lib/pages/FilesPage.svelte'
 	import HomePage from '$lib/pages/HomePage.svelte'
 	import ProjectOverview from '$lib/pages/ProjectOverview.svelte'
+	import ProjectSettings from '$lib/pages/ProjectSettings.svelte'
 	import WorkflowResume from '$lib/pages/WorkflowResume.svelte'
 	import BoardPage from '$lib/pages/BoardPage.svelte'
 	import WorkspacePage from '$lib/pages/WorkspacePage.svelte'
@@ -62,7 +63,7 @@
 		}
 		if (route.name === 'workflow' || route.name === 'project') {
 			const project: Crumb = { label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }
-			const pages = { overview: 'Overview', tasks: 'Tasks', files: 'Files' }
+			const pages = { overview: 'Overview', settings: 'Settings', tasks: 'Tasks', files: 'Files' }
 			const page = route.name === 'workflow' ? 'Workflow editor' : pages[route.page]
 			return [project, { label: page }]
 		}
@@ -121,6 +122,8 @@
 							<WorkspacePage id={route.id} workspaceId={route.workspaceId} />
 						{:else if route.page === 'files'}
 							<FilesPage id={route.id} />
+						{:else if route.page === 'settings'}
+							<ProjectSettings id={route.id} />
 						{:else}
 							<ProjectOverview id={route.id} />
 						{/if}

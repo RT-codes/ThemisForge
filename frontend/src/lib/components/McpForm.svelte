@@ -18,6 +18,7 @@
 	let {
 		projectId,
 		server,
+		prefill = null,
 		keys,
 		oncancel,
 		onsaved,
@@ -26,6 +27,7 @@
 	}: {
 		projectId: number
 		server: McpServer | null
+		prefill?: McpInput | null // the fields of a tool that is not saved yet, such as one picked from the registry
 		keys: KeyInfo[]
 		oncancel?: () => void
 		onsaved: (saved: McpServer) => void
@@ -33,7 +35,7 @@
 		dirty?: boolean // the fields differ from what was loaded, so the parent can ask before throwing them away
 	} = $props()
 
-	const start = untrack(() => server)
+	const start = untrack(() => server ?? prefill)
 	let name = $state(start?.name ?? '')
 	let description = $state(start?.description ?? '')
 	let kind = $state<'stdio' | 'http'>(start?.kind ?? 'stdio')
@@ -42,10 +44,12 @@
 	let envText = $state(formatEnv(start?.env ?? {}))
 	let secretRows = $state<{ env: string; id: number | null }[]>(Object.entries(start?.secret_env ?? {}).map(([env, id]) => ({ env, id })))
 	let bearer = $state<number | null>(start?.bearer_secret_id ?? null)
+	// how a web tool is let in: nothing, a stored key sent with every request, or a sign in the service asks people for
+	let access = $state<string>(start?.auth ? 'signin' : start?.bearer_secret_id != null ? 'key' : 'none')
 	let saving = $state(false)
 	let formError = $state('')
 
-	const snapshot = () => JSON.stringify([name, description, kind, command, url, envText, secretRows, bearer])
+	const snapshot = () => JSON.stringify([name, description, kind, command, url, envText, secretRows, bearer, access])
 	const loaded = snapshot()
 	$effect(() => {
 		dirty = snapshot() !== loaded
@@ -75,7 +79,8 @@
 			url: kind === 'http' ? url : '',
 			env: kind === 'stdio' ? parseEnv(envText) : {},
 			secret_env: kind === 'stdio' ? secret_env : {},
-			bearer_secret_id: kind === 'http' ? bearer : null,
+			bearer_secret_id: kind === 'http' && access === 'key' ? bearer : null,
+			auth: kind === 'http' && access === 'signin' ? 'oauth' : '',
 		}
 		saving = true
 		try {
@@ -154,13 +159,33 @@
 			<Input id="tool-url" bind:value={url} required placeholder="https://example.com/mcp" class="font-mono" />
 		</div>
 		<div class="grid gap-1.5">
-			<Label>Key sent with every request</Label>
-			<div class="flex items-center gap-2">
-				<div class="min-w-0 flex-1">{@render keyPicker(bearer, (id) => (bearer = id), 'Key', !isAdmin)}</div>
-				{#if bearer !== null && isAdmin}<Button type="button" variant="ghost" size="icon-sm" aria-label="Send no key" onclick={() => (bearer = null)}><XIcon /></Button>{/if}
-			</div>
-			<p class="text-xs text-muted-foreground">{isAdmin ? 'Optional: sent as a bearer token.' : 'Only an administrator can choose a key.'}</p>
+			<Label for="tool-access">Access</Label>
+			<Select.Root type="single" bind:value={access}>
+				<Select.Trigger id="tool-access" class="w-full">
+					{access === 'signin' ? 'Sign in with the service' : access === 'key' ? 'A key sent with every request' : 'Open, no sign in'}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="none" label="Open, no sign in">Open, no sign in</Select.Item>
+					<Select.Item value="signin" label="Sign in with the service">Sign in with the service</Select.Item>
+					<Select.Item value="key" label="A key sent with every request">A key sent with every request</Select.Item>
+				</Select.Content>
+			</Select.Root>
 		</div>
+		{#if access === 'key'}
+			<div class="grid gap-1.5" transition:slide={{ duration: 160 }}>
+				<Label>Key</Label>
+				<div class="flex items-center gap-2">
+					<div class="min-w-0 flex-1">{@render keyPicker(bearer, (id) => (bearer = id), 'Key', !isAdmin)}</div>
+					{#if bearer !== null && isAdmin}<Button type="button" variant="ghost" size="icon-sm" aria-label="Send no key" onclick={() => (bearer = null)}><XIcon /></Button>{/if}
+				</div>
+				<p class="text-xs text-muted-foreground">{isAdmin ? 'Sent as a bearer token.' : 'Only an administrator can choose a key.'}</p>
+			</div>
+		{:else if access === 'signin'}
+			<p class="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground" transition:slide={{ duration: 160 }}>
+				{server ? 'Press Sign in on the tool to sign in or to pick again what it may reach.' : 'Once the tool is created, press Sign in on it.'}
+				You approve on the service's own page. Agents of this project then use your sign in, which Themis keeps renewed. No password or key is stored.
+			</p>
+		{/if}
 	{/if}
 
 	{#if formError}<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{formError}</p>{/if}

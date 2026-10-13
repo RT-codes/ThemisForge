@@ -8,8 +8,12 @@ from app import db
 from app.cells import FakeCellManager
 from app.config import DEFAULT_SECRET_KEY, settings
 from app.main import app
+from app.mcp_auth import McpLogins
 from app.scheduler import Scheduler
 from app.workflows import WorkflowRunner
+
+# shared test doubles for the MCP registry (fixtures: registry, fresh_caches)
+pytest_plugins = ["tests.registry_fakes"]
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +62,9 @@ def cells():
 def scheduler(maker, cells):
     """A scheduler that is driven by hand with tick(); the background loop is not started."""
     sched = Scheduler(maker, cells)
+    sched.mcp_logins = McpLogins(maker)
     app.state.scheduler = sched
+    app.state.mcp_logins = sched.mcp_logins
     return sched
 
 

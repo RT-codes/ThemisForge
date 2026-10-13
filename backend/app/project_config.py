@@ -231,6 +231,7 @@ class McpFile(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     keys: dict[str, str] = Field(default_factory=dict)  # environment variable -> the name of a stored key
     bearer_key: str = ""  # http: the stored key sent as a bearer token
+    auth: str = ""  # http: the way the server signs people in (app/mcp_auth), instead of a key; "" for none
 
     @field_validator("args", mode="before")
     @classmethod
@@ -253,6 +254,8 @@ def render_mcp(mf: McpFile) -> str:
         meta["url"] = mf.url
         if mf.bearer_key:
             meta["bearer_key"] = mf.bearer_key
+        if mf.auth:
+            meta["auth"] = mf.auth
     else:
         meta["command"], meta["args"] = mf.command, mf.args
         if mf.env:
@@ -402,6 +405,7 @@ def mcp_fields(
             env=mf.env,
             secret_env=secret_env,
             bearer_secret_id=bearer,
+            auth=mf.auth,
         )
     except ValidationError as e:
         err = e.errors()[0]
@@ -420,6 +424,7 @@ def mcp_file(server: McpServer, refs: Refs) -> McpFile:
         env=dict(server.env),
         keys={var: keys[i] for var, i in server.secret_env.items() if i in keys},
         bearer_key=keys.get(server.bearer_secret_id or 0, ""),
+        auth=server.auth,
     )
 
 

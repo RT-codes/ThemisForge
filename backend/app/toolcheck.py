@@ -14,14 +14,48 @@ from .harness import plan_for
 from .models import Project
 
 
-def image_for(project: Project, cfg: AppSettings, harness: str, cell_profile: dict[str, Any] | None) -> str:
-    """The image an agent of this harness would run in: its own cell, else the project's, else the harness's."""
+def image_for(
+    project: Project | None, cfg: AppSettings, harness: str, cell_profile: dict[str, Any] | None
+) -> str:
+    """The image an agent of this harness would run in: its own cell, else the project's, else the harness's. With no
+    project (a look at tools in general, from Settings) it is the harness's."""
     hp = plan_for(harness, cfg)
     return (
         (cell_profile or {}).get("image")
-        or (project.cell_profile or {}).get("image")
+        or ((project.cell_profile if project else None) or {}).get("image")
         or (hp.image if hp else cfg.cell_image)
     )
+
+
+async def commands_in_image(image: str, commands: set[str], docker_host: str = "") -> dict[str, bool] | None:
+    """Which of these commands the image has, as {command: found}. None when that cannot be said: there is nothing to
+    look up, cells are simulated, or the image is not on this machine yet."""
+    if not commands or settings.cell_backend == "fake":
+        return None
+    env = docker_env(docker_host)
+    code, _, _ = await run_command(["docker", "image", "inspect", image], env, 30)
+    if code != 0:
+        return None
+    found: dict[str, bool] = {}
+    for command in sorted(commands):
+        code, _, _ = await run_command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "sh",
+                image,
+                "-c",
+                'command -v "$1" >/dev/null',
+                "sh",
+                command,
+            ],
+            env,
+            60,
+        )
+        found[command] = code == 0
+    return found
 
 
 async def missing_commands(image: str, commands: dict[str, str], docker_host: str = "") -> list[str]:
@@ -29,34 +63,12 @@ async def missing_commands(image: str, commands: dict[str, str], docker_host: st
     Nothing is checked, and nothing is reported, when cells are simulated or there is nothing to look up."""
     if not commands or settings.cell_backend == "fake":
         return []
-    env = docker_env(docker_host)
-    code, _, _ = await run_command(["docker", "image", "inspect", image], env, 30)
-    if code != 0:
+    found = await commands_in_image(image, set(commands.values()), docker_host)
+    if found is None:
         return [f"The image {image} is not on this machine yet, so its tools could not be checked."]
-    warnings = []
-    found: dict[str, bool] = {}
-    for server, command in commands.items():
-        if command not in found:
-            code, _, _ = await run_command(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--entrypoint",
-                    "sh",
-                    image,
-                    "-c",
-                    'command -v "$1" >/dev/null',
-                    "sh",
-                    command,
-                ],
-                env,
-                60,
-            )
-            found[command] = code == 0
-        if not found[command]:
-            warnings.append(
-                f"'{command}' is not in the image {image}, so the tool '{server}' would fail to start. "
-                "Choose an image that has it."
-            )
-    return warnings
+    return [
+        f"'{command}' is not in the image {image}, so the tool '{server}' would fail to start. "
+        "Choose an image that has it."
+        for server, command in commands.items()
+        if not found[command]
+    ]

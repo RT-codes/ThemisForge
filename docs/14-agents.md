@@ -86,11 +86,75 @@ and change it, or press **New tool**. They are also listed under **Tools** on th
 - **With a command**: type the command line (`npx -y @modelcontextprotocol/server-filesystem /workspace`). It is started
   inside the agent's container, so the image must have what it runs. Under **Settings** you can add plain settings as
   environment variables, and an administrator can add keys.
-- **At a web address**: the URL of a server on the web, with an optional key sent as a bearer token.
+- **At a web address**: the URL of a server on the web. Under **Access** it is open, takes a key sent as a bearer token,
+  or asks you to **sign in with the service**. See [Tools that sign in](#tools-that-sign-in) below.
 - A tool has a **description** for people, and a **Test connection** button. For a web address the test connects, starts a
   session and lists what the server offers. For a command it looks the command up in the image agents run in (it does not
   start it: that happens when an agent runs). The last result is remembered and shown as a coloured dot. A key is only
-  sent by a test when an administrator runs it.
+  sent by a test when an administrator runs it. A tool that signs in is tested with your sign in.
+
+### Tools that sign in
+
+Hosted tools such as Notion do not take a key: they ask you to sign in on their own page and choose what Themis may reach
+(for Notion, which pages). Set **Access** to *Sign in with the service* and press **Sign in** on the tool in the project's
+**Tools**. The service's page opens, you approve, and you land back on the project.
+
+- **It is yours.** Runs of a project use the sign in of the project's owner. It is found by the server's address, so
+  signing in once serves every tool of yours that points at that server. Settings, **Tool sign ins** lists them and signs
+  out of one.
+- **Before a run, not during.** A run needs a token that outlasts it. Themis renews the token first when it would not, and
+  hands the cell only that short lived token. The long lived part stays on the host, because services rotate it on every
+  use. A tool that is not signed in stops the run with a note saying so, before any cell starts.
+- **Kept alive.** Services end a sign in that sits unused (Notion after 30 days), so Themis renews unused ones on a
+  schedule. If the service ends one anyway, the tool shows *Needs a new sign in* and the run says so.
+- **Pick again.** **Sign in again** opens the service's page afresh, which is also how to change which pages it may reach.
+- **Sign out** forgets it in Themis. To withdraw the access itself, use the service's own settings.
+- **Adding from the registry.** Themis asks a hosted server whether it wants a sign in, so the form opens already set up
+  for it.
+
+The numbers (how early a token is renewed, how long a token is assumed to last, how long unused sign ins are kept alive)
+are administrator settings under **Settings, Tool sign ins**. What a single service needs differently, such as a scope or
+a client id registered by hand, is in `backend/app/mcp_auth/servers.yaml`, read on every sign in. The standard way MCP
+servers sign people in is built in; another way of signing in is added as one class (`backend/app/mcp_auth/scheme.py`
+describes what it must do).
+
+### Adding a tool from the MCP registry
+
+Administrators can press **Add from registry** next to **New tool**, or **Browse the registry** under **Settings, Tool
+registry**, to browse the official MCP registry (registry.modelcontextprotocol.io) instead of typing a tool in. It lists
+tens of thousands of tools that anyone has published. From Settings Themis asks which project the tool is for, because a
+tool always belongs to one project (keys are shared between projects); from a project it is added there.
+
+- **Browsing.** Categories are on the left (with how many tools match your search in each), **Featured** is the short
+  list we picked, and the search box looks through names and descriptions. **Sort** by Recommended, Most downloaded,
+  Recently updated or Name. **Runnable only** hides what this project's image cannot start.
+- **Recommended** is not popularity, because the registry has none. It puts first what can run here, comes from a
+  publisher that proved a domain it owns, is filled in, was updated recently and (for npm packages) is downloaded a lot,
+  and it puts publishers that list hundreds of near-identical tools below the rest. **Most downloaded** is npm's
+  downloads in the last month, so only npm packages have a number.
+- **Icons** are the one the publisher declared, else the GitHub avatar of the owner, else the tool's initials. Your
+  browser loads them from those hosts as you scroll, and tells them nothing about the page.
+- **A copy kept on this machine.** The registry's own search is slow, so Themis reads its whole listing once (a few
+  minutes, in the background, the first time somebody opens the browser) into a file under the data folder
+  (`cache/mcp-registry.json`). After that it asks only for what changed, at most once a day, or when you press **Update
+  now**. npm download counts are fetched from npm in the background, at most once a week for each package.
+- **What cannot run.** Every tool is listed. The ones Themis cannot run yet are greyed out, and picking one says why: it is
+  a container image, needs .NET, only offers the older SSE connection, needs custom headers, or the cell image lacks the
+  program that starts it (`npx` for npm packages, `uvx` for Python packages, both in the Codex image).
+- **Adding.** A tool that can run asks for what it needs: required settings, and a stored key for anything secret. The
+  key's value is never typed here. It then opens the normal tool form, filled in, and nothing exists until you press
+  **Create tool**. Packages are pinned to the version the registry lists.
+- **Take care.** Anyone can publish to the registry and nobody vets what is listed. A package runs inside the cell with
+  the agent's access to its folders and any key you give it, and a hosted address receives everything the agent sends it.
+  Some hosted tools want you to sign in with a browser. The registry does not say which, so Themis asks the server when
+  you pick one and opens the form set up to sign in (see [Tools that sign in](#tools-that-sign-in)).
+
+Two files, both edited by hand, change what the browser shows. They are read again whenever they change, no restart
+needed:
+
+- `backend/app/featured_tools.yaml`: the featured tools, as registry names with an optional note.
+- `backend/app/registry_categories.yaml`: the categories and the keywords that put a tool in one. A tool goes where it
+  matches most keywords (a name counts three times a description).
 
 When an agent is saved, the commands of its tools are looked up in the image it runs in, and anything that is missing is
 reported on the page, because an agent whose tool fails to start just carries on without it. The check needs the image on

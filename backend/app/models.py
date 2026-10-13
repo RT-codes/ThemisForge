@@ -374,6 +374,35 @@ class Connection(Base):
     checked_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)  # last successful test
 
 
+class McpLogin(Base):
+    """One user's sign in to a tool server that asks for one (see app/mcp_auth). It is the user's, not a project's: a
+    project's tools use their owner's, found by the server's address, so signing in once covers every project and
+    every tool that points at that server. The secret part is encrypted and owned by the auth scheme, so a scheme that
+    keeps other things than tokens needs no new column."""
+
+    __tablename__ = "mcp_logins"
+    __table_args__ = (UniqueConstraint("user_id", "resource", name="uq_mcp_logins_resource"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    resource: Mapped[str] = mapped_column(String(2000))  # the server's address in its canonical form
+    scheme: Mapped[str] = mapped_column(String(20))  # the auth scheme that made it
+    status: Mapped[str] = mapped_column(String(20), default="active")  # "active" | "needs_sign_in"
+    error: Mapped[str] = mapped_column(Text, default="")  # why it needs a new sign in, for people
+    credential_encrypted: Mapped[str] = mapped_column(
+        Text, default=""
+    )  # JSON the scheme owns, see app/crypto.py
+    account: Mapped[str] = mapped_column(String(320), default="")  # who it is, shown ("Acme workspace")
+    settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # what the server said: no secrets
+    expires_at: Mapped[datetime | None] = mapped_column(
+        UtcDateTime(), default=None
+    )  # when the token stops working
+    refreshed_at: Mapped[datetime | None] = mapped_column(
+        UtcDateTime(), default=None
+    )  # last time it was renewed
+    connected_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class ProjectConnection(Base):
     """The connection a project uses for a provider. Agents of the project can then opt in to it (Agent.connections)."""
 
@@ -579,6 +608,9 @@ class McpServer(Base):
     bearer_secret_id: Mapped[int | None] = mapped_column(
         Integer, default=None
     )  # http: the key sent as a bearer token
+    # http: how the server wants people to sign in, as the id of an auth scheme (app/mcp_auth), or "" for none. The
+    # sign in itself is an McpLogin of the project's owner: a tool says how, never holds the credential.
+    auth: Mapped[str] = mapped_column(String(20), default="", server_default="")
     description: Mapped[str] = mapped_column(Text, default="", server_default="")  # for people
     # like Agent.path: the file in the config folder is the truth, this row is its identity and a parsed copy
     path: Mapped[str] = mapped_column(String(300), default="", server_default="")

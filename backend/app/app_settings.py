@@ -63,6 +63,37 @@ class Budget(BaseModel):
         return Cost(self.cpus, self.memory_mb)
 
 
+class McpAuthPolicy(BaseModel):
+    """How Themis signs in to the tool servers that ask for it (see app/mcp_auth). Every number that sign in depends on
+    lives here, never in the code: a service that changes how long its tokens last needs a setting changed, not a
+    release. What one service does differently from the rest goes in app/mcp_auth/servers.yaml instead."""
+
+    # A token must still be good for this long, on top of the run's own time limit, when a run starts: otherwise it is
+    # renewed first. Lowering it renews less often, raising it protects longer runs from a token that ends mid-way.
+    refresh_margin_seconds: int = Field(default=600, ge=0, le=86_400)
+    # How long a token is assumed to last when the service does not say (it normally does: its answer wins).
+    default_token_seconds: int = Field(default=3600, ge=60, le=2_592_000)
+    # A sign in nobody used for this many days is renewed anyway, because services let a sign in lapse when it sits
+    # unused (Notion after 30 days). 0 switches this off.
+    keepalive_days: int = Field(default=7, ge=0, le=365)
+    sign_in_minutes: int = Field(default=10, ge=1, le=60)  # how long a started sign in waits for the person
+    request_timeout_seconds: int = Field(default=15, ge=3, le=120)  # for each call to a service
+    # Where a browser reaches Themis, when that is not the address the page was opened on (behind a reverse proxy).
+    # The service sends the person back here, so it must be an address their browser can open.
+    public_url: str = ""
+    client_name: str = Field(
+        default="Themis", min_length=1, max_length=60
+    )  # shown on the service's consent screen
+
+    @field_validator("public_url")
+    @classmethod
+    def valid_public_url(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        if v and not re.match(r"^https?://[^/\s?#]+$", v):
+            raise ValueError("Use the address without a path, like https://themis.example.com")
+        return v
+
+
 class AppSettings(BaseModel):
     """Operator settings edited from the Settings page (stored as one JSON row)."""
 
@@ -86,6 +117,7 @@ class AppSettings(BaseModel):
     # The client id of the GitHub OAuth App (device flow switched on) that "Sign in with GitHub" uses. It is public by
     # design, and empty until an administrator adds it: only the token way of connecting works until then.
     github_client_id: str = ""
+    mcp_auth: McpAuthPolicy = McpAuthPolicy()  # signing in to tool servers, see app/mcp_auth
     check_for_updates: bool = (
         True  # ask GitHub once a day whether a newer release exists (see app/updates.py)
     )

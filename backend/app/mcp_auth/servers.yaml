@@ -1,0 +1,27 @@
+# What a tool server does differently from the standard way of signing in to MCP servers. Edit this file by hand: it is
+# read on every sign in and renewal, so a change applies without restarting Themis.
+#
+# A server that is not listed here signs in the standard way, which needs nothing: Themis asks the server how. Add an
+# entry only for a server that needs a nudge. Settings that are about how Themis behaves for every server (how early a
+# token is renewed, what a token's lifetime is assumed to be) are in Settings, not here.
+#
+# Each entry:
+#   match:             the server's host name; "*.example.com" matches every sub domain
+#   name:              what people see it called
+#   scopes:            what to ask for, as a list. [] asks for nothing. Leave it out to ask for what the server
+#                      advertises
+#   authorize_params:  extra query parameters for the sign in link (prompt, access_type, ...)
+#   client_id:         a client id registered by hand, for a server that does not let apps register themselves
+#   issuer:            the authorization server's address, for a server that does not announce it
+#   send_resource:     false for a server that rejects the "resource" parameter (default true)
+#   token_seconds:     how long its tokens last when it does not say
+#   account_fields:    where in its answer the account's name is, tried before the usual places
+servers:
+  - match: mcp.notion.com
+    name: Notion
+    # Notion advertises one scope called "default" and its own client guide asks for none: ask for none.
+    scopes: []
+    # Shows the consent screen where the person picks the pages Themis may reach, every time.
+    authorize_params:
+      prompt: consent
+    account_fields: [workspace_name]

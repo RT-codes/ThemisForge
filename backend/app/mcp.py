@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .harness import CODEX_HOME
 from .keys import ENV_NAME
+from .mcp_auth import SCHEMES
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 CONFIG_PATH = f"{CODEX_HOME}/config.toml"
@@ -32,6 +33,9 @@ class McpIn(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     secret_env: dict[str, int] = Field(default_factory=dict)  # environment variable -> key id
     bearer_secret_id: int | None = None  # http: a key sent as a bearer token
+    # http: the sign in method the server asks people for (an id from app/mcp_auth), "" for none. The sign in is made
+    # separately, by a person, and is not part of the tool: this only says that the tool needs one.
+    auth: str = Field(default="", max_length=20)
 
     @field_validator("name")
     @classmethod
@@ -55,6 +59,14 @@ class McpIn(BaseModel):
             raise ValueError("Environment variable names use letters, digits and underscores")
         return v
 
+    @field_validator("auth")
+    @classmethod
+    def known_auth(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v and v not in SCHEMES:
+            raise ValueError(f"Unknown sign in method '{v}'. Use one of: {', '.join(sorted(SCHEMES))}")
+        return v
+
     @model_validator(mode="after")
     def valid_for_kind(self) -> "McpIn":
         if self.kind == "http":
@@ -62,6 +74,8 @@ class McpIn(BaseModel):
                 raise ValueError("A web tool needs a URL that starts with http:// or https://")
             self.url, self.command, self.args = self.url.strip(), "", []
             self.env, self.secret_env = {}, {}
+            if self.auth and self.bearer_secret_id is not None:
+                raise ValueError("A tool signs in or sends a key, not both. Remove one of them.")
         else:
             command = self.command.strip()
             if not command:
@@ -71,7 +85,7 @@ class McpIn(BaseModel):
             if not self.args and any(c.isspace() for c in command):
                 parts = shlex.split(command)  # "npx -y pkg" typed into the command box
                 command, self.args = parts[0], parts[1:]
-            self.command, self.url, self.bearer_secret_id = command, "", None
+            self.command, self.url, self.bearer_secret_id, self.auth = command, "", None, ""
         return self
 
 
@@ -85,10 +99,19 @@ class McpSpec:
     env: dict[str, str] = field(default_factory=dict)
     secret_env: dict[str, int] = field(default_factory=dict)  # environment variable -> key id
     bearer_secret_id: int | None = None
+    # A tool that signs in: the sign in whose token is sent, and the variable the cell finds it in (both set by the
+    # scheduler when it plans the run, see McpLogins.bearer). Neither is a secret.
+    login_id: int | None = None
+    login_env: str = ""
 
     @property
     def key_ids(self) -> set[int]:
         return set(self.secret_env.values()) | ({self.bearer_secret_id} if self.bearer_secret_id else set())
+
+
+def login_env_name(tool_name: str) -> str:
+    """The variable a tool's sign in token is exported as (tool names are unique in a project, so this is too)."""
+    return "MCP_" + re.sub(r"[^A-Z0-9]+", "_", tool_name.upper()).strip("_") + "_TOKEN"
 
 
 def _str(value: str) -> str:
@@ -106,6 +129,8 @@ def config_toml(servers: list[McpSpec], values: dict[int, str], env_names: dict[
             out.append(f"url = {_str(s.url)}")
             if s.bearer_secret_id is not None:
                 out.append(f"bearer_token_env_var = {_str(env_names[s.bearer_secret_id])}")
+            elif s.login_env:
+                out.append(f"bearer_token_env_var = {_str(s.login_env)}")
         else:
             out.append(f"command = {_str(s.command)}")
             out.append("args = [" + ", ".join(_str(a) for a in s.args) + "]")

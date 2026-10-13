@@ -1,0 +1,844 @@
+{
+ "azure_devops": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Unofficial entry for Microsoft's hosted Azure DevOps MCP server. Not affiliated with Microsoft.",
+  "name": "io.github.joachim-aqf/azure-devops",
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Comma-separated toolsets to enable, e.g. 'wit,work'. Omit to enable all.",
+      "name": "X-MCP-Toolsets"
+     },
+     {
+      "description": "Set to 'true' to expose only read-only tools.",
+      "name": "X-MCP-Readonly"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://mcp.dev.azure.com/{organization}",
+    "variables": {
+     "organization": {
+      "description": "Your Azure DevOps organization name, e.g. 'contoso'.",
+      "isRequired": true
+     }
+    }
+   }
+  ],
+  "title": "Azure DevOps (unofficial remote entry)",
+  "version": "0.1.0",
+  "websiteUrl": "https://learn.microsoft.com/en-us/azure/devops/mcp-server/remote-mcp-server"
+ },
+ "context7": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Up-to-date code docs for any prompt",
+  "icons": [
+   {
+    "mimeType": "image/png",
+    "src": "https://raw.githubusercontent.com/upstash/context7/master/public/icon.png"
+   }
+  ],
+  "name": "io.github.upstash/context7",
+  "packages": [
+   {
+    "environmentVariables": [
+     {
+      "description": "API key for authentication",
+      "isSecret": true,
+      "name": "CONTEXT7_API_KEY"
+     }
+    ],
+    "identifier": "@upstash/context7-mcp",
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "4.3.0"
+   },
+   {
+    "environmentVariables": [
+     {
+      "description": "API key for authentication",
+      "isSecret": true,
+      "name": "CONTEXT7_API_KEY"
+     }
+    ],
+    "fileSha256": "e351823c6267237d424c36833295fcc3be38e40277036d83f1da168b24e26d0e",
+    "identifier": "https://github.com/upstash/context7/releases/download/mcpb-v4.3.0/context7.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "4.3.0"
+   }
+  ],
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "API key for authentication. Accepts \"Bearer <key>\" or the raw key.",
+      "isSecret": true,
+      "name": "Authorization"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://mcp.context7.com/mcp"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/upstash/context7"
+  },
+  "title": "Context7",
+  "version": "4.3.0",
+  "websiteUrl": "https://context7.com"
+ },
+ "empty": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "零 LLM 事实提取 + 三维信号评分 + 艾宾浩斯衰减 + 五阶段梦境流水线与内容发芽检测，纯计算零依赖",
+  "name": "cn.savantcat/memory-dream-engine",
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/savantcat/memory-dream-engine"
+  },
+  "title": "记忆梦境引擎 · AI 的睡眠系统",
+  "version": "1.0.1",
+  "websiteUrl": "https://savantcat.cn/mcp/"
+ },
+ "github": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Connect AI assistants to GitHub - manage repos, issues, PRs, and workflows through natural language.",
+  "name": "io.github.github/github-mcp-server",
+  "packages": [
+   {
+    "identifier": "ghcr.io/github/github-mcp-server:2.0.2",
+    "registryType": "oci",
+    "runtimeArguments": [
+     {
+      "description": "Publish the OAuth callback port to loopback so the in-container login callback is reachable",
+      "name": "-p",
+      "type": "named",
+      "value": "127.0.0.1:8085:8085"
+     },
+     {
+      "description": "Fixed OAuth callback port, matching the published port above",
+      "name": "-e",
+      "type": "named",
+      "value": "GITHUB_OAUTH_CALLBACK_PORT=8085"
+     },
+     {
+      "description": "Optional GitHub Personal Access Token. Omit to log in with OAuth on first use.",
+      "name": "-e",
+      "type": "named",
+      "value": "GITHUB_PERSONAL_ACCESS_TOKEN={token}",
+      "variables": {
+       "token": {
+        "format": "string",
+        "isSecret": true
+       }
+      }
+     }
+    ],
+    "transport": {
+     "type": "stdio"
+    }
+   }
+  ],
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Authorization header with authentication token (PAT or App token)",
+      "isSecret": true,
+      "name": "Authorization"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://api.githubcopilot.com/mcp/"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/github/github-mcp-server"
+  },
+  "title": "GitHub",
+  "version": "2.0.2"
+ },
+ "many_packages": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "All Azure MCP tools to create a seamless connection between AI agents and Azure services.",
+  "name": "com.microsoft/azure",
+  "packages": [
+   {
+    "identifier": "Azure.Mcp",
+    "packageArguments": [
+     {
+      "type": "positional",
+      "value": "server"
+     },
+     {
+      "type": "positional",
+      "value": "start"
+     }
+    ],
+    "registryType": "nuget",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "3.0.0-beta.48"
+   },
+   {
+    "identifier": "@azure/mcp",
+    "packageArguments": [
+     {
+      "type": "positional",
+      "value": "server"
+     },
+     {
+      "type": "positional",
+      "value": "start"
+     }
+    ],
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "3.0.0-beta.48"
+   },
+   {
+    "identifier": "msmcp-azure",
+    "packageArguments": [
+     {
+      "type": "positional",
+      "value": "server"
+     },
+     {
+      "type": "positional",
+      "value": "start"
+     }
+    ],
+    "registryType": "pypi",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "3.0.0b48"
+   },
+   {
+    "fileSha256": "980b09575ce16a92e9cf96233d933446622f3e19f0d298beec9564121f438e5f",
+    "identifier": "https://github.com/microsoft/mcp/releases/download/Azure.Mcp.Server-3.0.0-beta.48/Azure.Mcp.Server-win-x64.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    }
+   },
+   {
+    "fileSha256": "f52c99befe49bdd80eee49da2e7c9b420fd3423b5739750cf664ed46b7ddc232",
+    "identifier": "https://github.com/microsoft/mcp/releases/download/Azure.Mcp.Server-3.0.0-beta.48/Azure.Mcp.Server-win-arm64.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    }
+   },
+   {
+    "fileSha256": "21df704aabab188fb2e0c7c186359845b7a33a2875d837da32769ca9d4bdaf01",
+    "identifier": "https://github.com/microsoft/mcp/releases/download/Azure.Mcp.Server-3.0.0-beta.48/Azure.Mcp.Server-linux-x64.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    }
+   },
+   {
+    "fileSha256": "8de45f3870442961456752413ba697c65a070d684fbf99535fa4ea0e99bf48dd",
+    "identifier": "https://github.com/microsoft/mcp/releases/download/Azure.Mcp.Server-3.0.0-beta.48/Azure.Mcp.Server-linux-arm64.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    }
+   },
+   {
+    "fileSha256": "dc7e4b178e19fe7b24cad89b636623b9c61f4cf2aeee57747d7280c0c0abf4c2",
+    "identifier": "https://github.com/microsoft/mcp/releases/download/Azure.Mcp.Server-3.0.0-beta.48/Azure.Mcp.Server-osx-x64.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    }
+   },
+   {
+    "fileSha256": "f4737f574b57b374b9e59e2dd87e0b1f0859f92524d56af5cc9ce4a36b56a192",
+    "identifier": "https://github.com/microsoft/mcp/releases/download/Azure.Mcp.Server-3.0.0-beta.48/Azure.Mcp.Server-osx-arm64.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    }
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "subfolder": "servers/Azure.Mcp.Server",
+   "url": "https://github.com/microsoft/mcp"
+  },
+  "title": "Azure MCP Server",
+  "version": "3.0.0-beta.48",
+  "websiteUrl": "https://github.com/microsoft/mcp/tree/main/servers/Azure.Mcp.Server"
+ },
+ "mcpb_only": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Secret scanning for AI agents: rules and entropy find candidates, a model decides which are real.",
+  "name": "io.github.0x1Adi/klarion",
+  "packages": [
+   {
+    "environmentVariables": [
+     {
+      "description": "Optional. With a key Klarion adjudicates candidates itself; without one it hands them to the calling agent to judge.",
+      "format": "string",
+      "isSecret": true,
+      "name": "ANTHROPIC_API_KEY"
+     }
+    ],
+    "fileSha256": "e467824ca3450f49d53b0a4794006b62a2cabc787a9a62c100497b902b77f92d",
+    "identifier": "https://github.com/0x1Adi/Klarion/releases/download/v0.4.3/klarion-mcp-v0.4.3.mcpb",
+    "registryType": "mcpb",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "0.4.3"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/0x1Adi/Klarion"
+  },
+  "title": "Klarion",
+  "version": "0.4.3"
+ },
+ "npm_literal_arg": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "TypeScript MCP server for AI-powered containerization workflows with Docker and Kubernetes support",
+  "name": "io.github.Azure/containerization-assist",
+  "packages": [
+   {
+    "environmentVariables": [
+     {
+      "description": "Docker socket path or named pipe",
+      "name": "DOCKER_SOCKET"
+     },
+     {
+      "description": "Logging level (debug, info, warn, error)",
+      "name": "LOG_LEVEL"
+     }
+    ],
+    "identifier": "containerization-assist-mcp",
+    "packageArguments": [
+     {
+      "type": "positional",
+      "value": "start"
+     }
+    ],
+    "registryBaseUrl": "https://registry.npmjs.org",
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "1.5.0"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/Azure/containerization-assist"
+  },
+  "title": "Containerization Assist",
+  "version": "1.5.0",
+  "websiteUrl": "https://github.com/Azure/containerization-assist#readme"
+ },
+ "npm_plain": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Typed feature management for compose projects: roadmap, changelog, artifacts, journal.",
+  "name": "ai.smartmemory/compose-mcp",
+  "packages": [
+   {
+    "identifier": "@smartmemory/compose-mcp",
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "0.7.2"
+   }
+  ],
+  "title": "Compose MCP",
+  "version": "0.7.2"
+ },
+ "npm_required_arg": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Read-only MCP server for one AINDF design-system bundle: look up what it offers, validate screens.",
+  "name": "io.github.0design/aindf",
+  "packages": [
+   {
+    "identifier": "@ai-native-design-framework/kit",
+    "packageArguments": [
+     {
+      "description": "Run the MCP server over stdio",
+      "type": "positional",
+      "value": "mcp"
+     },
+     {
+      "description": "Path to the design system's AINDF bundle (made with `aindf bundle`)",
+      "format": "filepath",
+      "isRequired": true,
+      "type": "positional",
+      "valueHint": "bundle_path"
+     }
+    ],
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "0.2.1"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "subfolder": "packages/aindf-kit",
+   "url": "https://github.com/0design/ai-native-design-framework"
+  },
+  "title": "AINDF",
+  "version": "0.2.1",
+  "websiteUrl": "https://github.com/0design/ai-native-design-framework"
+ },
+ "npm_secret_env": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "description": "Web intelligence for AI agents: fetch, render, extract, research. x402 micropayments, no API keys.",
+  "name": "ai.clawfetch/mcp",
+  "packages": [
+   {
+    "environmentVariables": [
+     {
+      "description": "EVM private key for a Base wallet holding USDC (pays x402 micropayments gaslessly)",
+      "isRequired": true,
+      "isSecret": true,
+      "name": "CLAWFETCH_PRIVATE_KEY"
+     }
+    ],
+    "identifier": "@clawfetch/mcp",
+    "registryBaseUrl": "https://registry.npmjs.org",
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "0.3.2"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/clawfetch/clawfetch-mcp"
+  },
+  "version": "0.3.2"
+ },
+ "nuget_only": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Schema-aware read/write access to PostgreSQL through Devart dotConnect ADO.NET data provider.",
+  "name": "com.devart/mcp-postgresql",
+  "packages": [
+   {
+    "environmentVariables": [
+     {
+      "description": "A dotConnect for PostgreSQL connection string.",
+      "isRequired": true,
+      "isSecret": true,
+      "name": "DEVART_MCP_POSTGRESQL_CONNECTION",
+      "value": "Server={server};Port={port};Database={database};User Id={user};Password={password};Unicode=True;License Key={license_key};",
+      "variables": {
+       "database": {
+        "description": "Database to connect to.",
+        "isRequired": true
+       },
+       "license_key": {
+        "description": "Devart dotConnect for PostgreSQL license key, from the Devart Customer Portal.",
+        "isRequired": true,
+        "isSecret": true
+       },
+       "password": {
+        "description": "Password for the role.",
+        "isRequired": true,
+        "isSecret": true
+       },
+       "port": {
+        "default": "5432",
+        "description": "Port the PostgreSQL server listens on.",
+        "isRequired": true
+       },
+       "server": {
+        "default": "localhost",
+        "description": "PostgreSQL host name or network address.",
+        "isRequired": true
+       },
+       "user": {
+        "default": "postgres",
+        "description": "PostgreSQL role to authenticate as.",
+        "isRequired": true
+       }
+      }
+     }
+    ],
+    "identifier": "Devart.Mcp.PostgreSql",
+    "packageArguments": [
+     {
+      "type": "positional",
+      "value": "run"
+     }
+    ],
+    "registryBaseUrl": "https://api.nuget.org/v3/index.json",
+    "registryType": "nuget",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "1.1.0"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/devart-ai-connectivity/devart-mcp-server-postgresql"
+  },
+  "title": "Devart MCP Server for PostgreSQL (ADO.NET)",
+  "version": "1.1.0"
+ },
+ "oci_only": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Lint Dockerfiles for root users, latest tags, secrets in ENV or ARG, missing HEALTHCHECK and more.",
+  "name": "io.github.basitalisandhu/mcp-dockerfile-lint",
+  "packages": [
+   {
+    "identifier": "ghcr.io/basitalisandhu/mcp-dockerfile-lint:0.2.0",
+    "registryType": "oci",
+    "runtimeHint": "docker",
+    "transport": {
+     "type": "stdio"
+    }
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "subfolder": "packages/dockerfile-lint",
+   "url": "https://github.com/basitalisandhu/dev-mcp-servers"
+  },
+  "title": "Dockerfile Lint",
+  "version": "0.2.0",
+  "websiteUrl": "https://basitalisandhu.github.io/dev-mcp-servers/"
+ },
+ "package_http_server": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Read-only Polymarket prediction market data for AI agents.",
+  "name": "io.github.0xChron/polymarket-mcp",
+  "packages": [
+   {
+    "identifier": "0xchron-polymarket-mcp",
+    "registryBaseUrl": "https://pypi.org",
+    "registryType": "pypi",
+    "runtimeHint": "uvx",
+    "transport": {
+     "type": "streamable-http",
+     "url": "http://localhost:8000/mcp"
+    },
+    "version": "0.1.0"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/0xChron/polymarket-mcp"
+  },
+  "version": "0.1.1"
+ },
+ "playwright": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Playwright Tools for MCP",
+  "name": "io.github.microsoft/playwright-mcp",
+  "packages": [
+   {
+    "identifier": "@playwright/mcp",
+    "registryType": "npm",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "0.0.82"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/microsoft/playwright-mcp"
+  },
+  "version": "0.0.82"
+ },
+ "pypi_python": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Docker Helper Ai MCP Server by MEOK AI Labs",
+  "name": "io.github.CSOAI-ORG/docker-helper-ai-mcp",
+  "packages": [
+   {
+    "identifier": "docker-helper-ai-mcp",
+    "registryType": "pypi",
+    "runtimeHint": "python",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "1.0.12"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/CSOAI-ORG/docker-helper-ai-mcp"
+  },
+  "version": "1.0.12"
+ },
+ "pypi_uvx": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "_meta": {
+   "io.modelcontextprotocol.registry/publisher-provided": {
+    "tool": "manual",
+    "version": "0.1.2"
+   }
+  },
+  "description": "Medium CLI + 23-tool MCP server. Your IDE drafts replies. No API keys.",
+  "name": "io.github.06ketan/medium-ops",
+  "packages": [
+   {
+    "environmentVariables": [
+     {
+      "description": "Legacy Medium Integration Token (api.medium.com/v1/*). Optional. Generate at medium.com/me/settings → 'Integration tokens' (note: Medium stopped issuing new tokens in 2023).",
+      "isSecret": true,
+      "name": "MEDIUM_INTEGRATION_TOKEN"
+     },
+     {
+      "description": "Medium 'sid' cookie value from medium.com (Application → Cookies). Used for authenticated reads + dashboard GraphQL.",
+      "isSecret": true,
+      "name": "MEDIUM_SID"
+     },
+     {
+      "description": "Medium 'uid' cookie value. Required alongside sid for some authenticated endpoints.",
+      "name": "MEDIUM_UID"
+     },
+     {
+      "description": "Medium 'xsrf' cookie value. Required for any dashboard write (post_response, publish_post, delete_post, draft updates).",
+      "isSecret": true,
+      "name": "MEDIUM_XSRF"
+     },
+     {
+      "description": "Cloudflare 'cf_clearance' cookie. Only required when Cloudflare challenges your IP for dashboard write calls.",
+      "isSecret": true,
+      "name": "MEDIUM_CF_CLEARANCE"
+     },
+     {
+      "description": "Your Medium handle (without the @). Required for the public RSS read path so the client knows whose feed to fetch.",
+      "name": "MEDIUM_USERNAME"
+     },
+     {
+      "description": "Override path to the mcp.json file the auth layer reads. Defaults to ~/.cursor/mcp.json.",
+      "name": "MEDIUM_OPS_MCP_PATH"
+     },
+     {
+      "description": "Optional: override the host CLI used by the unattended daemon path (default: auto-detect claude / cursor-agent / codex on PATH). Use {prompt} placeholder if your CLI takes the prompt as an arg.",
+      "name": "MEDIUM_OPS_LLM_CMD"
+     }
+    ],
+    "identifier": "medium-ops",
+    "packageArguments": [
+     {
+      "type": "positional",
+      "value": "mcp"
+     },
+     {
+      "type": "positional",
+      "value": "serve"
+     }
+    ],
+    "registryBaseUrl": "https://pypi.org",
+    "registryType": "pypi",
+    "runtimeHint": "uvx",
+    "transport": {
+     "type": "stdio"
+    },
+    "version": "0.1.2"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/06ketan/medium-ops"
+  },
+  "title": "medium-ops",
+  "version": "0.1.2",
+  "websiteUrl": "https://medium-ops.chavan.in"
+ },
+ "remote_bearer": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Memory for AI agents that knows what is still true. Typed bi-temporal facts, EU-hosted.",
+  "name": "ai.korely/memory",
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Bearer kor_live_... Free key: korely init --agent",
+      "isRequired": true,
+      "isSecret": true,
+      "name": "Authorization"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://api.korely.ai/agent/mcp"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/verdana86/korely-memory"
+  },
+  "title": "Korely Memory",
+  "version": "1.0.0",
+  "websiteUrl": "https://korely.ai/agents"
+ },
+ "remote_bearer_template": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "description": "Connect AI assistants to your GitHub-hosted Obsidian vault to seamlessly access, search, and analy…",
+  "name": "ai.smithery/Hint-Services-obsidian-github-mcp",
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Bearer token for Smithery authentication",
+      "isRequired": true,
+      "isSecret": true,
+      "name": "Authorization",
+      "value": "Bearer {smithery_api_key}"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://server.smithery.ai/@Hint-Services/obsidian-github-mcp/mcp"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/Hint-Services/obsidian-github-mcp"
+  },
+  "version": "0.4.0"
+ },
+ "remote_both_transports": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "description": "Connect to your PostgreSQL database to query data and schemas.",
+  "name": "ai.waystation/postgres",
+  "remotes": [
+   {
+    "type": "streamable-http",
+    "url": "https://waystation.ai/postgres/mcp"
+   },
+   {
+    "type": "sse",
+    "url": "https://waystation.ai/postgres/mcp/sse"
+   }
+  ],
+  "repository": {
+   "source": "github",
+   "url": "https://github.com/waystation-ai/mcp"
+  },
+  "version": "0.3.1"
+ },
+ "remote_custom_header": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "MCP server for TimezoneDB.",
+  "name": "com.somdewan/timezone-helper",
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Your TimezoneDB API key (free at https://timezonedb.com/register).",
+      "isRequired": true,
+      "isSecret": true,
+      "name": "X-TimezoneDB-Key"
+     },
+     {
+      "description": "Optional override of the default https://api.timezonedb.com host (e.g. for a self-hosted mirror).",
+      "name": "X-Backend-URL"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://tz-{region}.somdewan.com/mcp",
+    "variables": {
+     "region": {
+      "choices": [
+       "us",
+       "eu"
+      ],
+      "description": "Choose the regional endpoint to connect to. EU users typically prefer `eu` to keep request data within the EU; US users prefer `us` for lower latency.",
+      "isRequired": true
+     }
+    }
+   }
+  ],
+  "title": "Timezone Helper",
+  "version": "5.0.0"
+ },
+ "remote_open": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "A live clock for your assistant.",
+  "name": "ai.b77/time",
+  "remotes": [
+   {
+    "type": "streamable-http",
+    "url": "https://time.b77.ai/mcp"
+   }
+  ],
+  "title": "Time",
+  "version": "1.0.0",
+  "websiteUrl": "https://b77.ai/apps/time"
+ },
+ "remote_sse_only": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "Premium agentic endpoint for chroot-filesystem-jail-mcp.",
+  "name": "io.github.Evozim/chroot-filesystem-jail-mcp",
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Base64-encoded EIP-3009 TransferWithAuthorization signature for x402 V2 settlement on Base Mainnet ($0.2 USDC).",
+      "isSecret": true,
+      "name": "Payment-Signature"
+     }
+    ],
+    "type": "sse",
+    "url": "https://api.m2mcent.com/chroot-filesystem-jail-mcp/sse"
+   }
+  ],
+  "title": "Execute chroot-filesystem-jail-mcp",
+  "version": "2.0.0"
+ },
+ "remote_variables": {
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "description": "MCP server for TimezoneDB.",
+  "name": "com.somdewan/timezone-helper",
+  "remotes": [
+   {
+    "headers": [
+     {
+      "description": "Your TimezoneDB API key (free at https://timezonedb.com/register).",
+      "isRequired": true,
+      "isSecret": true,
+      "name": "X-TimezoneDB-Key"
+     },
+     {
+      "description": "Optional override of the default https://api.timezonedb.com host (e.g. for a self-hosted mirror).",
+      "name": "X-Backend-URL"
+     }
+    ],
+    "type": "streamable-http",
+    "url": "https://tz-{region}.somdewan.com/mcp",
+    "variables": {
+     "region": {
+      "choices": [
+       "us",
+       "eu"
+      ],
+      "description": "Choose the regional endpoint to connect to. EU users typically prefer `eu` to keep request data within the EU; US users prefer `us` for lower latency.",
+      "isRequired": true
+     }
+    }
+   }
+  ],
+  "title": "Timezone Helper",
+  "version": "5.0.0"
+ }
+}

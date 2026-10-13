@@ -1,0 +1,13 @@
+# Tools shown first when adding a tool from the MCP registry. Edit this file by hand: it is read on every request, so
+# a change shows up without restarting Themis.
+#
+# Each item is the registry's name for a server (search for it on https://registry.modelcontextprotocol.io) and an
+# optional note shown with it. A name the registry does not have any more is skipped. A tool that Themis cannot run is
+# still listed, greyed out, with the reason.
+featured:
+  - name: io.github.github/github-mcp-server
+    note: Issues, pull requests and repositories (hosted by GitHub; needs a GitHub token as a key).
+  - name: io.github.microsoft/playwright-mcp
+    note: Drive a real browser to read and test web pages.
+  - name: io.github.upstash/context7
+    note: Up-to-date library documentation for the agent to look up.

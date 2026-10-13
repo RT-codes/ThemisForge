@@ -1,0 +1,64 @@
+# The categories of the MCP registry browser. Edit this file by hand: it is read again whenever it changes, no restart
+# needed.
+#
+# A tool goes in the category whose keywords it matches most. A keyword counts three times in a tool's name or title and
+# once in its description, and matches whole words only (case does not matter). A tool that matches none is "Other".
+# The order here is the order of the list, and wins a tie.
+categories:
+  - id: developer
+    label: Developer tools
+    keywords: [github, gitlab, bitbucket, git, jira, linear, sentry, docker, devops, "pull request", "code review",
+      lint, debugger, sdk, postman, repository, codebase, terminal, shell, ide, "source code", ci, cli, testing]
+  - id: web
+    label: Browser and web
+    keywords: [browser, playwright, puppeteer, selenium, scrape, scraper, scraping, crawl, crawler, fetch, html,
+      screenshot, firecrawl, "web page", "web pages", website, websites, url]
+  - id: search
+    label: Search and research
+    keywords: [search, brave, tavily, exa, perplexity, serp, duckduckgo, wikipedia, arxiv, research, papers, news,
+      "web search", google]
+  - id: data
+    label: Databases and data
+    keywords: [postgres, postgresql, mysql, sqlite, mongodb, redis, database, databases, sql, supabase, duckdb,
+      clickhouse, snowflake, bigquery, analytics, elasticsearch, pinecone, qdrant, neo4j, dataset, "data warehouse"]
+  - id: cloud
+    label: Cloud and infrastructure
+    keywords: [aws, azure, gcp, "google cloud", cloudflare, vercel, terraform, netlify, kubernetes, k8s,
+      infrastructure, serverless, s3, deploy, deployment, hosting, cloud]
+  - id: comms
+    label: Communication
+    keywords: [slack, discord, email, gmail, outlook, telegram, whatsapp, teams, sms, twilio, chat, messaging, mail,
+      "microsoft teams", imap, smtp]
+  - id: productivity
+    label: Productivity and notes
+    keywords: [notion, obsidian, calendar, todo, tasks, task, asana, trello, airtable, clickup, evernote, notes,
+      "google drive", "google docs", sheets, spreadsheet, "project management", monday, confluence, reminders]
+  - id: files
+    label: Files and documents
+    keywords: [filesystem, "file system", files, pdf, excel, csv, markdown, document, documents, docx, ocr, word,
+      powerpoint, "file management"]
+  - id: ai
+    label: AI and memory
+    keywords: [memory, llm, llms, embedding, embeddings, rag, "knowledge base", "knowledge graph", openai, anthropic,
+      claude, gemini, ollama, "context window", "vector store", reasoning, "sequential thinking"]
+  - id: media
+    label: Media and design
+    keywords: [figma, image, images, video, audio, photo, design, canva, music, spotify, youtube, speech, tts,
+      "text to speech", 3d, svg, podcast, transcript, transcription]
+  - id: finance
+    label: Finance and crypto
+    keywords: [finance, stock, stocks, trading, payment, payments, stripe, bitcoin, crypto, blockchain, ethereum,
+      solana, wallet, invoice, accounting, bank, banking, market, defi, token]
+  - id: business
+    label: Business and CRM
+    keywords: [crm, salesforce, hubspot, shopify, ecommerce, zendesk, support, marketing, seo, sales, customer,
+      customers, leads, ads, advertising]
+  - id: security
+    label: Security
+    keywords: [security, vulnerability, vulnerabilities, scan, scanner, pentest, cve, secrets, ssl, malware, osint,
+      threat, phishing, firewall]
+  - id: reference
+    label: Lookups and public data
+    keywords: [weather, forecast, time, timezone, clock, country, countries, map, maps, geocoding, location, transit,
+      travel, flights, hotels, sports, scores, government, law, legal, census, education, news, recipes, health,
+      medical, lookup, "public data", "open data", dictionary, translation, currency]

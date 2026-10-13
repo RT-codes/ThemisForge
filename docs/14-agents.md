@@ -12,9 +12,10 @@ can reach, so a task or a workflow step only has to say *which* agent should do 
 The project's **Settings** also lists its agents under **Agents**: click one to open it.
 
 Open **Agents** under a project in the sidebar. The list is on the left and the first agent is already shown on the right,
-as an overview of who it is, what it was told and what it has. Picking an agent only shows it; press **Edit** to change
-it, or **New agent** at the top to make one. A project starts with none, and can have as many as it needs. In the editor,
-**Save changes** saves the settings, **Done** goes back to the overview, and leaving with unsaved changes asks first.
+on its **Overview** tab: who it is, what it was told and what it has. The tabs beside it, **General**, **Skills** and
+**Tools**, are the editor, so any of them opens the agent for changes; **New agent** at the top makes another. A project
+starts with none, and can have as many as it needs. In the editor, **Save changes** saves the settings, **Done** goes back
+to the Overview, and leaving with unsaved changes asks first.
 
 ## What an agent has
 
@@ -124,6 +125,10 @@ Administrators can press **Add from registry** next to **New tool**, or **Browse
 registry**, to browse the official MCP registry (registry.modelcontextprotocol.io) instead of typing a tool in. It lists
 tens of thousands of tools that anyone has published. From Settings Themis asks which project the tool is for, because a
 tool always belongs to one project (keys are shared between projects); from a project it is added there.
+
+The same **Add from registry** button is on an agent's **Tools** tab. A tool added there is installed in the project, so
+it shows up for every agent of it with its switch off; the agent has it only once you switch it on. The list is the
+project's, the switches are the agent's own.
 
 - **Browsing.** Categories are on the left (with how many tools match your search in each), **Featured** is the short
   list we picked, and the search box looks through names and descriptions. **Sort** by Recommended, Most downloaded,

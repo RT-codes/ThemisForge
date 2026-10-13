@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .budget import Cost
 from .models import AppSetting
+from .skills import SkillError, parse_frontmatter
 
 _KEY = "app"
 
@@ -94,6 +95,43 @@ class McpAuthPolicy(BaseModel):
         return v
 
 
+class CellPackage(BaseModel):
+    """What Themis itself puts into every Codex cell (see app/cell_package.py). Empty text means the built-in text, so
+    only an edit is stored and a better built-in text still reaches everyone else."""
+
+    rules_enabled: bool = True
+    rules: str = Field(default="", max_length=4000)
+    skill_enabled: bool = True
+    skill: str = Field(
+        default="", max_length=20_000
+    )  # the whole SKILL.md of themis-cell, front matter included
+    # Seconds to wait before each new try when the model provider could not serve a run for a moment. The number of
+    # entries is the number of tries; empty means never.
+    retry_waits: list[int] = [30, 90, 180]
+
+    @field_validator("skill")
+    @classmethod
+    def skill_is_the_themis_cell_skill(cls, v: str) -> str:
+        if not v.strip():
+            return ""
+        try:
+            meta = parse_frontmatter(v)
+        except SkillError as e:
+            raise ValueError(str(e)) from None
+        if meta.get("name") != "themis-cell" or not meta.get("description", "").strip():
+            raise ValueError(
+                "The skill needs the name themis-cell and a description, or Codex will not list it"
+            )
+        return v
+
+    @field_validator("retry_waits")
+    @classmethod
+    def sane_waits(cls, v: list[int]) -> list[int]:
+        if len(v) > 10 or any(not 0 <= wait <= 3600 for wait in v):
+            raise ValueError("At most 10 retries, each waiting between 0 and 3600 seconds")
+        return v
+
+
 class AppSettings(BaseModel):
     """Operator settings edited from the Settings page (stored as one JSON row)."""
 
@@ -114,6 +152,7 @@ class AppSettings(BaseModel):
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
     codex_model: str = "gpt-6-luna"
     codex_reasoning_effort: Literal["low", "medium", "high"] = "high"
+    cell_package: CellPackage = CellPackage()  # what Themis adds to every Codex cell, see app/cell_package.py
     # The client id of the GitHub OAuth App (device flow switched on) that "Sign in with GitHub" uses. It is public by
     # design, and empty until an administrator adds it: only the token way of connecting works until then.
     github_client_id: str = ""

@@ -236,7 +236,7 @@ async def test_a_failing_task_stops_its_branch_and_says_why(client, runner):
     )  # fmt: skip
     nodes = by_id(detail)
     assert detail["status"] == "failed" and "failed" in detail["outcome"]
-    assert nodes["t"]["status"] == "failed" and "The task failed" in nodes["t"]["error"] and nodes["t"]["log"]
+    assert nodes["t"]["status"] == "failed" and "exit code 1" in nodes["t"]["error"] and nodes["t"]["log"]
     assert nodes["e"]["status"] == "skipped" and "'t' failed before this node" in nodes["e"]["error"]
     assert [n["node_id"] for n in detail["nodes"]] == ["s", "t", "e"]  # ran first, never-run last
 
@@ -291,7 +291,7 @@ async def test_agent_without_a_codex_login_fails_with_the_reason(client, runner)
     )
     agent = by_id(detail)["a"]
     assert detail["status"] == "failed" and agent["status"] == "failed"
-    assert "Connect it in Settings" in agent["log"] and "The task failed" in agent["error"]
+    assert "Connect it in Settings" in agent["log"] and "Connect it in Settings" in agent["error"]
 
 
 async def test_agent_runs_with_the_owners_login_and_gets_the_previous_result(client, runner, cells, maker):
@@ -517,6 +517,12 @@ async def test_a_failing_workflow_fails_the_task_that_plays_it(client, runner):
     attempt = await attempt_of(client, task["id"])
     assert attempt["status"] == "failed" and "failed" in attempt["log"]
     assert (await client.get(f"/api/tasks/{task['id']}")).json()["status"] == "failed"
+    # the ticket says which step failed and why, and brings that step's own last lines
+    failure = attempt["failure"]
+    assert failure["reason"].startswith("Step 't' failed:") and "exit code 1" in failure["reason"]
+    assert "simulated failure" in failure["tail"]
+    shown = (await client.get(f"/api/tasks/{task['id']}")).json()
+    assert shown["last_failure_reason"] == failure["reason"]
 
 
 async def test_playing_a_workflow_never_starves_the_cells_it_needs(client, runner, cells):

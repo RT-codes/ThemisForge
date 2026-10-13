@@ -120,6 +120,26 @@ Blocked as usual. Workflow Trigger and Task nodes can use your statuses too, so 
 A recurring task whose last attempt failed shows a small warning marker on its card, and the failed attempt stays in
 its history. The next occurrence still happens.
 
+## Why a task failed
+
+A failed task's card says why in a sentence, and the task's details show the whole explanation above the tabs: what
+happened, **what to do** about it when that is known, and the last lines of the log (the **History** tab has the same for
+every failed attempt). Who found the reason is shown too:
+
+- **Found by Themis**, from what the run did: the program's exit code, the error the agent's program printed, a cell that
+  could not start, or a step of a workflow that failed (the card then names the step).
+- **Written by the agent**. An agent that cannot do the task because something is missing (a tool in the cell, a key, a
+  folder, access, an instruction that is unclear) is told to stop and say so instead of inventing a way around it. The
+  attempt then fails with its words, even when the program itself ended normally. The work it did stays in its working
+  folder.
+
+When the model provider is only briefly unable to serve a run (for example "Selected model is at capacity"), Themis starts
+that run again by itself, three times by default, waiting 30 seconds, then 90, then 180 (changeable under **Settings, Cell
+package**). This happens inside the same attempt, the log says so, and the run is told that it continues the work already
+in its folder. If the provider is still failing
+after that, the attempt fails and says so. Errors that need you, such as a usage limit or a model that does not exist, are
+not retried.
+
 ## Task options
 
 **Click a card** to select it. A selected card unfolds to show more of the task: its whole description, how it runs, when

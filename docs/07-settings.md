@@ -61,6 +61,24 @@ number is turned into the same number of cells of the configured size.
 Defaults for every cell: image, CPUs, memory, time limit and how long working folders are kept. See
 [Cells and work folders](/docs/cells). Saving applies the change to the next cell that starts.
 
+## Cell package
+
+What Themis itself adds to every Codex run, on top of the agent's own instructions, so you can read it, change it or switch
+it off. Administrators only. Applies to the next cell that starts.
+
+- **Rules**: a few lines in every prompt. They say the container has no root and no package manager, and that an agent that
+  cannot do its task must write why to `/cell/blocked.md` and stop. That is what makes a ticket fail with a reason and a
+  "what to do". Switched off, agents get none of this.
+- **Skill `themis-cell`**: a map of the agent's computer (what is installed, how to use the browser). Only its one-line
+  description is in the agent's context until the skill is needed. It is mounted read only in every cell, so an agent cannot
+  change it. It describes the default [Codex image](/docs/codex); edit it if your agents use another image. It must keep
+  the name `themis-cell` and a description.
+- **Retry when the model provider is busy**: seconds to wait before each new try, for errors such as "model is at
+  capacity" (30, 90, 180 by default, so three retries). Empty means never retry.
+
+A text you leave as it is stays the built-in one, which improves with new versions of Themis; only what you change is
+stored. **Use the built-in text** takes an edit away again. Each agent's Skills tab lists `themis-cell` first, locked: open it to read the skill and the rules exactly as agents get them (any user can read it, only an administrator can change it).
+
 ## Automation
 
 - **Wait before a Ready task starts**: a task starts this long after it was moved to Ready or its last run ended, and a

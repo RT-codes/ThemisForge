@@ -177,6 +177,11 @@
 		</p>
 	{/if}
 
+	{#if task.last_attempt_status === 'failed' && !running && task.last_failure_reason}
+		<!-- why it failed, so a failed card says what happened without opening it (the details have the rest) -->
+		<p class="mt-1 line-clamp-3 text-xs break-words text-destructive" title={task.last_failure_reason}>{task.last_failure_reason}</p>
+	{/if}
+
 	{#if task.description}
 		<!-- folded: two lines, so a board of cards stays easy to scan; selected: all of it -->
 		<p class={cn('mt-1 text-xs text-muted-foreground', expanded ? 'whitespace-pre-wrap break-words' : 'line-clamp-2')}>{task.description}</p>

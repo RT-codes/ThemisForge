@@ -66,7 +66,7 @@ Defaults for every cell: image, CPUs, memory, time limit and how long working fo
 - **Wait before a Ready task starts**: a task starts this long after it was moved to Ready or its last run ended, and a
   workflow starts for a task no sooner than this after the last one did. 5 seconds by default; 0 starts right away.
 - **Most automatic moves of one task in a row**: how many times workflows may move or make the same task before they are
-  stopped (10 by default). Both can be set per project (**Edit project**) and per task. See
+  stopped (10 by default). Both can be set per project (the project's Settings, **Cells and automation**) and per task. See
   [the automation guard](/docs/workflows#the-automation-guard).
 
 ## Mount roots

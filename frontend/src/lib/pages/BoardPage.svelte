@@ -7,7 +7,6 @@
 	import BoardDialog from '$lib/components/project/BoardDialog.svelte'
 	import BoardToolbar from '$lib/components/project/BoardToolbar.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
-	import ProjectDialogs from '$lib/components/project/ProjectDialogs.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
 	import RemoveDialog from '$lib/components/project/RemoveDialog.svelte'
 	import ScheduleTimeline from '$lib/components/project/ScheduleTimeline.svelte'
@@ -20,6 +19,7 @@
 	import { relative } from '$lib/format'
 	import { ProjectDesk } from '$lib/projectDesk.svelte'
 	import { projects } from '$lib/projects.svelte'
+	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
@@ -37,11 +37,9 @@
 	onMount(() => desk.start())
 
 	let tab = $state('board')
-	let propsOpen = $state(false)
 	let statusesOpen = $state(false)
-	let editProjectOpen = $state(false)
-	let deleteProjectOpen = $state(false)
 	let boardDialog = $state<'new' | 'edit'>('new')
+	let propsOpen = $state(false)
 	let boardDialogOpen = $state(false)
 	let workspaceDialog = $state(false)
 	let removing = $state<{ kind: 'board'; board: BoardInfo } | null>(null)
@@ -124,10 +122,7 @@
 						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (removing = { kind: 'board', board })}>Delete this board</DropdownMenu.Item>
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Custom properties</DropdownMenu.Item>
-						<DropdownMenu.Item onSelect={() => (editProjectOpen = true)}>Rename project</DropdownMenu.Item>
-						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteProjectOpen = true)}>
-							Delete project
-						</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={() => router.navigate(`/projects/${id}/settings`)}>Project settings</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 			</div>
@@ -194,8 +189,8 @@
 	</div>
 
 	<DeskDialogs {desk} {workspaces} />
+	<PropertiesDialog bind:open={propsOpen} projectId={id} {defs} onsaved={() => desk.reload()} />
 	<StatusesDialog bind:open={statusesOpen} {board} {tasks} onchange={boardChanged} />
-	<ProjectDialogs project={desk.project} bind:editOpen={editProjectOpen} bind:propsOpen bind:deleteOpen={deleteProjectOpen} onchanged={() => desk.reload()} />
 	<BoardDialog
 		bind:open={boardDialogOpen}
 		workspaceId={board.workspace_id}

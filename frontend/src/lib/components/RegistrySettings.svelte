@@ -40,7 +40,7 @@
 		<div class="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" role="status">
 			<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" />
 			<span class="flex-1">Added <span class="font-mono">{added.name}</span> to {added.project.name}. Give it to an agent from that project.</span>
-			<Button variant="ghost" size="sm" onclick={() => added && router.navigate(`/projects/${added.project.id}#tools`)}>Open project</Button>
+			<Button variant="ghost" size="sm" onclick={() => added && router.navigate(`/projects/${added.project.id}/settings#tools`)}>Open project</Button>
 		</div>
 	{/if}
 </div>

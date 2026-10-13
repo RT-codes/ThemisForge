@@ -8,11 +8,26 @@ summary: The project dashboard, task statuses, custom properties and the board.
 
 ## The project pages
 
-Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview shows how many
-tasks are ready and running, how many are scheduled for today and the next 7 days, a card for each workspace, and the
-recent activity. Under a project the sidebar lists its pages (**Overview**, **Files**, **Agents** and the **Workflow
-editor**) and then **Workspaces**, with the workspaces themselves indented below it, where your work lives. The small plus buttons beside a page or a workspace
+Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview is the project's
+dashboard: how many tasks are ready and running, how many are scheduled for today and the next 7 days, what needs
+attention, the next runs, a card for each workspace, and the recent activity. When something is not set up (an agent
+whose file has a problem, a connection an agent wants that the project lacks, a tool that needs a sign in) a **Needs
+setup** strip at the top says so and links to the section that fixes it. Everything you configure is on the project's
+**Settings** page (see below). Under a project the sidebar lists its pages (**Overview**, **Settings**, **Files**,
+**Agents** and the **Workflow editor**) and then **Workspaces**, with the workspaces themselves indented below it, where your work lives. The small plus buttons beside a page or a workspace
 (a new agent, workflow or board) appear when you point at its row; the one beside **Workspaces** adds a workspace.
+
+### Project settings
+
+**Settings** under a project is where it is set up, in sections you can fold away:
+
+- **General**: its icon, name, what it is for and its description.
+- **Cells and automation**: the container its tasks run in, and its automation guard (see [Scheduling](/docs/scheduling)).
+- **Task properties**: its custom properties (see below).
+- **Agents**, **Workflows**, **Connections**, **Tools**, **Skills** and **Shared folders**: each with its list and its
+  buttons, as described on the pages for [agents](/docs/agents), [workflows](/docs/workflows),
+  [connections](/docs/connections) and [cells](/docs/cells).
+- **Danger zone**: delete the project.
 
 The overview's **Needs attention** section brings together tasks waiting for review and failed tasks across all boards.
 It also shows recurring tasks back in Ready whose last run failed; their next occurrence still happens. Review tasks
@@ -39,8 +54,8 @@ you can split the work up:
 
 Point at a project or a workspace in the sidebar and a **pencil** appears beside it (before the plus). It opens a small
 popup right there where you can change its **icon** (click it, then search the Lucide icon set by name), its **name**,
-a one-line note on **what it is for**, and its **description**. The same fields are in the **Edit project** and **Edit
-workspace** dialogs.
+a one-line note on **what it is for**, and its **description**. The same fields are under **General** in the project's
+Settings and in the **Edit workspace** dialog.
 
 On a workspace page, fold a board away with the arrow in its header, use **Move up** or **Move down** from its menu,
 and **Open** it to get its own page with a header and four views of the **same** tasks:
@@ -141,8 +156,9 @@ between **Details** and **History**. The status is changed right there and takes
 
 ## Custom properties
 
-Each project defines its own fields, shared by all of its boards. Choose **Custom properties** in the three-dot menu of
-the board page or the project overview, in the workspace page's menu, or in the menu of any board on a workspace page.
+Each project defines its own fields, shared by all of its boards. Open **Task properties** in the project's **Settings**,
+or choose **Custom properties** in the three-dot menu of a board page, in the workspace page's menu, or in the menu of any
+board on a workspace page.
 
 | Type | Use it for |
 | --- | --- |

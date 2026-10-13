@@ -10,6 +10,7 @@
 	import FilesIcon from '@lucide/svelte/icons/files'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
 	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
+	import SlidersHorizontalIcon from '@lucide/svelte/icons/sliders-horizontal'
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks'
 	import LogOutIcon from '@lucide/svelte/icons/log-out'
 	import SettingsIcon from '@lucide/svelte/icons/settings'
@@ -53,6 +54,14 @@
 	// the one on the Workspaces heading answers to the heading only, not to the workspaces listed under it
 	const revealedOnHeading = '-end-[1.2rem] top-1/2 -translate-y-1/2 opacity-0 group-hover/heading:opacity-100 focus-visible:opacity-100'
 	const route = $derived(router.route)
+
+	// The workspaces listed under the open project. A page that does not need them itself (Settings, Files, Agents)
+	// would otherwise show an empty list when it is opened directly, so the sidebar loads them when they are missing.
+	$effect(() => {
+		const r = route
+		const projectId = r.name === 'project' || r.name === 'workflow' || r.name === 'agents' ? r.id : null
+		if (projectId !== null && structure.get(projectId) === undefined) structure.refresh(projectId).catch(() => {})
+	})
 
 	const user = $derived(auth.user)
 	const initials = $derived(
@@ -138,6 +147,13 @@
 										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'overview'} class="me-2.5">
 											{#snippet child({ props })}
 												<a href="/projects/{p.id}" {...props}><LayoutDashboardIcon /><span>Overview</span></a>
+											{/snippet}
+										</Sidebar.MenuSubButton>
+									</Sidebar.MenuSubItem>
+									<Sidebar.MenuSubItem class="tree-leaf">
+										<Sidebar.MenuSubButton isActive={route.name === 'project' && route.page === 'settings'} class="me-2.5">
+											{#snippet child({ props })}
+												<a href="/projects/{p.id}/settings" {...props}><SlidersHorizontalIcon /><span>Settings</span></a>
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>

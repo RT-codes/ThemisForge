@@ -1,4 +1,4 @@
-export type ProjectPageName = 'overview' | 'tasks' | 'files'
+export type ProjectPageName = 'overview' | 'settings' | 'tasks' | 'files'
 
 export type Route =
   | { name: 'home' }
@@ -37,7 +37,7 @@ export function parse(path: string): Route {
   if (space) return { name: 'project', id: Number(space[1]), page: 'workspace', workspaceId: Number(space[2]) }
   const board = path.match(/^\/projects\/(\d+)\/boards\/(\d+)\/?$/)
   if (board) return { name: 'project', id: Number(board[1]), page: 'board', boardId: Number(board[2]) }
-  const m = path.match(/^\/projects\/(\d+)(?:\/(tasks|files))?\/?$/)
+  const m = path.match(/^\/projects\/(\d+)(?:\/(tasks|files|settings))?\/?$/)
   if (m) return { name: 'project', id: Number(m[1]), page: (m[2] as ProjectPageName | undefined) ?? 'overview' }
   return { name: 'not-found' }
 }

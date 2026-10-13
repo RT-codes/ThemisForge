@@ -9,7 +9,7 @@ summary: Configure who does the work in a project: role, instructions, harness, 
 An **agent** is a configured worker of one project. It says who the worker is, what it was told, how it runs and what it
 can reach, so a task or a workflow step only has to say *which* agent should do it.
 
-The project's **overview** also lists its agents under **Agents**: click one to open it.
+The project's **Settings** also lists its agents under **Agents**: click one to open it.
 
 Open **Agents** under a project in the sidebar. The list is on the left and the first agent is already shown on the right,
 as an overview of who it is, what it was told and what it has. Picking an agent only shows it; press **Edit** to change
@@ -69,7 +69,7 @@ description is how an agent decides when a skill applies, so say *when* to use i
 In the agent editor, **Skills** lists every skill of the project with a switch for the ones this agent has. Pick a skill
 to read it beside the list, edit it and save it on the spot (it is the same preview and editor as on the Files page), or
 press **New skill**. The switches are saved with the agent; the files are saved as you edit them. Skills are shared:
-editing one changes it for every agent that has it. The project overview lists them too, under **Skills**.
+editing one changes it for every agent that has it. The project's Settings lists them too, under **Skills**.
 
 - A skill folder can hold more than `SKILL.md`: scripts or reference files are given to the agent too, and show as tabs
   above the file in the editor.
@@ -81,7 +81,7 @@ editing one changes it for every agent that has it. The project overview lists t
 
 A **tool** is an MCP server that gives an agent more to work with, such as a file system, a search service or a database.
 In the agent editor, **Tools** lists every tool of the project with a switch for the ones this agent has. Pick one to see
-and change it, or press **New tool**. They are also listed under **Tools** on the project overview.
+and change it, or press **New tool**. They are also listed under **Tools** in the project's Settings.
 
 - **With a command**: type the command line (`npx -y @modelcontextprotocol/server-filesystem /workspace`). It is started
   inside the agent's container, so the image must have what it runs. Under **Settings** you can add plain settings as

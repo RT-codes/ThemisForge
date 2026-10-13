@@ -2,8 +2,6 @@
 	import { api, ApiError, type Project, type ScheduledRun, type Task } from '$lib/api'
 	import { attentionTasks } from '$lib/attention'
 	import { destinationLabel, findBoard } from '$lib/boards'
-	import AgentsSection from '$lib/components/AgentsSection.svelte'
-	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
 	import HaltBanner from '$lib/components/project/HaltBanner.svelte'
 	import HaltControl from '$lib/components/project/HaltControl.svelte'
 	import HistoryList from '$lib/components/project/HistoryList.svelte'
@@ -11,18 +9,14 @@
 	import WorkspaceCards from '$lib/components/WorkspaceCards.svelte'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
-	import ProjectDialogs from '$lib/components/project/ProjectDialogs.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
-	import SkillsSection from '$lib/components/SkillsSection.svelte'
-	import ToolsSection from '$lib/components/ToolsSection.svelte'
-	import VolumesSection from '$lib/components/VolumesSection.svelte'
-	import WorkflowLibrary from '$lib/components/WorkflowLibrary.svelte'
 	import { projects } from '$lib/projects.svelte'
+	import { relative } from '$lib/format'
 	import { countScheduled } from '$lib/schedule'
+	import { setupIssues, type SetupIssue } from '$lib/setup'
+	import SlidersHorizontalIcon from '@lucide/svelte/icons/sliders-horizontal'
 	import { onMount } from 'svelte'
 	import { fade } from 'svelte/transition'
 
@@ -36,9 +30,7 @@
 	let attentionError = $state('')
 	let allAttention = $state(false)
 	let workspaceOpen = $state(false)
-	let editOpen = $state(false)
-	let propsOpen = $state(false)
-	let deleteOpen = $state(false)
+	let issues = $state<SetupIssue[]>([])
 	let revision = $state(0)
 	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
@@ -65,14 +57,46 @@
 		}
 	}
 
+	// What the project still needs before its agents can work: read from the same lists the settings page shows.
+	// Slower than the rest of the page, because it is not what changes minute to minute.
+	async function loadSetup() {
+		try {
+			const [agents, tools, bound, catalog] = await Promise.all([
+				api.agents(id),
+				api.mcpServers(id),
+				api.projectConnections(id),
+				api.connections(),
+			])
+			issues = setupIssues({
+				projectId: id,
+				agents,
+				tools,
+				connected: bound.map((b) => b.provider),
+				providerName: (p) => catalog.providers.find((x) => x.id === p)?.name ?? p,
+			})
+		} catch {
+			// a hint, not the page: with no answer it shows nothing rather than something wrong
+		}
+	}
+
 	onMount(() => {
 		load()
+		loadSetup()
 		const timer = setInterval(() => {
 			if (document.hidden) return
 			now = Date.now()
 			load()
 		}, 10_000)
-		return () => clearInterval(timer)
+		const slow = setInterval(() => !document.hidden && loadSetup(), 60_000)
+		return () => (clearInterval(timer), clearInterval(slow))
+	})
+
+	// the next run of each scheduled task, soonest first
+	const upcoming = $derived.by(() => {
+		const seen = new Set<number>()
+		return [...runs]
+			.sort((a, b) => a.at.localeCompare(b.at))
+			.filter((r) => !seen.has(r.task_id) && seen.add(r.task_id))
 	})
 
 	// the sidebar store refreshes on its own, so the counts stay live without extra requests
@@ -103,21 +127,27 @@
 			<div class="flex items-center gap-2">
 				<HaltControl scope="project" id={id} name={project.name} haltedAt={project.halted_at} running={counts.running ?? 0} onchange={load} />
 				<Button variant="outline" size="sm" onclick={() => (workspaceOpen = true)}>New workspace</Button>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button variant="outline" size="icon-sm" aria-label="Project menu" {...props}><EllipsisIcon /></Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-48">
-						<DropdownMenu.Item onSelect={() => (editOpen = true)}>Edit project</DropdownMenu.Item>
-						<DropdownMenu.Item onSelect={() => (propsOpen = true)}>Custom properties</DropdownMenu.Item>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Item class="text-destructive focus:text-destructive" onSelect={() => (deleteOpen = true)}>Delete project</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
+				<Button variant="outline" size="sm" onclick={() => router.navigate(`/projects/${id}/settings`)}>
+					<SlidersHorizontalIcon /> Settings
+				</Button>
 			</div>
 		</header>
+
+		{#if issues.length}
+			<section class="mt-6 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4" aria-labelledby="setup-title">
+				<h3 id="setup-title" class="text-sm font-semibold tracking-tight">Needs setup ({issues.length})</h3>
+				<ul class="mt-2 grid gap-0.5">
+					{#each issues as issue (issue.id)}
+						<li>
+							<a href={issue.href} class="flex items-center justify-between gap-4 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent/50">
+								<span class="min-w-0 truncate">{issue.text}</span>
+								<span class="shrink-0 text-xs text-primary">Fix</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
 		<div class="mt-6 block rounded-xl border bg-card p-5">
 			<div class="flex flex-wrap items-center justify-between gap-3">
@@ -136,7 +166,8 @@
 			</div>
 		</div>
 
-		<section class="mt-4 rounded-xl border bg-card p-5" aria-labelledby="attention-title">
+		<div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+		<section class="rounded-xl border bg-card p-5 lg:col-span-7" aria-labelledby="attention-title">
 			<div class="flex items-center justify-between gap-3">
 				<div>
 					<h3 id="attention-title" class="text-base font-semibold tracking-tight">Needs attention{attentionError || tasks === null ? '' : ` (${attention.total})`}</h3>
@@ -173,6 +204,25 @@
 			{/if}
 		</section>
 
+		<section class="rounded-xl border bg-card p-5 lg:col-span-5" aria-labelledby="upcoming-title">
+			<h3 id="upcoming-title" class="text-base font-semibold tracking-tight">Upcoming runs</h3>
+			<p class="text-xs text-muted-foreground">What is scheduled to start in the next 7 days.</p>
+			{#if upcoming.length === 0}
+				<p class="mt-3 text-sm text-muted-foreground">Nothing is scheduled.</p>
+			{:else}
+				<ul class="mt-3 divide-y border-t">
+					{#each upcoming.slice(0, 6) as run (run.task_id)}
+						<li class="flex items-baseline justify-between gap-4 py-2.5 text-sm">
+							<span class="min-w-0 truncate font-medium" title={run.title}>{run.title}</span>
+							<span class="shrink-0 text-xs text-muted-foreground">{relative(run.at, now)}{run.recurring ? ' · repeats' : ''}</span>
+						</li>
+					{/each}
+				</ul>
+				{#if upcoming.length > 6}<p class="mt-2 text-xs text-muted-foreground">And {upcoming.length - 6} more scheduled tasks.</p>{/if}
+			{/if}
+		</section>
+		</div>
+
 		<WorkspaceCards projectId={id} {workspaces} />
 
 		<section class="mt-4 rounded-xl border bg-card p-5">
@@ -187,17 +237,7 @@
 				<HistoryList projectId={id} {workspaces} {now} {revision} compact={!allActivity} />
 			{/key}
 		</section>
-
-		<div class="overview-grid mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
-			<div class="lg:col-span-7"><WorkflowLibrary projectId={id} {now} /></div>
-			<div class="lg:col-span-5"><ProjectConnections projectId={id} /></div>
-			<div class="lg:col-span-6"><AgentsSection projectId={id} /></div>
-			<div class="lg:col-span-6"><VolumesSection projectId={id} /></div>
-			<div class="lg:col-span-6"><SkillsSection projectId={id} /></div>
-			<div class="lg:col-span-6"><ToolsSection projectId={id} /></div>
-		</div>
 	</div>
-	<ProjectDialogs {project} bind:editOpen bind:propsOpen bind:deleteOpen onchanged={async () => (await load(), await projects.refresh())} />
 	<WorkspaceDialog
 		bind:open={workspaceOpen}
 		projectId={id}
@@ -207,8 +247,3 @@
 	<p class="m-auto text-sm text-destructive">{loadError}</p>
 {/if}
 
-<style>
-	.overview-grid :global(section) {
-		margin-top: 0;
-	}
-</style>

@@ -14,7 +14,7 @@ Three steps take a connection from you to an agent:
 
 1. **Connect** the service in **Settings, Connections**. This is yours: nobody else, administrators included, can see or
    use it.
-2. **Choose it on the project.** On the project overview, **Connections** lists the services. Press **Choose**, pick one of
+2. **Choose it on the project.** In the project's Settings, **Connections** lists the services. Press **Choose**, pick one of
    your connections and fill in what the project needs from it (for GitHub, the repository).
 3. **Give it to an agent.** In the agent editor, **Connections** has a switch per service. An agent without the switch gets
    nothing, even when the project has the service.

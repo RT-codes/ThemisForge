@@ -61,7 +61,7 @@
 			<h3 class="text-base font-semibold tracking-tight">Connections</h3>
 			<p class="text-sm text-muted-foreground">The services this project uses, and its tools with their latest test result.</p>
 		</div>
-		<Button variant="outline" size="sm" onclick={() => router.navigate(`/projects/${projectId}#tools`)}>
+		<Button variant="outline" size="sm" onclick={() => router.navigate(`/projects/${projectId}/settings#tools`)}>
 			Manage tools <ArrowUpRightIcon />
 		</Button>
 	</div>

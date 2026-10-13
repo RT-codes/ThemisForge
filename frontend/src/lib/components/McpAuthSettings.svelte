@@ -57,7 +57,7 @@
 	<p class="text-sm text-muted-foreground">Loading...</p>
 {:else if logins.length === 0}
 	<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-		No sign ins yet. Add a tool that asks for one, then press <em>Sign in</em> on it in the project's Tools.
+		No sign ins yet. Add a tool that asks for one, then press <em>Sign in</em> on it in the project's Settings, under Tools.
 	</p>
 {:else}
 	<ul class="divide-y rounded-lg border">

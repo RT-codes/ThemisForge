@@ -5,6 +5,8 @@ import { parse } from './routes.ts'
 test('a project path opens the overview', () => assert.deepEqual(parse('/projects/3'), { name: 'project', id: 3, page: 'overview' }))
 test('a trailing slash is fine', () => assert.deepEqual(parse('/projects/3/'), { name: 'project', id: 3, page: 'overview' }))
 test('the tasks sub page', () => assert.deepEqual(parse('/projects/3/tasks'), { name: 'project', id: 3, page: 'tasks' }))
+test('the project settings sub page', () => assert.deepEqual(parse('/projects/3/settings'), { name: 'project', id: 3, page: 'settings' }))
+test('the global settings page is not the project one', () => assert.deepEqual(parse('/settings'), { name: 'settings' }))
 test('the files sub page', () => assert.deepEqual(parse('/projects/3/files/'), { name: 'project', id: 3, page: 'files' }))
 test('a workspace and a board have their own addresses', () => {
   assert.deepEqual(parse('/projects/3/workspaces/5'), { name: 'project', id: 3, page: 'workspace', workspaceId: 5 })

@@ -185,7 +185,7 @@
 	<div class="m-auto text-center">
 		<p class="text-lg font-medium">Workflow not found</p>
 		<p class="mt-1 text-sm text-muted-foreground">{error}</p>
-		<a href="/projects/{projectId}#workflows" class="mt-3 inline-block text-sm text-primary hover:underline">Back to the project</a>
+		<a href="/projects/{projectId}/settings#workflows" class="mt-3 inline-block text-sm text-primary hover:underline">Back to the project's workflows</a>
 	</div>
 {:else if loading || !projects.loaded}
 	<div class="min-h-0 flex-1"></div>

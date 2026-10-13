@@ -3,23 +3,19 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
-	import ProjectDialog from './ProjectDialog.svelte'
 	import PropertiesDialog from './PropertiesDialog.svelte'
 
-	// The dialogs behind a project's "..." menu (edit it, its task properties, delete it), so every page that offers that
-	// menu opens the same ones.
+	// The dialogs behind a project's Settings page: its task properties, and deleting it.
 	let {
 		project,
-		editOpen = $bindable(false),
 		propsOpen = $bindable(false),
 		deleteOpen = $bindable(false),
 		onchanged,
 	}: {
 		project: Project
-		editOpen: boolean
 		propsOpen: boolean
 		deleteOpen: boolean
-		/** the project was edited: the page reloads */
+		/** the properties were edited: the page reloads */
 		onchanged: () => void
 	} = $props()
 
@@ -43,7 +39,6 @@
 </script>
 
 <PropertiesDialog bind:open={propsOpen} projectId={project.id} defs={project.properties} onsaved={onchanged} />
-<ProjectDialog bind:open={editOpen} {project} onsaved={onchanged} />
 
 <AlertDialog.Root bind:open={deleteOpen}>
 	<AlertDialog.Content>

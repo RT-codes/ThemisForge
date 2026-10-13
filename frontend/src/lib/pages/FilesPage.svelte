@@ -850,7 +850,7 @@
 				<span class="text-sm">Cells may</span>
 				<VolumeControls {volume} onchange={changeSettings} />
 			</div>
-			<p class="text-xs text-muted-foreground">Removing a folder from the project is done on its overview, under Shared folders. Its files are never deleted.</p>
+			<p class="text-xs text-muted-foreground">Removing a folder from the project is done in the project's Settings, under Shared folders. Its files are never deleted.</p>
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>

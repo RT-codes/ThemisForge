@@ -64,7 +64,7 @@ the job. The same record is on each attempt (its **changes**, and the folder it 
 
 A working folder is thrown away, so runs cannot hand files to each other through it. A **shared folder** (a volume) is
 mounted inside the working folder at `/workspace/NAME` and keeps its files between runs. Every project has one called
-**shared**, in every cell, with nothing to set up. More are added on the project's **overview**, under **Shared folders**, or with **New shared folder** on the **Files** page.
+**shared**, in every cell, with nothing to set up. More are added in the project's **Settings**, under **Shared folders**, or with **New shared folder** on the **Files** page.
 
 | Kind | What it is |
 | --- | --- |

@@ -5,7 +5,7 @@
 	import { accessLabel } from '$lib/format'
 
 	// What can be set on a shared folder: whether cells may write, and whether writers take turns. Both the project
-	// overview and the Files page show these, so a change made in one place is the same change as in the other.
+	// project's Settings and the Files page show these, so a change made in one place is the same change as in the other.
 	let { volume: v, onchange }: { volume: Volume; onchange: (patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) => void } = $props()
 </script>
 

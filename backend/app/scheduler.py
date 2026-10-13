@@ -530,7 +530,7 @@ class Scheduler:
                         {},
                         (
                             f"The tool '{r.name}' needs a sign in{why}. "
-                            "Open the project's Tools and press Sign in."
+                            "Open the project's Settings, under Tools, and press Sign in."
                         ),
                     )
                 login_id, login_env = login.id, login_env_name(r.name)

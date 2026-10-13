@@ -113,6 +113,8 @@
 	)}
 	{...rest}
 >
+	<!-- Everything here lines up with the first line of the title (centre ~10px down). The size-4 icons get mt-0.5; the
+	     size-3.5 buttons cancel their p-1 with -m-1 but need -mt-px instead, or their icons sit ~3px above the spinner. -->
 	<div class="flex items-start gap-2">
 		{#if picked}<CircleCheckIcon class="mt-0.5 size-4 shrink-0 text-primary" aria-label="Selected" />{/if}
 		<p class="min-w-0 flex-1 text-sm leading-snug font-medium break-words">{task.title}</p>
@@ -126,7 +128,7 @@
 				<button
 					type="button"
 					draggable="false"
-					class="-m-1 shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
+					class="-mx-1 -mb-1 -mt-px shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
 					aria-label="Stop task"
 					title="Stop this task"
 					onclick={(e) => (e.stopPropagation(), onstop())}
@@ -144,7 +146,7 @@
 			type="button"
 			draggable="false"
 			class={cn(
-				'-m-1 shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
+				'-mx-1 -mb-1 -mt-px shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
 				(expanded || selected) && 'opacity-100'
 			)}
 			aria-label="Edit task"
@@ -159,7 +161,7 @@
 			<button
 				type="button"
 				draggable="false"
-				class="-m-1 shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+				class="-mx-1 -mb-1 -mt-px shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
 				aria-label="Delete task"
 				title="Delete task"
 				onclick={(e) => (e.stopPropagation(), ondelete())}

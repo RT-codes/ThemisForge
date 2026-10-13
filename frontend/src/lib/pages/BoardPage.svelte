@@ -21,6 +21,7 @@
 	import { projects } from '$lib/projects.svelte'
 	import PropertiesDialog from '$lib/components/project/PropertiesDialog.svelte'
 	import { router } from '$lib/router.svelte'
+	import { parseTaskTarget } from '$lib/routes'
 	import { structure } from '$lib/structure.svelte'
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import PlusIcon from '@lucide/svelte/icons/plus'
@@ -35,6 +36,26 @@
 
 	const desk = new ProjectDesk(untrack(() => id)) // the page is rebuilt for every project, so the id does not change here
 	onMount(() => desk.start())
+
+	let targetError = $state('')
+	let handledTarget = ''
+	$effect(() => {
+		const hash = router.hash
+		const target = parseTaskTarget(hash)
+		if (!target) {
+			handledTarget = ''
+			targetError = ''
+			return
+		}
+		if (!desk.revision || handledTarget === hash) return
+		// Wait for a successful load, then consume the link once so polling cannot reopen a closed panel.
+		const task = desk.tasks.find((t) => t.id === target.taskId && t.board_id === boardId)
+		handledTarget = hash
+		untrack(() => {
+			targetError = task ? '' : 'This task is no longer on this board. It may have been moved or deleted.'
+			if (task) desk.openTask(task, target.tab)
+		})
+	})
 
 	let tab = $state('board')
 	let statusesOpen = $state(false)
@@ -158,6 +179,10 @@
 
 		{#if desk.loadError}
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{desk.loadError}</p>
+		{/if}
+
+		{#if targetError}
+			<p class="rounded-md border bg-muted px-3 py-2 text-sm" role="alert">{targetError}</p>
 		{/if}
 
 		<Tabs.Root bind:value={tab} class="min-h-0 flex-1 gap-4">

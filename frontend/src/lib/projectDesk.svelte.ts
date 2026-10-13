@@ -1,6 +1,7 @@
 import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type WorkflowSummary } from './api'
 import { projects } from './projects.svelte'
 import { router } from './router.svelte'
+import type { TaskTab } from './routes'
 import { structure } from './structure.svelte'
 
 /** Everything a page that works on a project's tasks needs: the project, its tasks, the open task panel, moving and
@@ -18,6 +19,7 @@ export class ProjectDesk {
 
   // the task panel: an existing task, or a new one for a board and status
   sheetOpen = $state(false)
+  sheetTab = $state<TaskTab>('details')
   sheetTaskId = $state<number | null>(null)
   sheetBoardId = $state<number | null>(null)
   sheetStatus = $state<TaskStatus>('backlog')
@@ -107,9 +109,10 @@ export class ProjectDesk {
     else proceed()
   }
 
-  openTask(task: Task) {
+  openTask(task: Task, tab: TaskTab = 'details') {
     if (this.sheetOpen && this.sheetTaskId === task.id) return
     this.whenClean(() => {
+      this.sheetTab = tab
       this.sheetTaskId = task.id
       this.sheetBoardId = task.board_id
       this.sheetOpen = true
@@ -126,6 +129,7 @@ export class ProjectDesk {
 
   addTask(boardId: number, status: TaskStatus = 'backlog') {
     this.whenClean(() => {
+      this.sheetTab = 'details'
       this.sheetTaskId = null
       this.sheetBoardId = boardId
       this.sheetStatus = status

@@ -430,6 +430,28 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 	box-shadow: 0 0 0 4px color-mix(in oklab, var(--primary) 30%, transparent);
 }
 
+/* Workflow editor minimap: rounded, and on hover it grows by half out of its corner and gets an orange edge. It scales with
+   a transform (not width and height) so the growth stays smooth, from the bottom right corner so it never leaves the canvas.
+   The border is always 2px, only its colour changes, so the map itself does not jump. */
+.svelte-flow__minimap.workflow-minimap {
+	border: 2px solid transparent;
+	border-radius: 0.75rem;
+	overflow: hidden;
+	transform-origin: bottom right;
+	transition:
+		transform 0.25s ease,
+		border-color 0.25s ease;
+}
+.svelte-flow__minimap.workflow-minimap:hover {
+	transform: scale(1.5);
+	border-color: oklch(0.76 0.17 58);
+}
+@media (prefers-reduced-motion: reduce) {
+	.svelte-flow__minimap.workflow-minimap {
+		transition: none;
+	}
+}
+
 /* The folder points: square and teal, so a line that hands an agent a folder is not mistaken for a step. */
 .svelte-flow__handle.workflow-handle.mount-handle {
 	background: #2dd4bf;

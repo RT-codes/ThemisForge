@@ -61,6 +61,10 @@ MOUNT = "mount"
 START_KINDS = ("start", "trigger")
 
 
+# a node's settings: plain text values, whatever the kind (the editor's fields are defined in the frontend)
+NodeConfig = dict[str, Annotated[str, Field(max_length=20_000)]]
+
+
 class Position(BaseModel):
     x: float = 0
     y: float = 0
@@ -70,7 +74,7 @@ class GraphNode(BaseModel):
     id: str = Field(min_length=1, max_length=64, pattern=r"^[\w-]+$")
     kind: Kind
     label: str = Field(default="", max_length=100)
-    config: dict[str, Annotated[str, Field(max_length=20_000)]] = Field(default_factory=dict)
+    config: NodeConfig = Field(default_factory=dict)
     position: Position = Field(default_factory=Position)
 
 
@@ -82,6 +86,8 @@ class GraphEdge(BaseModel):
         default=None, max_length=20
     )  # "yes" / "no" on a condition, "mount" on a folder
     targetHandle: str | None = Field(default=None, max_length=20)  # "mount" where a folder joins an agent
+    # how the editor draws the line; only the canvas cares, a run ignores it. None is the editor's default (organic)
+    curve: Literal["organic", "angular"] | None = None
 
 
 class Graph(BaseModel):

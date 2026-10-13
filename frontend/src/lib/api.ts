@@ -715,6 +715,15 @@ export interface WorkflowDetail {
   updated_at: string
 }
 
+/** a configured node a project keeps in the editor's palette */
+export interface NodePreset {
+  id: number
+  kind: NodeKind
+  label: string
+  config: Record<string, string>
+  created_at: string
+}
+
 export interface WorkflowRunSummary {
   id: number
   status: RunStatus
@@ -952,6 +961,9 @@ export const api = {
   workflow: (id: number) => request<WorkflowDetail>(`/workflows/${id}`),
   updateWorkflow: (id: number, patch: { name?: string; description?: string; graph?: Graph }) => request<WorkflowDetail>(`/workflows/${id}`, send('PATCH', patch)),
   deleteWorkflow: (id: number) => request<void>(`/workflows/${id}`, send('DELETE')),
+  nodePresets: (projectId: number) => request<NodePreset[]>(`/projects/${projectId}/node-presets`),
+  createNodePreset: (projectId: number, body: { kind: NodeKind; label: string; config: Record<string, string> }) => request<NodePreset>(`/projects/${projectId}/node-presets`, send('POST', body)),
+  deleteNodePreset: (id: number) => request<void>(`/node-presets/${id}`, send('DELETE')),
   startWorkflowRun: (workflowId: number) => request<WorkflowRunDetail>(`/workflows/${workflowId}/runs`, send('POST')),
   taskWorkflowRuns: (taskId: number) => request<TaskWorkflowRunSummary[]>(`/tasks/${taskId}/workflow-runs`),
   workflowRuns: (workflowId: number) => request<WorkflowRunSummary[]>(`/workflows/${workflowId}/runs`),

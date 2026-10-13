@@ -202,15 +202,45 @@ export function watchersByStatus(
 
 /** the drag payload type used between the palette and the canvas */
 export const DRAG_TYPE = 'application/themis-node-kind'
+/** the payload of a saved node being dragged: its id (a built-in node is dragged as DRAG_TYPE with its kind) */
+export const PRESET_DRAG_TYPE = 'application/themis-node-preset'
+
+// ----- saved nodes -----
+
+type SavedNode = { kind: NodeKind; label: string; config: NodeConfig }
+
+/** the node a saved node places: its name and settings, topped up with the defaults of its kind */
+export const presetNodeData = (p: SavedNode): WorkflowNodeData => ({
+  kind: p.kind,
+  label: p.label || kindInfo(p.kind).label,
+  config: { ...defaultConfig(p.kind), ...p.config },
+})
+
+/** whether a node is exactly what a saved node holds, so the star on the node reads as saved */
+export function isSavedNode(p: SavedNode, node: WorkflowNodeData): boolean {
+  const a = presetNodeData(p)
+  const b = presetNodeData({ ...node, label: node.label.trim() })
+  const keys = (c: NodeConfig) => JSON.stringify(Object.entries(c).sort(([x], [y]) => x.localeCompare(y)))
+  return a.kind === b.kind && a.label === b.label && keys(a.config) === keys(b.config)
+}
 
 // ----- saving and loading -----
 
 export type GraphNode = { id: string; kind: NodeKind; label: string; config: NodeConfig; position: { x: number; y: number } }
-export type GraphEdge = { id: string; source: string; target: string; sourceHandle: string | null; targetHandle?: string | null }
+/** how a connection is drawn: organic is a smooth curve, angular only runs straight up, down or sideways */
+export type EdgeCurve = 'organic' | 'angular'
+export const EDGE_CURVES: { value: EdgeCurve; label: string }[] = [
+  { value: 'organic', label: 'Organic' },
+  { value: 'angular', label: 'Angular' },
+]
+export type GraphEdge = { id: string; source: string; target: string; sourceHandle: string | null; targetHandle?: string | null; curve?: EdgeCurve | null }
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] }
 
 type FlowNodeLike = { id: string; position: { x: number; y: number }; data: Record<string, unknown> }
-type FlowEdgeLike = { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
+type FlowEdgeLike = { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null; data?: Record<string, unknown> }
+
+/** the style of a line, kept in the edge's data on the canvas and as `curve` in the saved graph (absent: organic) */
+const curveOf = (e: { data?: Record<string, unknown> }): EdgeCurve | null => (e.data?.curve === 'angular' ? 'angular' : null)
 
 /** only what is worth saving: no selection, size or other editor state */
 export function toGraph(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): Graph {
@@ -219,7 +249,7 @@ export function toGraph(nodes: FlowNodeLike[], edges: FlowEdgeLike[]): Graph {
       const d = n.data as WorkflowNodeData
       return { id: n.id, kind: d.kind, label: d.label, config: d.config ?? defaultConfig(d.kind), position: { x: Math.round(n.position.x), y: Math.round(n.position.y) } }
     }),
-    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}) })),
+    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}), ...(curveOf(e) ? { curve: curveOf(e) } : {}) })),
   }
 }
 
@@ -231,7 +261,7 @@ export function fromGraph(graph: Graph) {
       position: n.position,
       data: { kind: n.kind, label: n.label, config: { ...defaultConfig(n.kind), ...n.config } } satisfies WorkflowNodeData,
     })),
-    edges: graph.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}) })),
+    edges: graph.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, ...(e.targetHandle ? { targetHandle: e.targetHandle } : {}), ...(e.curve === 'angular' ? { data: { curve: e.curve } } : {}) })),
   }
 }
 

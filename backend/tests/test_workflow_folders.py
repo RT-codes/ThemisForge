@@ -82,6 +82,24 @@ async def test_the_mount_point_is_kept_when_a_workflow_is_saved(client):
     assert bad.status_code == 422
 
 
+async def test_a_lines_style_is_kept_when_a_workflow_is_saved(client):
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(client, wid, [node("s", "start"), node("e", "end")], [{**edge("s", "e"), "curve": "angular"}])
+    saved = (await client.get(f"/api/workflows/{wid}")).json()["graph"]["edges"][0]
+    assert saved["curve"] == "angular"
+    bad = await client.patch(
+        f"/api/workflows/{wid}",
+        json={
+            "graph": {
+                "nodes": [node("s", "start"), node("e", "end")],
+                "edges": [{**edge("s", "e"), "curve": "zigzag"}],
+            }
+        },
+    )
+    assert bad.status_code == 422
+
+
 # ----- running -----
 
 

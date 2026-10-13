@@ -173,6 +173,10 @@ Click a node to unfold it:
 Nodes that failed unfold on their own. Nodes the run never reached are listed under **Did not run**, each with the
 reason: a failed node before it, the other side of a condition, or no line leading to it.
 
+Node results open as formatted Markdown, with clickable web links and **Copy** buttons on code blocks. Switch to
+**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Selecting
+another run opens its results in Rendered view.
+
 A run that is still going can be cancelled; this also stops the container its current task is running in.
 
 ## Starting workflows from the board

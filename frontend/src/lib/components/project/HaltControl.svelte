@@ -16,6 +16,7 @@
 		name,
 		haltedAt,
 		running = 0,
+		labelled = false,
 		onchange,
 	}: {
 		scope: 'project' | 'board'
@@ -24,6 +25,8 @@
 		haltedAt: string | null
 		/** how many tasks are running in it now, so the question can say what stopping them means */
 		running?: number
+		/** a page-level control: a larger red button that says what it does, instead of the quiet icon of a board header */
+		labelled?: boolean
 		onchange: () => void
 	} = $props()
 
@@ -52,9 +55,17 @@
 </script>
 
 {#if haltedAt}
-	<Button size="sm" variant="outline" class="border-amber-500/50 text-amber-300 hover:text-amber-200" disabled={busy} onclick={resume} title="Let the {noun} start things again">
+	<Button size={labelled ? 'lg' : 'sm'} variant="outline" class="border-amber-500/50 text-amber-300 hover:text-amber-200" disabled={busy} onclick={resume} title="Let the {noun} start things again">
 		<PlayIcon /> Resume
 	</Button>
+{:else if labelled}
+	<Button
+		variant="destructive"
+		size="lg"
+		aria-label="Halt {name}"
+		title="Halt the {noun}: stop what is running and keep anything from starting until it is resumed"
+		onclick={() => ((error = ''), (open = true))}
+	><OctagonXIcon /> Halt</Button>
 {:else}
 	<Button
 		variant="ghost"

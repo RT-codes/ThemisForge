@@ -10,6 +10,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+	--glow: oklch(0.76 0.17 58); /* the brand orange, the same on both themes: --primary is near black on light */
 	--appearance-font-sans: 'Inter Variable', sans-serif;
 	--appearance-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 	--background: oklch(1 0 0);
@@ -150,6 +151,24 @@
 	}
 	html {
 		@apply font-sans;
+	}
+}
+
+/* A card with a hint of the brand orange in its top right corner: the border is tinted there and fades out within a few
+   hundred pixels, a soft light washes in from the corner, and a small glow sits just outside it. Only backgrounds and one
+   box-shadow, so nothing is drawn over the card. The border colour is transparent so the border box shows the gradient;
+   the origin is the border box so the gradient does not tile into the 1px border from the far side. The shadow is offset
+   towards the top right, so it is strongest there and faint at the other corners. */
+@layer components {
+	.glow-card {
+		border-color: transparent;
+		background:
+			radial-gradient(240px circle at 100% 0, color-mix(in oklab, var(--glow) 9%, transparent), transparent) padding-box,
+			linear-gradient(var(--card), var(--card)) padding-box,
+			radial-gradient(320px circle at 100% 0, color-mix(in oklab, var(--glow) 65%, transparent), transparent) border-box,
+			linear-gradient(var(--border), var(--border)) border-box;
+		background-origin: border-box;
+		box-shadow: 6px -6px 24px -14px color-mix(in oklab, var(--glow) 20%, transparent);
 	}
 }
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Board, Column, Task, Workspace } from './api.ts'
-import { boardChoices, clampHeight, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, statusTone, survivingBoards, taskTotal, workspaceOf } from './boards.ts'
+import { boardChoices, clampHeight, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, statusTone, survivingBoards, taskTotal, workspaceOf, workspaceTasks } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null, icon: '', description: '' })
 const custom = (id: number, name: string, color: string | null = null, description = ''): Column => ({ key: `custom:${id}`, name, builtin: false, color, icon: 'box', description })
@@ -126,4 +126,20 @@ test('every built-in status has a tone, and an unknown one falls back to the pla
   assert.match(statusTone('done').text, /emerald/)
   assert.match(statusTone('blocked').text, /red/)
   assert.equal(statusTone('custom:4'), statusTone('backlog'))
+})
+
+test('a workspace lists its own tasks, in motion and recent first, finished last, and says how many it has', () => {
+  const task = (id: number, boardId: number, status: string, updated: string, internal = false) =>
+    ({ id, board_id: boardId, status, updated_at: updated, internal, title: `T${id}` }) as unknown as Task
+  const w = workspace(1, [board(1), board(2)])
+  const tasks = [
+    task(1, 1, 'done', '2026-01-05'),
+    task(2, 1, 'ready', '2026-01-01'),
+    task(3, 2, 'running', '2026-01-03'),
+    task(4, 9, 'ready', '2026-01-09'), // another workspace
+    task(5, 2, 'review', '2026-01-02', true), // a workflow's own step
+  ]
+  assert.deepEqual(workspaceTasks(w, tasks).items.map((t) => t.id), [3, 2, 1])
+  assert.equal(workspaceTasks(w, tasks, 2).total, 3)
+  assert.deepEqual(workspaceTasks(w, tasks, 2).items.map((t) => t.id), [3, 2])
 })

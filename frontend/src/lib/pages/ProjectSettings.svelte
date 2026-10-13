@@ -7,11 +7,22 @@
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
 	import WorkflowLibrary from '$lib/components/WorkflowLibrary.svelte'
+	import GroupHeading from '$lib/components/GroupHeading.svelte'
 	import ProjectCells from '$lib/components/project/ProjectCells.svelte'
 	import ProjectDialogs from '$lib/components/project/ProjectDialogs.svelte'
 	import ProjectGeneral from '$lib/components/project/ProjectGeneral.svelte'
+	import ProjectHero from '$lib/components/project/ProjectHero.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { projects } from '$lib/projects.svelte'
+	import { router } from '$lib/router.svelte'
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left'
+	import BotIcon from '@lucide/svelte/icons/bot'
+	import CpuIcon from '@lucide/svelte/icons/cpu'
+	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
+	import KeyRoundIcon from '@lucide/svelte/icons/key-round'
+	import ListChecksIcon from '@lucide/svelte/icons/list-checks'
+	import Settings2Icon from '@lucide/svelte/icons/settings-2'
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert'
 	import { onMount } from 'svelte'
 	import { fade } from 'svelte/transition'
 
@@ -44,23 +55,33 @@
 	)
 </script>
 
-{#if project}
-	<div class="w-full max-w-6xl px-6 pt-8 pb-10" in:fade={{ duration: 350 }}>
-		<h2 class="text-2xl font-semibold tracking-tight">Settings</h2>
-		<p class="mt-1 text-sm text-muted-foreground">
-			How {project.name} is set up: who it is, how its work runs, who does it and what they may use. What is happening in it is on the
-			<a class="text-primary hover:underline" href="/projects/{id}">overview</a>.
-		</p>
+{#snippet heroActions()}
+	<Button variant="outline" size="lg" onclick={() => router.navigate(`/projects/${id}`)}><ArrowLeftIcon /> Overview</Button>
+{/snippet}
 
+{#if project}
+	<div class="w-full px-6 pt-6 pb-10" in:fade={{ duration: 350 }}>
+		<!-- what is happening in the project is on the overview; this page is how it is set up, so the header says so and links back -->
+		<ProjectHero
+			{project}
+			title="Settings"
+			eyebrow={project.name}
+			lead="Who it is, how its work runs, who does it and what they may use."
+			art="settings"
+			actions={heroActions}
+		/>
+
+		<!-- the header spans the page, like the overview's; the settings below keep a readable width -->
+		<div class="max-w-6xl">
 		<div class="mt-8 grid gap-3">
-			<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Project</h3>
-			<SettingsSection id="project-general" title="General" description="Its icon, name and what it is for." summary={project.name} defaultOpen>
+			<GroupHeading icon={FolderKanbanIcon}>Project</GroupHeading>
+			<SettingsSection id="project-general" icon={Settings2Icon} tone="amber" title="General" description="Its icon, name and what it is for." summary={project.name} defaultOpen>
 				<ProjectGeneral {project} onsaved={changed} />
 			</SettingsSection>
-			<SettingsSection id="project-cells" title="Cells and automation" description="The container its tasks run in, and the guard against endless automatic moves." summary={cellSummary}>
+			<SettingsSection id="project-cells" icon={CpuIcon} tone="violet" title="Cells and automation" description="The container its tasks run in, and the guard against endless automatic moves." summary={cellSummary}>
 				<ProjectCells {project} onsaved={changed} />
 			</SettingsSection>
-			<SettingsSection id="project-properties" title="Task properties" description="Extra fields that every task of this project can have." summary={propertySummary}>
+			<SettingsSection id="project-properties" icon={ListChecksIcon} tone="sky" title="Task properties" description="Extra fields that every task of this project can have." summary={propertySummary}>
 				{#if project.properties.length}
 					<ul class="flex flex-wrap gap-2">
 						{#each project.properties as p (p.key)}
@@ -76,7 +97,7 @@
 
 		<!-- the sections below are cards of their own, each with its list and its actions; they sit side by side -->
 		<div class="settings-cards mt-8 grid gap-3">
-			<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Work</h3>
+			<GroupHeading icon={BotIcon}>Work</GroupHeading>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<AgentsSection projectId={id} />
 				<WorkflowLibrary projectId={id} now={Date.now()} />
@@ -84,7 +105,7 @@
 		</div>
 
 		<div class="settings-cards mt-8 grid gap-3">
-			<h3 class="px-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Access and tools</h3>
+			<GroupHeading icon={KeyRoundIcon}>Access and tools</GroupHeading>
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<ProjectConnections projectId={id} />
 				<ToolsSection projectId={id} />
@@ -94,7 +115,7 @@
 		</div>
 
 		<div class="mt-8 grid gap-3">
-			<h3 class="px-1 text-xs font-medium tracking-wide text-destructive uppercase">Danger zone</h3>
+			<GroupHeading icon={TriangleAlertIcon} class="text-destructive">Danger zone</GroupHeading>
 			<section class="flex flex-wrap items-center gap-4 rounded-xl border border-destructive/30 bg-card px-5 py-4">
 				<div class="min-w-0 flex-1">
 					<p class="text-sm font-medium">Delete this project</p>
@@ -104,6 +125,7 @@
 					Delete project
 				</Button>
 			</section>
+		</div>
 		</div>
 	</div>
 	<ProjectDialogs {project} bind:propsOpen bind:deleteOpen onchanged={changed} />

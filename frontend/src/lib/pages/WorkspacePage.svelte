@@ -19,6 +19,7 @@
 	import { dropPosition } from '$lib/kanban'
 	import { ProjectDesk } from '$lib/projectDesk.svelte'
 	import { router } from '$lib/router.svelte'
+	import { parseBoardTarget } from '$lib/routes'
 	import { structure } from '$lib/structure.svelte'
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis'
 	import PlusIcon from '@lucide/svelte/icons/plus'
@@ -53,14 +54,32 @@
 			return null
 		}
 	}
-	function toggle(boardId: number) {
-		folded = folded.includes(boardId) ? folded.filter((b) => b !== boardId) : [...folded, boardId]
+	function setFolded(next: number[]) {
+		folded = next
 		try {
 			localStorage.setItem(foldedKey, JSON.stringify(folded))
 		} catch {
 			// remembering is a convenience
 		}
 	}
+	const toggle = (boardId: number) =>
+		setFolded(folded.includes(boardId) ? folded.filter((b) => b !== boardId) : [...folded, boardId])
+
+	// A link to one board (#board=12, from the overview) lands on it: that board is open and its siblings are folded.
+	// The link is handled once per address, so folding or unfolding by hand afterwards is not undone.
+	let handledBoard = ''
+	$effect(() => {
+		const hash = router.hash
+		const boardId = parseBoardTarget(hash)
+		if (boardId === null) {
+			handledBoard = ''
+			return
+		}
+		if (!workspace || handledBoard === hash) return
+		handledBoard = hash
+		const boards = workspace.boards
+		if (boards.some((b) => b.id === boardId)) untrack(() => setFolded(boards.filter((b) => b.id !== boardId).map((b) => b.id)))
+	})
 
 	let error = $state('')
 	let boardDialog = $state<BoardInfo | 'new' | null>(null)

@@ -44,8 +44,21 @@ export function parse(path: string): Route {
 
 export type TaskTab = 'details' | 'history'
 
-export function taskResultHref(projectId: number, boardId: number, taskId: number): string {
-  return `/projects/${projectId}/boards/${boardId}#task=${taskId}&tab=history`
+/** A link to one task: its board's page, which opens the task's panel on the given tab (see parseTaskTarget). */
+export function taskHref(projectId: number, boardId: number, taskId: number, tab: TaskTab = 'details'): string {
+  return `/projects/${projectId}/boards/${boardId}#task=${taskId}&tab=${tab}`
+}
+
+export const taskResultHref = (projectId: number, boardId: number, taskId: number): string => taskHref(projectId, boardId, taskId, 'history')
+
+/** A link to a workspace page that lands on one of its boards: that board is open, the others are folded. */
+export function workspaceBoardHref(projectId: number, workspaceId: number, boardId: number): string {
+  return `/projects/${projectId}/workspaces/${workspaceId}#board=${boardId}`
+}
+
+export function parseBoardTarget(hash: string): number | null {
+  const match = hash.match(/^board=([1-9]\d*)$/)
+  return match && Number.isSafeInteger(Number(match[1])) ? Number(match[1]) : null
 }
 
 export function parseTaskTarget(hash: string): { taskId: number; tab: TaskTab } | null {

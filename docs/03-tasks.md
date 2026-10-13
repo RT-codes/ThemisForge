@@ -10,7 +10,9 @@ summary: The project dashboard, task statuses, custom properties and the board.
 
 Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview is the project's
 dashboard: how many tasks are ready and running, how many are scheduled for today and the next 7 days, what needs
-attention, the next runs, a card for each workspace, and the recent activity. When something is not set up (an agent
+attention, the next runs, a card for each workspace, and the recent activity. A workspace card lists its boards as
+tags (a tag opens that workspace with that board unfolded and the others folded) and its latest tasks with their
+status; a task opens on its own board with its panel showing. When something is not set up (an agent
 whose file has a problem, a connection an agent wants that the project lacks, a tool that needs a sign in) a **Needs
 setup** strip at the top says so and links to the section that fixes it. Everything you configure is on the project's
 **Settings** page (see below). Under a project the sidebar lists its pages (**Overview**, **Settings**, **Files**,
@@ -296,8 +298,8 @@ Themis keeps a history of what people do to a project: tasks created (or duplica
 followed up and deleted, and boards, workspaces and statuses created, renamed and deleted. Each line says who did it and
 when. You can look at it at every level:
 
-- **The project Overview** shows the recent activity of the whole project. **Show everything** pages through all of it,
-  and you can narrow it to tasks or to boards and statuses.
+- **The project Overview** shows the recent activity of the whole project. **Show all activity** pages through all of it,
+  and you can narrow it to tasks or to boards and statuses. A line opens the board it happened on.
 - A **workspace page** has a History tab for that workspace, and a **board page** one for that board. A task that was
   sent to another board shows up in the history of both.
 - A **task's** details panel lists its own activity at the bottom of its History tab, including follow-ups made from it.

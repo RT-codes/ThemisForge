@@ -1,13 +1,16 @@
 <script lang="ts">
+	import IconTile, { type Tone } from '$lib/components/IconTile.svelte'
 	import { cn } from '$lib/utils'
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
-	import { untrack, type Snippet } from 'svelte'
+	import { untrack, type Component, type Snippet } from 'svelte'
 	import { slide } from 'svelte/transition'
 
 	// A settings section you can fold away. When it is folded, one line says what is inside, so the page can be
 	// scanned without opening anything. Open or folded is remembered per section, per browser.
 	let {
 		id,
+		icon: Icon,
+		tone = 'neutral',
 		title,
 		description = '',
 		summary = '',
@@ -17,6 +20,10 @@
 		children,
 	}: {
 		id: string
+		/** a tile before the title */
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		icon?: Component<any>
+		tone?: Tone
 		title: string
 		description?: string
 		summary?: string
@@ -55,6 +62,7 @@
 		aria-controls="section-{id}"
 		class="flex w-full items-center gap-3 px-5 py-4 text-start transition-colors hover:bg-accent/30 focus-visible:bg-accent/30 focus-visible:outline-none"
 	>
+		{#if Icon}<IconTile {tone} size="sm"><Icon /></IconTile>{/if}
 		<span class="min-w-0 flex-1">
 			<span class="flex items-center gap-2 text-base font-semibold tracking-tight">
 				{title}

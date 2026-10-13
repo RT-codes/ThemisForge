@@ -118,6 +118,19 @@ export function survivingBoards(workspaces: Workspace[], leaving: { board?: numb
   return workspaces.flatMap((w) => w.boards.filter((b) => b.id !== leaving.board && b.workspace_id !== leaving.workspace))
 }
 
+/** The tasks of a workspace worth listing on the overview: what is still in motion first, the most recently changed
+ *  first, finished work last. `total` is how many the workspace has, so the list can say how many it left out. Tasks a
+ *  workflow made for its own steps are not board work and are left out. */
+export function workspaceTasks(workspace: Workspace, tasks: Task[], limit = 8): { items: Task[]; total: number } {
+  const boardIds = new Set(workspace.boards.map((b) => b.id))
+  const own = tasks.filter((t) => boardIds.has(t.board_id) && !t.internal)
+  own.sort(
+    (a, b) =>
+      Number(a.status === 'done') - Number(b.status === 'done') || b.updated_at.localeCompare(a.updated_at) || a.id - b.id
+  )
+  return { items: own.slice(0, Math.max(0, limit)), total: own.length }
+}
+
 /** A one-line summary of a board for a collapsed card or an overview: "3 ready, 1 running, 5 done". */
 export function boardSummary(board: Board): string {
   const parts = board.columns

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parse, parseTaskTarget, taskResultHref } from './routes.ts'
+import { parse, parseBoardTarget, parseTaskTarget, taskHref, taskResultHref, workspaceBoardHref } from './routes.ts'
 
 test('a project path opens the overview', () => assert.deepEqual(parse('/projects/3'), { name: 'project', id: 3, page: 'overview' }))
 test('a trailing slash is fine', () => assert.deepEqual(parse('/projects/3/'), { name: 'project', id: 3, page: 'overview' }))
@@ -54,5 +54,21 @@ test('task targets reject invalid ids, unknown tabs and unrelated fragments', ()
     'task=1.5&tab=history', 'task=abc&tab=history', 'task=9007199254740992&tab=history',
     'task=42', 'task=42&tab=unknown', 'task=42&tab=history&extra=1']) {
     assert.equal(parseTaskTarget(hash), null, hash)
+  }
+})
+
+test('a task link opens its details unless asked for another tab', () => {
+  const [, hash] = taskHref(3, 8, 42).split('#')
+  assert.deepEqual(parseTaskTarget(hash), { taskId: 42, tab: 'details' })
+  assert.equal(taskHref(3, 8, 42, 'history'), taskResultHref(3, 8, 42))
+})
+
+test('a workspace link names the board to land on, and nothing else is accepted', () => {
+  const href = workspaceBoardHref(3, 2, 17)
+  const [path, hash] = href.split('#')
+  assert.deepEqual(parse(path), { name: 'project', id: 3, page: 'workspace', workspaceId: 2 })
+  assert.equal(parseBoardTarget(hash), 17)
+  for (const bad of ['', 'board=0', 'board=-1', 'board=1.5', 'board=abc', 'task=4&tab=details', 'board=4&x=1']) {
+    assert.equal(parseBoardTarget(bad), null, bad)
   }
 })

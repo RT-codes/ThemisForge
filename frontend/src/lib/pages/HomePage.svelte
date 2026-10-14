@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte'
 	import ProjectDialog from '$lib/components/project/ProjectDialog.svelte'
+	import StatusIcon from '$lib/components/StatusIcon.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { relative } from '$lib/format'
 	import { projects } from '$lib/projects.svelte'
@@ -20,7 +21,7 @@
 	<div class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 		{#each projects.list as p (p.id)}
 			{@const c = p.task_counts}
-			<a href="/projects/{p.id}" class="group flex flex-col rounded-xl border bg-card p-5 transition-colors hover:border-primary/40">
+			<a href="/projects/{p.id}" class="group flex min-w-0 flex-col rounded-xl border bg-card p-5 transition-colors hover:border-primary/40">
 				<div class="flex items-center gap-2">
 					<FolderKanbanIcon class="size-4 shrink-0 text-primary" />
 					<h3 class="truncate font-medium">{p.name}</h3>
@@ -30,6 +31,22 @@
 				{/if}
 				<!-- always at the bottom, so the numbers line up from card to card -->
 				<div class="mt-auto pt-4">
+					{#if (c.review ?? 0) > 0 || (c.failed ?? 0) > 0}
+						<div class="mb-3 flex flex-wrap gap-2 text-xs font-medium">
+							{#if (c.review ?? 0) > 0}
+								<span class="inline-flex items-center gap-1.5 rounded-md bg-violet-500/15 px-2 py-1 text-violet-700 dark:text-violet-300">
+									<StatusIcon status="review" class="size-3.5 shrink-0" />
+									<span class="tabular-nums">{c.review}</span> Review
+								</span>
+							{/if}
+							{#if (c.failed ?? 0) > 0}
+								<span class="inline-flex items-center gap-1.5 rounded-md bg-destructive/10 px-2 py-1 text-destructive">
+									<StatusIcon status="failed" class="size-3.5 shrink-0" />
+									<span class="tabular-nums">{c.failed}</span> Failed
+								</span>
+							{/if}
+						</div>
+					{/if}
 					<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
 						<span><span class="text-foreground tabular-nums">{c.running ?? 0}</span> running</span>
 						<span><span class="text-foreground tabular-nums">{c.ready ?? 0}</span> ready</span>

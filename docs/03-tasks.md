@@ -8,6 +8,10 @@ summary: The project dashboard, task statuses, custom properties and the board.
 
 ## The project pages
 
+On **Home**, each project card shows its nonzero **Review** and **Failed** task counts so you can see where to look
+first. Open the card to inspect the project's overview. These count current task statuses; recurring tasks back in
+Ready after a failed run appear in the overview's **Needs attention** section instead.
+
 Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview is the project's
 dashboard: how many tasks are ready and running, how many are scheduled for today and the next 7 days, what needs
 attention, the next runs, a card for each workspace, and the recent activity. A workspace card lists its boards as

@@ -1,21 +1,26 @@
 import asyncio
+import base64
 import glob
 import io
+import json
 import os
 import sys
 import tarfile
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from app.cells import SECRETS_DIR, CellError, CellSpec, DockerCellManager, secrets_archive
-from app.codex import CodexError, CodexLogins, lease_codex
+from app.codex import CodexError, CodexLogins, get_connection, lease_codex, login_needs_refresh, save_auth
 from app.config import settings
+from app.crypto import decrypt
 from app.main import app
-from app.models import CodexConnection
+from app.models import CodexConnection, utcnow
 from tests.conftest import login, register
+from tests.test_harness import fake_auth
 
 FAKE = Path(__file__).parent / "fake_codex.py"
 
@@ -160,7 +165,15 @@ async def test_login_unreadable_after_the_secret_key_changes(client, fake_codex,
     assert not body["connected"] and body["needs_reconnect"]
 
 
-async def test_lease_serialises_use_and_writes_refreshed_logins_back(client, maker, fake_codex):
+def refreshed(auth_json: str, marker: str = "ROTATED", minutes: int = 1) -> str:
+    """What Codex writes after a refresh: new tokens and a later last_refresh."""
+    data = json.loads(auth_json)
+    data["tokens"]["refresh_token"] = marker
+    data["last_refresh"] = (utcnow() + timedelta(minutes=minutes)).isoformat()
+    return json.dumps(data)
+
+
+async def test_lease_takes_turns_by_default_and_writes_refreshed_logins_back(client, maker, fake_codex):
     me = await register(client)
     await client.post("/api/codex/login")
     await wait_for(client, "connected")
@@ -172,13 +185,102 @@ async def test_lease_serialises_use_and_writes_refreshed_logins_back(client, mak
             order.append(f"{tag}:start")
             assert "REFRESH-TOKEN-SECRET" in lease.auth_json or "ROTATED" in lease.auth_json
             await asyncio.sleep(0.05)
-            await lease.save_back(lease.auth_json.replace("REFRESH-TOKEN-SECRET", "ROTATED"))
+            assert await lease.save_back(refreshed(lease.auth_json))
             order.append(f"{tag}:end")
 
     await asyncio.gather(use("a"), use("b"))
     assert order in (["a:start", "a:end", "b:start", "b:end"], ["b:start", "b:end", "a:start", "a:end"])
     async with lease_codex(maker, me["id"]) as lease:
         assert "ROTATED" in lease.auth_json
+
+
+async def connect_with(maker, user_id: int, **kw) -> None:
+    async with maker() as session:
+        await save_auth(session, user_id, fake_auth(**kw), fresh=True)
+
+
+class Overlap:
+    """Runs leases at once and records how many held the login at the same moment."""
+
+    def __init__(self, maker, user_id: int, **lease_kw) -> None:
+        self.maker, self.user_id, self.lease_kw = maker, user_id, lease_kw
+        self.now = self.peak = 0
+
+    async def use(self, hold: float = 0.05, then=None) -> None:
+        async with lease_codex(self.maker, self.user_id, **self.lease_kw) as lease:
+            self.now += 1
+            self.peak = max(self.peak, self.now)
+            await asyncio.sleep(hold)
+            if then is not None:
+                await then(lease)
+            self.now -= 1
+
+
+async def test_runs_share_a_fresh_login_up_to_the_limit(client, maker):
+    me = await register(client)
+    await connect_with(maker, me["id"])
+    seen = Overlap(maker, me["id"], max_parallel=3)
+    await asyncio.gather(*(seen.use() for _ in range(5)))
+    assert seen.peak == 3  # five wanted it, the limit let three through at a time
+
+
+async def test_a_login_due_for_refresh_is_used_by_one_run_at_a_time(client, maker):
+    me = await register(client)
+    await connect_with(maker, me["id"], age=timedelta(days=9))  # Codex would refresh it as soon as it starts
+    seen = Overlap(maker, me["id"], max_parallel=3)
+    await asyncio.gather(*(seen.use() for _ in range(3)))
+    assert seen.peak == 1
+
+
+async def test_after_the_refreshing_run_the_others_share_again(client, maker):
+    me = await register(client)
+    await connect_with(maker, me["id"], age=timedelta(days=9))
+    seen = Overlap(maker, me["id"], max_parallel=3)
+
+    async def refresh(lease) -> None:
+        assert await lease.save_back(refreshed(lease.auth_json))
+
+    # the first to arrive refreshes alone; the three that were waiting then find a fresh login and run together
+    first = asyncio.create_task(seen.use(0.1, refresh))
+    await asyncio.sleep(0.02)
+    await asyncio.gather(first, *(seen.use() for _ in range(3)))
+    assert seen.peak == 3
+
+
+async def test_a_stale_login_never_replaces_a_newer_one(client, maker):
+    me = await register(client)
+    await connect_with(maker, me["id"])
+    async with lease_codex(maker, me["id"], max_parallel=2) as slow:
+        async with lease_codex(maker, me["id"], max_parallel=2) as quick:
+            assert await quick.save_back(refreshed(quick.auth_json, "NEWER", minutes=2))
+        # the slow run began before that refresh, and still holds the login whose refresh token is now used up
+        assert not await slow.save_back(refreshed(slow.auth_json, "OLDER", minutes=1))
+        assert "NEWER" in slow.auth_json  # it carries on with (and retries with) the login that works
+    async with maker() as session:
+        conn = await get_connection(session, me["id"])
+        stored = json.loads(decrypt(conn.auth_encrypted))
+    assert stored["tokens"]["refresh_token"] == "NEWER"
+
+
+def jwt(**claims) -> str:
+    part = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+    return f"{part({'alg': 'none'})}.{part(claims)}.sig"
+
+
+def test_login_needs_refresh_looks_at_its_age_and_its_access_token():
+    now = utcnow()
+    auth = lambda **kw: json.loads(fake_auth(**kw))
+    assert not login_needs_refresh(auth(), 3600, now)
+    assert login_needs_refresh(auth(age=timedelta(days=7, hours=23)), 3600, now)  # would turn 8 days mid-run
+    assert not login_needs_refresh(auth(age=timedelta(days=7)), 3600, now)
+    fresh = auth()
+    fresh["tokens"]["access_token"] = jwt(exp=(now + timedelta(minutes=30)).timestamp())
+    assert login_needs_refresh(fresh, 3600, now)  # the token ends before the run could
+    fresh["tokens"]["access_token"] = jwt(exp=(now + timedelta(days=5)).timestamp())
+    assert not login_needs_refresh(fresh, 3600, now)
+    unknown = auth()
+    del unknown["last_refresh"]
+    assert login_needs_refresh(unknown, 3600, now)  # not knowing counts as due
 
 
 async def test_lease_needs_a_connection(maker, client):

@@ -125,6 +125,11 @@ def _run_failure(renderer: CodexRenderer | None, exit_code: int, retries: int) -
     error = renderer.error if renderer is not None else ""
     if renderer is None or not error:
         return _themis_failure(_EXIT_UNKNOWN.format(code=exit_code))
+    if renderer.login_rejected:
+        return _themis_failure(
+            f"Codex refused the saved login ({error})",
+            "Connect Codex again in Settings. Until then runs that use Codex will fail the same way.",
+        )
     if renderer.transient_error:
         return _themis_failure(
             f"The model provider could not serve this run ({error})"
@@ -709,6 +714,9 @@ class Scheduler:
         failure: dict | None = None  # why it failed, once it has (see Attempt.failure)
         before: dict[str, tuple[int, int]] | None = None  # the working folder as the cell found it
         retries = 0  # how many times the provider's trouble made this attempt start its run again
+        login_retried = (
+            False  # whether a rejected login was already swapped for a newer one (once per attempt)
+        )
         renderer = None
         redact = Redactor(
             []
@@ -717,9 +725,21 @@ class Scheduler:
             async with AsyncExitStack() as stack:
                 lease = None
                 if spec.harness == "codex":
-                    if lease_is_busy(spec.owner_id):
-                        await buf.write("[Waiting for another Codex run of the same user to finish]\n")
-                    lease = await stack.enter_async_context(lease_codex(self.maker, spec.owner_id))
+                    async with self.maker() as session:
+                        parallel = (await load_settings(session)).codex_max_parallel
+                    if lease_is_busy(spec.owner_id, parallel):
+                        await buf.write(
+                            "[Waiting for the user's other Codex runs: they share one login, "
+                            f"at most {parallel} at a time]\n"
+                        )
+                    lease = await stack.enter_async_context(
+                        lease_codex(
+                            self.maker,
+                            spec.owner_id,
+                            max_parallel=parallel,
+                            run_seconds=spec.timeout_seconds,
+                        )
+                    )
                     spec.secret_files[CODEX_AUTH] = lease.auth_json
                     if spec.keys or spec.mcp or spec.connections:
                         values = await self._key_values(spec)
@@ -748,6 +768,7 @@ class Scheduler:
                         elif text := renderer.feed(chunk):
                             await buf.write(redact(text))
 
+                    sent = spec.secret_files.get(CODEX_AUTH)  # the login this run started with
                     res = await self._play_or_run(spec, attempt_id, sink)
                     if renderer is not None and (tail := renderer.flush()):
                         await buf.write(redact(tail))
@@ -760,6 +781,19 @@ class Scheduler:
                             await lease.save_back(fresh)
                         except CodexError as e:
                             await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
+                    rejected = res.exit_code != 0 and renderer is not None and renderer.login_rejected
+                    if lease is not None and rejected:
+                        await lease.adopt_newer()  # a cell that wrote nothing back left the lease as it was
+                    if lease is not None and rejected and not login_retried and lease.auth_json != sent:
+                        # another run refreshed the login while this one held the old copy: the stored one is the
+                        # one that works, so start again with it (once; a login that still fails is dead)
+                        login_retried = True
+                        await buf.write(
+                            "\n[Themis] Another run refreshed the Codex login first. Starting this one "
+                            "again with the new login.\n"
+                        )
+                        spec.secret_files[CODEX_AUTH] = lease.auth_json
+                        continue
                     trouble = renderer.transient_error if renderer is not None and res.exit_code != 0 else ""
                     if not trouble or retries >= len(retry_waits):
                         break

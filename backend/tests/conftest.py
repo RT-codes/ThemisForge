@@ -32,15 +32,15 @@ def no_start_cooldown(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fresh_codex_locks():
-    """A lock that was contended in one test is bound to that test's event loop, so the next test must not reuse it."""
+    """A login gate that was contended in one test holds futures bound to that test's event loop, so the next test must not reuse it."""
     import asyncio
 
     from app import codex, project_config
 
-    codex._locks.clear()
+    codex._gates.clear()
     project_config.lock = asyncio.Lock()
     yield
-    codex._locks.clear()
+    codex._gates.clear()
 
 
 @pytest.fixture

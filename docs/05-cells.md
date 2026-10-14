@@ -163,6 +163,11 @@ that says so, instead of waiting forever.
   stops showing what it is doing now.
 - The **result** is the content of `/cell/result.md`, capped at 100,000 characters.
 - Both are visible in the **History** tab of the task.
+- Use **Search logs** to find text in the displayed log, ignoring letter case. Matches are highlighted; the counter
+  shows your current match and the total. Use the arrows, **Enter** or **Shift+Enter** to move between matches.
+  Searching pauses following new output so you can read a match while the run continues. **Clear search** (or **Escape**)
+  removes the highlights; **Latest** takes you back to following the output. Search also works in enlarged logs and
+  workflow node logs. It searches only the log currently shown, including new output as it arrives.
 
 ## Stopping a cell
 

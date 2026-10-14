@@ -314,6 +314,9 @@ The **History** tab of a task lists every attempt with its status, start time an
 is what its stages reported (one section per stage when there are several), so a pull request link is there without
 opening the run.
 
+If history cannot load, it shows an error with **Retry** instead of saying there are no attempts. Selecting an attempt
+shows loading feedback until its result and log are ready. If those cannot load, use **Retry** beside that error.
+
 Results open as formatted Markdown, with headings, lists, tables, code blocks and clickable web links. Use **Raw**
 to read the original text, or **Rendered** to return to the report. Code blocks have a **Copy** button. Long results
 scroll inside the viewer. Selecting another attempt opens its result in Rendered view.

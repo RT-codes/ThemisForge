@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Handle, Position, useSvelteFlow, type NodeProps } from '@xyflow/svelte'
+	import { Handle, Position, useSvelteFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/svelte'
 	import XIcon from '@lucide/svelte/icons/x'
-	import { MOUNT, defaultConfig, kindInfo, summary, type WorkflowNodeData } from '$lib/workflow'
+	import { MOUNT, branchPoints, defaultConfig, kindInfo, summary, type WorkflowNodeData } from '$lib/workflow'
 	import { nodeIcons } from '$lib/workflowIcons'
 	import { pulseWhen } from '$lib/pulse'
 	import { RUN_VIEW, type RunView } from '$lib/workflowRun.svelte'
@@ -14,6 +14,18 @@
 	const info = $derived(kindInfo(d.kind))
 	const Icon = $derived(nodeIcons[d.kind])
 	const line = $derived(summary(d.kind, d.config ?? defaultConfig(d.kind)))
+	// Where lines come in and go out. A Merger takes its branches in along the top, a Splitter sends them out along the
+	// bottom, a Condition answers yes or no; the points are spread evenly and named by what the person called them.
+	const points = $derived(branchPoints(d.kind, d.config ?? defaultConfig(d.kind)))
+	const outs = $derived(info.branching === 'out' ? points : (info.outputs ?? []))
+	const spread = (i: number, of: number) => `${((i + 1) / (of + 1)) * 100}%`
+	// Svelte Flow measures where the connection points are; when their number or place changes it has to be told
+	const updateNodeInternals = useUpdateNodeInternals()
+	$effect(() => {
+		void outs.length
+		void points.length
+		updateNodeInternals(id)
+	})
 
 	// While a test run plays: nodes still to come are dimmed, finished ones are almost fully there, the one playing is
 	// fully there with a thicker, shining border. Outside a run none of this applies and everything fades back.
@@ -25,7 +37,7 @@
 
 <div
 	style:opacity
-	class="group relative flex w-52 items-center gap-3 rounded-lg border bg-card px-3 text-card-foreground shadow-sm transition-[color,background-color,border-color,box-shadow,opacity] duration-500 {info.mountOut ? 'border-dashed' : ''} py-2.5 {selected
+	class="group relative flex {info.branching ? 'w-64' : 'w-52'} items-center gap-3 rounded-lg border bg-card px-3 text-card-foreground shadow-sm transition-[color,background-color,border-color,box-shadow,opacity] duration-500 {info.mountOut ? 'border-dashed' : ''} py-2.5 {selected
 		? 'border-primary ring-2 ring-primary/30'
 		: 'hover:border-primary/50'}"
 >
@@ -33,7 +45,12 @@
 	     handles and labels that stick out of the node are not cut off -->
 	<span use:pulseWhen={run?.nodePulses[id] ?? 0} class="pointer-events-none absolute -inset-px overflow-hidden rounded-lg" aria-hidden="true"></span>
 	<span class="run-ring" class:on={phase === 'playing'} aria-hidden="true"></span>
-	{#if info.hasInput}
+	{#if info.branching === 'in'}
+		{#each points as p, i (p.id)}
+			<Handle type="target" id={p.id} position={Position.Top} class="workflow-handle" style="left: {spread(i, points.length)}" />
+			<span class="pointer-events-none absolute bottom-full mb-2.5 max-w-12 -translate-x-1/2 truncate text-[11px] font-semibold text-foreground/80" style="left: {spread(i, points.length)}">{p.label}</span>
+		{/each}
+	{:else if info.hasInput}
 		<Handle type="target" position={Position.Top} class="workflow-handle" />
 	{/if}
 	<!-- the folder points sit on the sides: the top and bottom belong to the flow of steps, which reads downwards -->
@@ -58,11 +75,10 @@
 	>
 		<XIcon class="size-3" />
 	</button>
-	{#if info.outputs}
-		{#each info.outputs as o, i (o.id)}
-			{@const left = i === 0 ? '30%' : '70%'}
-			<Handle type="source" id={o.id} position={Position.Bottom} class="workflow-handle" style="left: {left}" />
-			<span class="pointer-events-none absolute top-full mt-2.5 -translate-x-1/2 text-xs font-semibold text-foreground/80" style="left: {left}">{o.label}</span>
+	{#if outs.length}
+		{#each outs as o, i (o.id)}
+			<Handle type="source" id={o.id} position={Position.Bottom} class="workflow-handle" style="left: {spread(i, outs.length)}" />
+			<span class="pointer-events-none absolute top-full mt-2.5 max-w-14 -translate-x-1/2 truncate text-xs font-semibold text-foreground/80" style="left: {spread(i, outs.length)}">{o.label}</span>
 		{/each}
 	{:else if info.hasOutput}
 		<Handle type="source" position={Position.Bottom} class="workflow-handle" />

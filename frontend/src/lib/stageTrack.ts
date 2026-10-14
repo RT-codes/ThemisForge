@@ -32,6 +32,12 @@ export interface Track {
 const MOUNT = 'mount'
 const START_KINDS: NodeKind[] = ['start', 'trigger']
 
+/** a Splitter branch ("o2") by the name the person gave it, or "Branch 2" */
+const branchLabel = (config: Record<string, string>, handle: string | null | undefined) => {
+  const n = /^o(\d)$/.exec(handle ?? '')?.[1]
+  return n ? config[`name${n}`]?.trim() || `Branch ${n}` : null
+}
+
 const FINISHED: Record<string, TrackState> = { succeeded: 'done', failed: 'failed', cancelled: 'cancelled' }
 
 export function stageTrack(graph: Graph, runs: NodeRun[], runStatus: RunStatus): Track {
@@ -79,8 +85,10 @@ export function stageTrack(graph: Graph, runs: NodeRun[], runStatus: RunStatus):
     const wrongBranch = answered !== null && handle !== answered
     const ranAlready = records.get(e.target) && records.get(e.target)!.status !== 'skipped'
     const state = ranAlready ? stateOf(e.target) : wrongBranch || stopped ? 'skipped' : stateOf(e.target)
-    const branches = steps.get(live.node_id)!.kind === 'condition'
-    next.push({ node: trackNode(e.target, state), via: branches ? (handle === 'no' ? 'No' : 'Yes') : null })
+    const kind = steps.get(live.node_id)!.kind
+    // the line says which way it leaves: a condition's Yes or No, or the name of a Splitter's branch
+    const via = kind === 'condition' ? (handle === 'no' ? 'No' : 'Yes') : kind === 'split' ? branchLabel(steps.get(live.node_id)!.config, e.sourceHandle) : null
+    next.push({ node: trackNode(e.target, state), via })
   }
   return { previous: feeder ? trackNode(feeder.node_id) : null, current, next }
 }

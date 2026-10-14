@@ -154,6 +154,76 @@ async def test_upcoming_runs_expands_recurring_tasks(client):
     assert 5 <= len(runs) <= 6 and all(r["recurring"] for r in runs)
 
 
+async def test_upcoming_runs_can_be_scoped_to_a_board(client):
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    await register(client)
+    pid = (await make_project(client))["id"]
+    [workspace] = (await client.get(f"/api/projects/{pid}/workspaces")).json()
+    first = workspace["boards"][0]
+    second = (await client.post(f"/api/workspaces/{workspace['id']}/boards", json={"name": "QA"})).json()
+    empty = (await client.post(f"/api/workspaces/{workspace['id']}/boards", json={"name": "Empty"})).json()
+    recurring = await make_task(client, pid, status="ready", schedule_kind="cron", cron="0 * * * *")
+    once = await make_task(
+        client,
+        pid,
+        board_id=second["id"],
+        status="ready",
+        schedule_kind="once",
+        run_at=(utcnow() + timedelta(hours=1)).isoformat(),
+    )
+    other_pid = (await make_project(client, "Other"))["id"]
+    foreign = await make_task(client, other_pid, status="ready", schedule_kind="cron", cron="0 * * * *")
+
+    for hours in (24, 168):
+
+        async def schedule(board_id=None, hours=hours):
+            params = {"hours": hours}
+            if board_id is not None:
+                params["board_id"] = board_id
+            response = await client.get(f"/api/projects/{pid}/schedule", params=params)
+            assert response.status_code == 200
+            return response.json()
+
+        assert {r["task_id"] for r in await schedule()} == {recurring["id"], once["id"]}
+        assert {r["task_id"] for r in await schedule(first["id"])} == {recurring["id"]}
+        assert {r["task_id"] for r in await schedule(second["id"])} == {once["id"]}
+        assert await schedule(empty["id"]) == []
+        assert await schedule(foreign["board_id"]) == []
+
+    await register(client, "b@b.co", "Bob")
+    assert (
+        await client.get(f"/api/projects/{pid}/schedule", params={"board_id": first["id"]})
+    ).status_code == 404
+
+
+async def test_board_schedule_is_filtered_before_the_occurrence_limit(client):
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    await register(client)
+    pid = (await make_project(client))["id"]
+    [workspace] = (await client.get(f"/api/projects/{pid}/workspaces")).json()
+    second = (await client.post(f"/api/workspaces/{workspace['id']}/boards", json={"name": "QA"})).json()
+    await make_task(client, pid, status="ready", schedule_kind="cron", cron="* * * * *")
+    task = await make_task(
+        client,
+        pid,
+        board_id=second["id"],
+        status="ready",
+        schedule_kind="once",
+        run_at=(utcnow() + timedelta(hours=23)).isoformat(),
+    )
+    unscoped = (await client.get(f"/api/projects/{pid}/schedule")).json()
+    assert len(unscoped) == 500
+    assert task["id"] not in {r["task_id"] for r in unscoped}
+    scoped = (await client.get(f"/api/projects/{pid}/schedule", params={"board_id": second["id"]})).json()
+    assert [r["task_id"] for r in scoped] == [task["id"]]
+
+
 async def test_deleting_a_task_is_kept_in_the_project_history(client):
     await register(client)
     pid = (await make_project(client))["id"]

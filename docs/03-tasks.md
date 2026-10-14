@@ -126,7 +126,11 @@ its history. The next occurrence still happens.
 
 ## Why a task failed
 
-A failed task's card says why in a sentence, and the task's details show the whole explanation above the tabs: what
+A failed task's card says why in a sentence. In **List** view, a two-line **Last run failed** explanation appears beneath
+the title, including recurring tasks back in Ready. It is hidden while another run is in progress, and disappears when
+the latest attempt succeeds or is cancelled. Open the task for the full explanation.
+
+The task's details show the whole explanation above the tabs: what
 happened, **what to do** about it when that is known, and the last lines of the log (the **History** tab has the same for
 every failed attempt). Who found the reason is shown too:
 

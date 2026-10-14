@@ -44,8 +44,11 @@
 			<tbody>
 				{#each shown as t (t.id)}
 					<tr class={cn('cursor-pointer border-b last:border-0 hover:bg-accent/40', t.id === selectedId && 'bg-primary/10 hover:bg-primary/10')} onclick={() => onopen(t)}>
-						<td class="max-w-72 truncate px-4 py-2.5 font-medium">
-							<button type="button" class="truncate text-start" onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>
+						<td class="max-w-72 px-4 py-2.5 font-medium">
+							<button type="button" class="max-w-full truncate text-start" onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>
+							{#if t.last_attempt_status === 'failed' && t.status !== 'running' && t.last_failure_reason}
+								<p class="mt-1 line-clamp-2 text-xs font-normal break-words text-destructive" title={t.last_failure_reason}>Last run failed: {t.last_failure_reason}</p>
+							{/if}
 						</td>
 						<td class="px-4 py-2.5"><StatusBadge status={t.status} {board} /></td>
 						<td class="px-4 py-2.5 text-muted-foreground">{schedule(t)}</td>

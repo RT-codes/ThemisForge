@@ -266,7 +266,9 @@
 				</Tabs.Content>
 				<Tabs.Content value="history" class="mt-1">
 					<TaskWorkflowRuns taskId={task.id} projectId={task.project_id} taskStatus={task.status} />
-					<AttemptHistory taskId={task.id} taskStatus={task.status} projectId={task.project_id} />
+					{#key task.id}
+						<AttemptHistory taskId={task.id} taskStatus={task.status} projectId={task.project_id} />
+					{/key}
 					<h3 class="mx-4 mt-6 mb-2 text-sm font-medium">Activity</h3>
 					<div class="mx-4 mb-6">
 						<HistoryList projectId={task.project_id} scope={{ taskId: task.id }} {now} {revision} compact />

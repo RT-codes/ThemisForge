@@ -763,10 +763,13 @@ class WorkflowRunner:
                     )
                 if attempt_id:
                     attempt_ids.append(attempt_id)
-        for attempt_id in attempt_ids:
-            await self._scheduler().cancel(attempt_id)  # type: ignore[attr-defined]
+        # The run and its nodes first, then their cells. The other way round, a node that is waiting for its attempt
+        # sees it cancelled before it is cancelled itself, and records the cancel as a failure ("The task was
+        # cancelled.") instead of as cancelled.
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+        for attempt_id in attempt_ids:
+            await self._scheduler().cancel(attempt_id)  # type: ignore[attr-defined]
         return True
 
     async def run_for_task(self, project_id: int, task_id: int, attempt_id: int, write) -> tuple[bool, str]:

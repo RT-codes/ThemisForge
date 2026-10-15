@@ -164,6 +164,37 @@ async def test_a_running_workflow_cannot_be_deleted(client, runner, cells, sched
     assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
 
 
+async def test_cancelling_a_run_records_its_waiting_nodes_as_cancelled_not_failed(
+    client, runner, cells, scheduler, monkeypatch
+):
+    """A node waits for its task's attempt by polling it. Stopping the cell first would let the node see "cancelled"
+    and report a failure before the run's own cancel reached it; the run and its nodes are stopped first."""
+    _, pid = await setup(client)
+    cells.duration = 30
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="slow", status="ready")], [edge("s", "t")]
+    )
+    run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
+    async with asyncio.timeout(10):
+        while not scheduler._live:
+            await asyncio.sleep(0.02)
+
+    stop_cell = scheduler.cancel
+
+    async def slow_stop(attempt_id: int) -> bool:
+        stopped = await stop_cell(attempt_id)
+        await asyncio.sleep(
+            0.3
+        )  # long enough for a poll to see the attempt cancelled, if the node still polls
+        return stopped
+
+    monkeypatch.setattr(scheduler, "cancel", slow_stop)
+    r = await client.post(f"/api/workflow-runs/{run_id}/cancel")
+    assert r.status_code == 200 and r.json()["status"] == RunStatus.CANCELLED
+    assert by_id(r.json())["t"]["status"] == NodeStatus.CANCELLED
+
+
 async def test_a_run_cut_off_while_its_node_creates_a_task_still_ends_cancelled(client, runner, maker):
     """The cut lands while the INSERT of the node's task is executing (its worker thread finishes it anyway, but nobody
     reads the result). SQLite then keeps its write lock until that abandoned statement is gone: the cancelled node, and

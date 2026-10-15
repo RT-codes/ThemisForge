@@ -316,4 +316,6 @@ opening the run.
 
 Results open as formatted Markdown, with headings, lists, tables, code blocks and clickable web links. Use **Raw**
 to read the original text, or **Rendered** to return to the report. Code blocks have a **Copy** button. Long results
-scroll inside the viewer. Selecting another attempt opens its result in Rendered view.
+scroll inside the viewer. Use **Enlarge result** for a wide reading window with more room for reports, tables and code.
+You can switch between Rendered and Raw there too; closing the window keeps your chosen view. Press **Esc** or the close
+button to return to the task. Selecting another attempt opens its result in Rendered view.

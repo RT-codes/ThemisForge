@@ -38,6 +38,14 @@ test('agent HTML, unsafe links and remote images cannot become active content', 
   assert.match(html, /tracking/)
 })
 
+test('results offer a named dialog trigger for enlarged reading', () => {
+  const html = result('A long report')
+  const trigger = html.match(/<button[^>]*aria-haspopup="dialog"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? ''
+  assert.match(trigger, /Enlarge result/)
+  assert.match(trigger, /aria-expanded="false"/)
+  assert.doesNotMatch(html, /role="dialog"/)
+})
+
 test('plain text and empty results are supported', () => {
   assert.match(result('All checks passed.'), /<p>All checks passed\.<\/p>/)
   assert.doesNotThrow(() => result(''))

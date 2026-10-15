@@ -7,8 +7,8 @@
 	import type { Snippet } from 'svelte'
 
 	// The header both project pages open with, so the overview and the settings read as one place: the project's icon
-	// in a framed tile, what the page is, and the page's own actions at the top right with art behind them. It is
-	// not a card: it sits straight on the page, so the art fades into the page background.
+	// in a framed tile, what the page is, and the page's own actions at the top right. It is not a card: it sits
+	// straight on the page.
 	// `eyebrow` is the small line above the title, for a page that is not the project itself.
 	let {
 		project,
@@ -16,7 +16,6 @@
 		eyebrow = '',
 		lead = '',
 		detail = '',
-		art,
 		children,
 		actions,
 	}: {
@@ -25,7 +24,6 @@
 		eyebrow?: string
 		lead?: string
 		detail?: string
-		art?: string
 		/** below the text: chips, a halt notice */
 		children?: Snippet
 		actions?: Snippet
@@ -33,7 +31,7 @@
 </script>
 
 <header>
-	<SectionBanner {art} {actions} actionsClass="bg-transparent backdrop-blur-none" class="min-h-32 items-start rounded-xl border-b-0 px-0 py-2">
+	<SectionBanner {actions} class="min-h-32 items-start rounded-xl border-b-0 px-0 py-2">
 		<div class="flex min-w-0 items-start gap-4">
 			<IconTile size="lg" tone="amber">
 				<DynamicIcon name={project.icon} fallback={FolderKanbanIcon} />

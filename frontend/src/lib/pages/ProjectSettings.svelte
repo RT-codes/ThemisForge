@@ -67,7 +67,6 @@
 			title="Settings"
 			eyebrow={project.name}
 			lead="Who it is, how its work runs, who does it and what they may use."
-			art="settings"
 			actions={heroActions}
 		/>
 

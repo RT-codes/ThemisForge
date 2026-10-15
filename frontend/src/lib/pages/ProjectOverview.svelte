@@ -154,7 +154,7 @@
 
 {#if project}
 	<div class="px-6 pt-6 pb-8" in:fade={{ duration: 350 }}>
-		<ProjectHero {project} title={project.name} lead={project.purpose} detail={project.description} art="overview" actions={heroActions}>
+		<ProjectHero {project} title={project.name} lead={project.purpose} detail={project.description} actions={heroActions}>
 			{#if project.halted_at}<div class="mb-3"><HaltBanner scope="project" name={project.name} /></div>{/if}
 			<div class="flex flex-wrap gap-2 text-xs">
 				<span class="inline-flex items-center gap-1.5 rounded-full border bg-background/50 px-3 py-1">
@@ -188,7 +188,7 @@
 		<GroupHeading icon={GaugeIcon}>Status</GroupHeading>
 		<div class="mt-3 grid gap-4">
 		<div class="@container overflow-hidden glow-card rounded-xl border bg-card">
-			<SectionBanner art="tasks" icon={ListChecksIcon} tone="amber">
+			<SectionBanner icon={ListChecksIcon} tone="amber">
 				<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
 				<p class="text-xs text-muted-foreground">A quick pulse on work in this project</p>
 			</SectionBanner>
@@ -209,7 +209,7 @@
 
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
 			<section class="overflow-hidden glow-card rounded-xl border bg-card lg:col-span-7" aria-labelledby="attention-title">
-				<SectionBanner art="attention" icon={TriangleAlertIcon} tone="amber" actions={!attentionError && attention.total > 5 ? attentionToggle : undefined}>
+				<SectionBanner icon={TriangleAlertIcon} tone="amber" actions={!attentionError && attention.total > 5 ? attentionToggle : undefined}>
 					<h3 id="attention-title" class="flex items-center gap-2 text-base font-semibold tracking-tight">
 						Needs attention
 						{#if !attentionError && tasks !== null}
@@ -251,7 +251,7 @@
 			</section>
 
 			<section class="overflow-hidden glow-card rounded-xl border bg-card lg:col-span-5" aria-labelledby="upcoming-title">
-				<SectionBanner art="upcoming" icon={CalendarClockIcon} tone="violet">
+				<SectionBanner icon={CalendarClockIcon} tone="violet">
 					<h3 id="upcoming-title" class="text-base font-semibold tracking-tight">Upcoming runs</h3>
 					<p class="text-xs text-muted-foreground">What is scheduled to start in the next 7 days.</p>
 				</SectionBanner>
@@ -288,7 +288,7 @@
 		<section class="mt-8">
 		<GroupHeading icon={HistoryIcon}>Timeline</GroupHeading>
 		<div class="mt-3 overflow-hidden glow-card rounded-xl border bg-card">
-			<SectionBanner art="activity" icon={ClockIcon} tone="amber">
+			<SectionBanner icon={ClockIcon} tone="amber">
 				<h3 class="text-base font-semibold tracking-tight">Recent activity</h3>
 				<p class="text-xs text-muted-foreground">What was done across all workspaces and boards. Each board and workspace has its own history too.</p>
 			</SectionBanner>

@@ -958,6 +958,7 @@ class WorkflowRunner:
         workdir = (
             ctx.workdir_id
         )  # where the run's last step worked: what the next stage of a task starts with
+        cancelled = False
         try:
             while True:
                 # every lane that is idle starts its next node; the lanes are what run at the same time
@@ -1003,14 +1004,17 @@ class WorkflowRunner:
                 ctx.run_id, RunStatus.FAILED if hard_fail else RunStatus.SUCCEEDED, note, workdir
             )
         except asyncio.CancelledError:
-            await self._stop_nodes(running)
-            if not self._stopping:
-                await self._cancelled(ctx.run_id)
-            raise
+            cancelled = True
         except Exception as e:
             await self._stop_nodes(running)
             log.exception("workflow run %s crashed", ctx.run_id)
             await self._finish(ctx.run_id, RunStatus.FAILED, f"Unexpected error: {e}", workdir)
+        if cancelled:
+            # outside the `except`, for the reason given in _execute_node
+            await self._stop_nodes(running)
+            if not self._stopping:
+                await self._cancelled(ctx.run_id)
+            raise asyncio.CancelledError
 
     @staticmethod
     async def _stop_nodes(running: dict) -> None:
@@ -1030,18 +1034,25 @@ class WorkflowRunner:
             s.add(row)
             await s.commit()
             nr_id = row.id
+        cancelled = False
         try:
             outcome = await self._dispatch(ctx, nr_id, node, prev, inputs)
         except NodeError as e:
             outcome = Outcome(NodeStatus.FAILED, error=str(e))
         except asyncio.CancelledError:
-            await self._update_node(
-                nr_id, status=NodeStatus.CANCELLED, finished_at=utcnow(), error="The run was cancelled"
-            )
-            raise
+            cancelled = True  # recorded below, outside this block (see there)
         except Exception as e:
             log.exception("workflow node %s crashed", node.id)
             outcome = Outcome(NodeStatus.FAILED, error=f"Unexpected error: {e}")
+        if cancelled:
+            # Not inside the `except`: while it runs, the exception's traceback keeps alive whatever the cut-off work was
+            # holding. A statement that was executing when the cancel arrived (an INSERT of a task, say) is finished by
+            # its worker thread but never read, and SQLite keeps its write lock until that cursor is released. Writing
+            # from inside the handler would wait for a lock this very task still holds.
+            await self._update_node(
+                nr_id, status=NodeStatus.CANCELLED, finished_at=utcnow(), error="The run was cancelled"
+            )
+            raise asyncio.CancelledError
         fields: dict = {
             "status": outcome.status,
             "finished_at": utcnow(),

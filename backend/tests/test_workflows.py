@@ -1,6 +1,6 @@
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from app.codex import save_auth
 from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
@@ -161,6 +161,43 @@ async def test_a_running_workflow_cannot_be_deleted(client, runner, cells, sched
     run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     assert (await client.delete(f"/api/workflows/{wid}")).status_code == 409
     await client.post(f"/api/workflow-runs/{run_id}/cancel")
+    assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
+
+
+async def test_a_run_cut_off_while_its_node_creates_a_task_still_ends_cancelled(client, runner, maker):
+    """The cut lands while the INSERT of the node's task is executing (its worker thread finishes it anyway, but nobody
+    reads the result). SQLite then keeps its write lock until that abandoned statement is gone: the cancelled node, and
+    then the run, must not wait for a lock their own aborted work holds, or the run stays "running" for good."""
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="cut", status="ready")], [edge("s", "t")]
+    )
+    engine = maker.kw["bind"].sync_engine
+    cut = []
+
+    def cut_off(_conn, _cursor, statement, _params, _context, _many) -> None:
+        task = asyncio.current_task()
+        if (
+            statement.startswith("INSERT INTO tasks")
+            and task.get_coro().__name__ == "_execute_node"
+            and not cut
+        ):
+            cut.append(statement)
+            task.cancel()  # at its next await: the one that runs this statement
+
+    event.listen(engine, "before_cursor_execute", cut_off)
+    try:
+        run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
+        async with asyncio.timeout(3):  # a lock wait is 5 s, so a stuck run fails here
+            while (await client.get(f"/api/workflow-runs/{run_id}")).json()["status"] == RunStatus.RUNNING:
+                await asyncio.sleep(0.02)
+    finally:
+        event.remove(engine, "before_cursor_execute", cut_off)
+    assert cut
+    detail = (await client.get(f"/api/workflow-runs/{run_id}")).json()
+    assert detail["status"] == RunStatus.CANCELLED
+    assert by_id(detail)["t"]["status"] == NodeStatus.CANCELLED
     assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
 
 

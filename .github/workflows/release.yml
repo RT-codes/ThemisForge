@@ -56,6 +56,14 @@ jobs:
         run: |
           flags=""
           case "${GITHUB_REF_NAME}" in *-*) flags="--prerelease" ;; esac
+          # The notes are written by hand in release-notes/<version>.md. GitHub's own list of changes follows them, which
+          # also adds the "Full Changelog" link. Without a file the release still goes out, with the generated list only.
+          notes="release-notes/${GITHUB_REF_NAME#v}.md"
+          if [ -f "$notes" ]; then
+            flags="$flags --notes-file $notes"
+          else
+            echo "::warning::No $notes: the release has generated notes only."
+          fi
           # the bundle and its checksum, plus the files the one-line installers fetch: install.sh (Linux), install.ps1 (Windows) and the control file
           gh release create "${GITHUB_REF_NAME}" dist/themisforge-*.tar.gz dist/SHA256SUMS install.sh install.ps1 scripts/themisctl.py \
             --title "Themis ${GITHUB_REF_NAME#v}" --generate-notes $flags

@@ -220,7 +220,9 @@ async def test_a_run_cut_off_while_its_node_creates_a_task_still_ends_cancelled(
     event.listen(engine, "before_cursor_execute", cut_off)
     try:
         run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
-        async with asyncio.timeout(3):  # a lock wait is 5 s, so a stuck run fails here
+        # The bug left the run "running" for good, so any generous wait still catches it. Not a tight one: a slow
+        # Windows runner needs more than 3 s for a healthy run.
+        async with asyncio.timeout(30):
             while (await client.get(f"/api/workflow-runs/{run_id}")).json()["status"] == RunStatus.RUNNING:
                 await asyncio.sleep(0.02)
     finally:

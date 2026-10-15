@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Background, Controls, MarkerType, MiniMap, Panel, SvelteFlow, useSvelteFlow, type Connection, type Edge, type Node } from '@xyflow/svelte'
+	import { Background, Controls, MarkerType, MiniMap, Panel, SvelteFlow, useSvelteFlow, useViewport, type Connection, type Edge, type Node } from '@xyflow/svelte'
 	import '@xyflow/svelte/dist/style.css'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -10,11 +10,11 @@
 	import XIcon from '@lucide/svelte/icons/x'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import { api, type NodePreset } from '$lib/api'
-	import { DRAG_TYPE, MOUNT, NODE_KINDS, PRESET_DRAG_TYPE, canConnect, defaultConfig, fromGraph, isSavedNode, kindInfo, mountsFromGraph, nextNodeNumber, presetNodeData, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
+	import { CROWDED_LINES, DRAG_TYPE, MOUNT, NODE_KINDS, PRESET_DRAG_TYPE, branchPoints, canConnect, crowdedLines, defaultConfig, fromGraph, isSavedNode, kindInfo, mountsFromGraph, nextNodeNumber, presetNodeData, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
 	import { onDestroy, onMount, setContext, untrack } from 'svelte'
 	import { router } from '$lib/router.svelte'
 	import { nodeIcons } from '$lib/workflowIcons'
-	import { slide } from 'svelte/transition'
+	import { fade, slide } from 'svelte/transition'
 	import NodeConfigPanel from './NodeConfigPanel.svelte'
 	import SelectionBox from './SelectionBox.svelte'
 	import WorkflowEdge from './WorkflowEdge.svelte'
@@ -48,7 +48,7 @@
 	const nodeTypes = { workflow: WorkflowNode }
 	const edgeTypes = { workflow: WorkflowEdge }
 	// the minimap tells node types apart by colour
-	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf' }
+	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf', split: '#38bdf8', merge: '#38bdf8' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	// the dotted background and the snapping share one grid, so a snapped node sits exactly on the dots (Svelte Flow
@@ -94,6 +94,9 @@
 	// a test run is played on the canvas itself (see workflowRun.svelte.ts); nodes and connections read it from context
 	const runView = new RunView(() => edges)
 	setContext(RUN_VIEW, runView)
+	// lines that share a connection point with another one (made before the one-line rule): drawn as a warning
+	const crowded = $derived(crowdedLines(edges))
+	setContext(CROWDED_LINES, { has: (id: string) => crowded.has(id) })
 	$effect(() => {
 		if (runId) untrack(() => runView.follow(runId).then((ended) => ended && onrunended?.()))
 		else untrack(() => runView.stop())
@@ -173,14 +176,72 @@
 	let clearOpen = $state(false)
 
 	const hasSelection = $derived(nodes.some((n) => n.selected) || edges.some((e) => e.selected))
-	// the panel on the right configures the node when exactly one is selected
+	// the node window configures the node when exactly one is selected
 	const selectedNodes = $derived(nodes.filter((n) => n.selected))
-	// not while a selection box is being dragged: the panel sliding in would resize the canvas under the pointer
+	// not while a selection box is being dragged: a window popping up under the pointer would get in its way
 	let selecting = $state(false)
 	const active = $derived(!selecting && selectedNodes.length === 1 ? selectedNodes[0] : null)
 
+	// ----- the node window -----
+	// It floats over the canvas, so selecting a node never resizes or shifts the canvas. It opens beside the node (on the
+	// side with room) and follows the node as it is dragged or the canvas is panned and zoomed. Dragging its title bar
+	// pins it where it is left: it then stays put while other nodes are selected, until it is closed.
+	const WIN_MAX_W = 640 // wide enough for the Instructions field to read comfortably
+	const WIN_GAP = 18 // between the node and the window
+	const WIN_EDGE = 12 // the window keeps this far from the canvas edge
+	const viewport = useViewport()
+	let canvasW = $state(0)
+	let canvasH = $state(0)
+	// the window gives way on a narrow canvas instead of overflowing it
+	const winW = $derived(Math.min(WIN_MAX_W, Math.max(280, canvasW - WIN_EDGE * 2)))
+	let winH = $state(0)
+	let pin = $state<{ x: number; y: number } | null>(null)
+	$effect(() => {
+		if (!active) pin = null
+	})
+	const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, Math.max(lo, hi)))
+	const win = $derived.by(() => {
+		if (!active) return null
+		const maxX = canvasW - winW - WIN_EDGE
+		const maxY = canvasH - winH - WIN_EDGE
+		if (pin) return { x: clamp(pin.x, WIN_EDGE, maxX), y: clamp(pin.y, WIN_EDGE, maxY), side: null, tail: 0 }
+		// the node on screen (nodes are about 208 x 56 until measured)
+		const { x: vx, y: vy, zoom } = viewport.current
+		const w = (active.measured?.width ?? 208) * zoom
+		const h = (active.measured?.height ?? 56) * zoom
+		const left = active.position.x * zoom + vx
+		const top = active.position.y * zoom + vy
+		const onRight = left + w + WIN_GAP + winW <= canvasW - WIN_EDGE
+		const x = clamp(onRight ? left + w + WIN_GAP : left - winW - WIN_GAP, WIN_EDGE, maxX)
+		const y = clamp(top - 8, WIN_EDGE, maxY)
+		// the notch points at the middle of the node, kept inside the window's rounded corners
+		return { x, y, side: onRight ? 'right' : 'left', tail: clamp(top + h / 2 - y, 22, winH - 22) }
+	})
+	function startWindowDrag(e: PointerEvent) {
+		if (e.button !== 0 || !win || (e.target as HTMLElement).closest('button')) return
+		const from = { x: win.x, y: win.y, px: e.clientX, py: e.clientY }
+		const move = (m: PointerEvent) => (pin = { x: from.x + m.clientX - from.px, y: from.y + m.clientY - from.py })
+		const stop = () => {
+			window.removeEventListener('pointermove', move)
+			window.removeEventListener('pointerup', stop)
+			window.removeEventListener('pointercancel', stop)
+		}
+		window.addEventListener('pointermove', move)
+		window.addEventListener('pointerup', stop)
+		window.addEventListener('pointercancel', stop)
+		e.preventDefault() // no text selection while dragging
+	}
+
 	function updateNode(id: string, patch: Partial<WorkflowNodeData>) {
-		nodes = nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
+		const next = nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n))
+		nodes = next
+		// fewer branches on a Splitter or Merger take their connection points away, and the lines that were on them
+		const changed = next.find((n) => n.id === id)?.data as WorkflowNodeData | undefined
+		if (changed && kindInfo(changed.kind).branching && patch.config) {
+			const kept = new Set(branchPoints(changed.kind, changed.config).map((p) => p.id))
+			const gone = (e: Edge) => (changed.kind === 'split' ? e.source === id && !kept.has(e.sourceHandle ?? '') : e.target === id && !kept.has(e.targetHandle ?? ''))
+			if (edges.some(gone)) edges = edges.filter((e) => !gone(e))
+		}
 	}
 	const deselectAll = () => (nodes = nodes.map((n) => ({ ...n, selected: false })))
 
@@ -239,8 +300,8 @@
 			at = { x: p.x - 104, y: p.y - 28 }
 		}
 		addNode(kind, freeSpot(at), saved)
-		// bring the whole graph into view; wait for the config panel to finish sliding in, which resizes the canvas
-		setTimeout(() => fitView({ maxZoom: 1, padding: 0.2, duration: 350 }), 240)
+		// bring the whole graph into view, once the new node has been measured
+		setTimeout(() => fitView({ maxZoom: 1, padding: 0.2, duration: 350 }), 60)
 	}
 
 	function onDrop(e: DragEvent) {
@@ -261,6 +322,18 @@
 	// a node cannot connect to itself; a Folder only joins an agent's folder point, and nothing else touches a Folder
 	const kindOf = (id: string) => (nodes.find((n) => n.id === id)?.data as WorkflowNodeData | undefined)?.kind
 	const isValidConnection = (c: Connection | Edge) => c.source !== c.target && canConnect(kindOf(c.source), kindOf(c.target), c.sourceHandle, c.targetHandle)
+
+	// A connection point holds one line, so what happens next is never a guess: to run two things after a step, add a
+	// Splitter; to wait for two, a Merger. A new line takes the place of the one that was there, as in most node editors.
+	// (A folder may feed several agents, and an agent take several folders: those lines are not steps.)
+	function beforeConnect(c: Connection) {
+		if (c.sourceHandle === MOUNT || c.targetHandle === MOUNT) return c
+		const same = (e: Edge) =>
+			e.sourceHandle !== MOUNT &&
+			((e.source === c.source && (e.sourceHandle ?? null) === (c.sourceHandle ?? null)) || (e.target === c.target && (e.targetHandle ?? null) === (c.targetHandle ?? null)))
+		if (edges.some(same)) edges = edges.filter((e) => !same(e))
+		return c
+	}
 
 	// a line that hands a folder over looks different from a step: dashed, teal, no arrow, not animated
 	const MOUNT_STYLE = 'stroke: #2dd4bf; stroke-width: 2; stroke-dasharray: 6 4'
@@ -377,20 +450,21 @@
 			{/if}
 		{/each}
 		{#if presetError}<p class="px-1.5 text-xs leading-snug text-destructive" role="alert">{presetError}</p>{/if}
-		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Star a node in its panel to keep it under its kind. Drag between the dots to connect. A Folder joins an agent at the teal squares. The Test run starts at every Start node.</p>
+		<p class="px-1.5 pt-1 text-xs leading-snug text-muted-foreground">Click or drag onto the canvas. Star a node in its window to keep it under its kind. Drag between the dots to connect. A Folder joins an agent at the teal squares. The Test run starts at every Start node.</p>
 		<div class="mt-auto flex flex-col gap-1.5">
 			<Button variant="outline" size="sm" class="h-7 text-xs" disabled={!hasSelection} onclick={deleteSelected}><Trash2Icon class="size-3.5" /> Delete selected</Button>
 			<Button variant="outline" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" disabled={nodes.length === 0} onclick={() => (clearOpen = true)}>Clear canvas</Button>
 		</div>
 	</aside>
 
-	<div class="min-w-0 flex-1" bind:this={wrapper} role="presentation" ondrop={onDrop} ondragover={onDragOver} onpointerdowncapture={settleKeys}>
+	<div class="relative min-w-0 flex-1" bind:this={wrapper} bind:clientWidth={canvasW} bind:clientHeight={canvasH} role="presentation" ondrop={onDrop} ondragover={onDragOver} onpointerdowncapture={settleKeys}>
 		<SvelteFlow
 			bind:nodes
 			bind:edges
 			{nodeTypes}
 			{edgeTypes}
 			{isValidConnection}
+			onbeforeconnect={beforeConnect}
 			colorMode="dark"
 			deleteKey={['Backspace', 'Delete']}
 			selectionKey="Shift"
@@ -418,24 +492,43 @@
 			<SelectionBox selected={selectedNodes} ondelete={deleteSelectedNodes} onclear={deselectAll} />
 			<MiniMap pannable zoomable class="workflow-minimap max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? '#888'} nodeStrokeWidth={0} />
 		</SvelteFlow>
+
+		{#if active && win}
+			<!-- not inside the flow, so a click or a key in it is not the canvas's -->
+			<section
+				aria-label="{kindInfo((active.data as WorkflowNodeData).kind).label} node settings"
+				transition:fade={{ duration: 120 }}
+				class="absolute z-10 flex max-h-[calc(100%-1.5rem)] flex-col rounded-xl border bg-card text-card-foreground shadow-float [--text-base:0.8125rem] [--text-sm:0.75rem] [--text-xs:0.6875rem]"
+				style:width="{winW}px"
+				style:left="{win.x}px"
+				style:top="{win.y}px"
+				bind:clientHeight={winH}
+			>
+				{#if win.side}
+					<!-- the notch that ties the window to its node -->
+					<span
+						class="pointer-events-none absolute size-3 -translate-y-1/2 rotate-45 bg-card {win.side === 'right' ? '-left-[7px] border-b border-l' : '-right-[7px] border-t border-r'}"
+						style:top="{win.tail}px"
+						aria-hidden="true"
+					></span>
+				{/if}
+				{#key active.id}
+					<NodeConfigPanel
+						{projectId}
+						id={active.id}
+						data={active.data as WorkflowNodeData}
+						attached={mountsFromGraph(nodes, edges, active.id)}
+						saved={!!activeSaved}
+						onsave={toggleSaved}
+						onchange={(patch) => updateNode(active.id, patch)}
+						onclose={deselectAll}
+						ondelete={() => deleteElements({ nodes: [{ id: active.id }] })}
+						onheaddown={startWindowDrag}
+					/>
+				{/key}
+			</section>
+		{/if}
 	</div>
-	{#if active}
-		<aside transition:slide={{ axis: 'x', duration: 220 }} class="h-[calc(100svh-7.5rem)] shrink-0 self-start overflow-hidden border-s bg-background">
-			{#key active.id}
-				<NodeConfigPanel
-					{projectId}
-					id={active.id}
-					data={active.data as WorkflowNodeData}
-					attached={mountsFromGraph(nodes, edges, active.id)}
-					saved={!!activeSaved}
-					onsave={toggleSaved}
-					onchange={(patch) => updateNode(active.id, patch)}
-					onclose={deselectAll}
-					ondelete={() => deleteElements({ nodes: [{ id: active.id }] })}
-				/>
-			{/key}
-		</aside>
-	{/if}
 </div>
 
 <AlertDialog.Root bind:open={clearOpen}>

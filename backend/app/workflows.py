@@ -1,6 +1,8 @@
 """Workflows: a graph of nodes drawn in the editor, and the engine that runs it.
 
-A run starts from every Start (or Trigger) node and follows the edges. Nodes run one at a time, in order:
+A run starts from every Start (or Trigger) node and follows the edges. Nodes run one at a time, in order, until a
+Splitter sends the run down several branches: those run side by side (each branch is a lane, see `_Lane`), and a Merger
+waits for all its branches before it carries on:
 
 - Start / Trigger: begin the run. A Trigger set to "a task moves into a status" starts a run by itself, whenever a task
   of the project moves into that status (see `WorkflowRunner._fire`). The run remembers that task.
@@ -8,6 +10,10 @@ A run starts from every Start (or Trigger) node and follows the edges. Nodes run
   and the node waits for it and takes over its log and result.
 - Agent: a task handed to a Codex agent, with the node's instructions (and the previous result) as its description.
 - Condition: checks the previous node's result or status and follows the `yes` or the `no` edges.
+- Splitter: sends the run down its branches, each with its own copy of the working folder. A branch can have a rule
+  (the result must contain some text; only some files go along).
+- Merger: waits until every branch has finished or can no longer arrive, then merges their results into one text and
+  their working folders into one, each branch in a folder named after it.
 - End: records how the run ended.
 
 A node that fails stops its branch (an Agent node can be told to carry on). Every node that did run gets a record
@@ -16,10 +22,14 @@ with its output and error; nodes that did not run get a record saying why.
 
 import asyncio
 import logging
+import os
+import re
+import shutil
 import time
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -29,6 +39,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import automation, boards, halt
 from .app_settings import load_settings
+from .cells import workdir_path
 from .harness import log_tail
 from .models import (
     Agent,
@@ -53,7 +64,23 @@ log = logging.getLogger("themis.workflows")
 
 MAX_NESTING = 5  # workflows playing tasks that play workflows...
 
-Kind = Literal["start", "trigger", "task", "agent", "condition", "end", "volume"]
+Kind = Literal["start", "trigger", "task", "agent", "condition", "end", "volume", "split", "merge"]
+
+MAX_BRANCHES = (
+    4  # the branch points of a Splitter (its outputs, "o1"...) and of a Merger (its inputs, "i1"...)
+)
+QUEUE_PATIENCE_SECONDS = 6 * 3600  # how long a node waits for a task that no cell has picked up yet
+
+
+def branch_count(config: dict[str, str]) -> int:
+    """How many branches a Splitter sends out or a Merger waits for: its "branches" setting, 2 to MAX_BRANCHES."""
+    raw = config.get("branches", "2")
+    return min(MAX_BRANCHES, max(2, int(raw))) if raw.isdigit() else 2
+
+
+def branch_name(config: dict[str, str], number: int) -> str:
+    return config.get(f"name{number}", "").strip() or f"Branch {number}"
+
 
 # A "mount" line joins a Folder (volume) node to an Agent node: it hands that folder to the agent. It is not a step, so
 # the run never follows it.
@@ -104,6 +131,10 @@ class Graph(BaseModel):
             if e.source not in known or e.target not in known:
                 raise ValueError("An edge points at a node that does not exist")
             source, target = known[e.source], known[e.target]
+            if source.kind == "split" and not re.fullmatch(rf"o[1-{MAX_BRANCHES}]", e.sourceHandle or ""):
+                raise ValueError("A line out of a Splitter must leave from one of its branch points")
+            if target.kind == "merge" and not re.fullmatch(rf"i[1-{MAX_BRANCHES}]", e.targetHandle or ""):
+                raise ValueError("A line into a Merger must arrive at one of its branch points")
             if e.sourceHandle == MOUNT:
                 if source.kind != "volume" or target.kind != "agent":
                     raise ValueError("A folder can only be handed to an Agent node")
@@ -163,6 +194,11 @@ class Prev:
     # The working folder (an attempt id, see Attempt.workdir_id) the run is in after that node. Steps that do not work
     # in a folder (a condition, an end) hand on the one they were given, so a later step can still continue in it.
     workdir_id: int | None = None
+    # The folder is shared with the sibling branches of a Splitter: a step that continues in it works on a copy of its
+    # own instead (see `_continue_in`), so parallel branches never write into the same files.
+    fork: bool = False
+    # The paths of that copy (a branch's file rule); empty means everything.
+    only: tuple[str, ...] = ()
 
 
 @dataclass
@@ -173,6 +209,197 @@ class Outcome:
     error: str = ""
     branch: str | None = None  # a Condition's answer, "yes" or "no"
     workdir_id: int | None = None  # the working folder the node's cell used, when it ran one
+    taken: frozenset[str] | None = None  # a Splitter's branch points that send something on ("o1"...)
+
+
+@dataclass
+class _Lane:
+    """A row of nodes that run one after another. The run starts in one lane; every branch a Splitter sends out is a lane
+    of its own, and lanes run at the same time. Nothing else runs in parallel, so a workflow with no Splitter runs
+    exactly one node at a time, in the order its lines lead."""
+
+    id: int
+    parent: int | None = None
+    queue: deque = field(default_factory=deque)  # of (node id, Prev | None, merge inputs | None)
+    busy: bool = False
+
+
+@dataclass
+class _Mark:
+    """What reached one line into a node: a result, or the news that nothing will come."""
+
+    state: str  # "delivered", "dead" (not taken, or its node can no longer run) or "failed"
+    prev: Prev | None = None
+    lane: int = 0
+    error: str = ""
+    source: str = ""  # the label of the node the line comes from
+
+
+@dataclass
+class _MergeIn:
+    """One branch arriving at a Merger."""
+
+    number: int  # which branch point of the Merger it came in at
+    name: str  # what the branch is called: the Merger's setting for that point, or the node that sent it
+    mark: _Mark
+
+
+def _slug(text: str, fallback: str) -> str:
+    """A name that is safe and easy to read as a folder name: "Research A" becomes "research-a"."""
+    slug = re.sub(r"[^a-z0-9._-]+", "-", text.casefold()).strip("-._")
+    return slug[:40] or fallback
+
+
+def _file_patterns(text: str) -> tuple[str, ...]:
+    """A Splitter's file rule ("src, docs/**, *.md") as patterns: a bare folder name means everything in it."""
+    out = []
+    for part in re.split(r"[,\n]", text):
+        part = part.strip().lstrip("./").strip("/")
+        if part:
+            out.append(part)
+    return tuple(out)
+
+
+def _copy_folder(source: Path, target: Path, only: tuple[str, ...] = ()) -> None:
+    """Copy a working folder (or the paths of it that match `only`) to a new place. Blocking: call it from a thread.
+    `.agents` is left out: it is only the mountpoint of the agent's skills."""
+    target.mkdir(parents=True, exist_ok=True)
+    patterns = [p + "/**" if not any(c in p for c in "*?[") and (source / p).is_dir() else p for p in only]
+    for base, dirs, files in os.walk(source):
+        rel_base = Path(base).relative_to(source)
+        dirs[:] = [d for d in dirs if not (rel_base == Path(".") and d == ".agents")]
+        if not patterns:
+            (target / rel_base).mkdir(parents=True, exist_ok=True)
+        for name in files:
+            rel = (rel_base / name).as_posix()
+            if patterns and not any(PurePosixPath(rel).full_match(p) for p in patterns):
+                continue
+            dest = target / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if (source / rel).is_symlink():
+                os.symlink(os.readlink(source / rel), dest)
+            else:
+                shutil.copy2(source / rel, dest)
+
+
+class _Walk:
+    """Where a run has got to: which lines carried a result into each node, which can carry nothing any more, and the
+    lanes the nodes run in. It only decides what runs next; `WorkflowRunner._run` runs it.
+
+    A node runs when a line carries a result into it; the first to arrive wins, and later ones are ignored (which is
+    also what stops a loop). A Merger is the exception: it waits until every line into it is settled. A line is settled
+    when its node finished (carrying a result, or failed), or when it is certain that node will never run: the
+    condition went the other way, or every line into that node is itself dead. That is what lets a Merger sit behind
+    the two sides of a Condition without waiting for the side that was never taken."""
+
+    def __init__(self, graph: Graph, starts: list[str] | None) -> None:
+        self.nodes = {n.id: n for n in graph.nodes}
+        self.edges = [e for e in graph.edges if e.sourceHandle != MOUNT]  # a folder handed over is not a step
+        self.into: dict[str, list[int]] = defaultdict(list)
+        self.out: dict[str, list[int]] = defaultdict(list)
+        for i, e in enumerate(self.edges):
+            self.into[e.target].append(i)
+            self.out[e.source].append(i)
+        self.lanes: dict[int, _Lane] = {0: _Lane(0)}
+        self._branch_lanes: dict[tuple[str, str], int] = {}
+        self.marks: dict[str, dict[int, _Mark]] = defaultdict(dict)
+        self.queued: set[str] = set()
+        self.dead: set[str] = set()
+        begin = [n.id for n in graph.start_nodes if starts is None or n.id in starts]
+        for node_id in begin:
+            self._queue(node_id, None, self.lanes[0])
+        for n in graph.nodes:  # nothing leads here, so nothing can: whatever waits on it must not wait
+            if n.kind != "volume" and n.id not in begin and (n.kind in START_KINDS or not self.into[n.id]):
+                self.kill(n.id)
+
+    def _queue(
+        self, node_id: str, prev: Prev | None, lane: _Lane, inputs: list[_MergeIn] | None = None
+    ) -> None:
+        if node_id not in self.queued:
+            self.queued.add(node_id)
+            lane.queue.append((node_id, prev, inputs))
+
+    def kill(self, node_id: str) -> None:
+        """This node will never run: the lines out of it are dead."""
+        if node_id in self.dead or node_id in self.queued:
+            return
+        self.dead.add(node_id)
+        for i in self.out[node_id]:
+            self.settle(i, _Mark("dead"))
+
+    def settle(self, index: int, mark: _Mark) -> None:
+        target = self.edges[index].target
+        if target in self.queued or target in self.dead:
+            return
+        marks = self.marks[target]
+        marks[index] = mark
+        if self.nodes[target].kind == "merge":
+            if len(marks) == len(self.into[target]):
+                self._merge_ready(target, marks)
+        elif mark.state == "delivered":
+            self._queue(target, mark.prev, self.lanes[mark.lane])
+        elif len(marks) == len(self.into[target]):
+            self.kill(target)  # every line in is settled and none of them carried anything
+
+    def _merge_ready(self, node_id: str, marks: dict[int, _Mark]) -> None:
+        arrived = [m for m in marks.values() if m.state != "dead"]
+        if not arrived:
+            return self.kill(node_id)
+        inputs = []
+        for i in self.into[node_id]:
+            if i not in marks or marks[i].state == "dead":
+                continue
+            number = int(self.edges[i].targetHandle[1:])  # "i2" -> 2 (the graph is validated)
+            config = self.nodes[node_id].config
+            named = config.get(f"name{number}", "").strip()
+            inputs.append(_MergeIn(number, named or marks[i].source or f"Branch {number}", marks[i]))
+        # it carries on where the branches came from: the lane the last of them ran in, one level up
+        last = next((m for m in reversed(list(marks.values())) if m.state == "delivered"), arrived[-1])
+        lane = self.lanes.get(last.lane, self.lanes[0])
+        if lane.parent is not None:
+            lane = self.lanes[lane.parent]
+        self._queue(node_id, None, lane, sorted(inputs, key=lambda m: m.number))
+
+    def finish(
+        self,
+        node: GraphNode,
+        outcome: Outcome,
+        prev: Prev | None,
+        lane: _Lane,
+        failed: bool,
+        start: int | None,
+    ) -> None:
+        """A node ended: hand its result along every line out of it that is taken, and settle the rest."""
+        label = node.label or node.kind
+        here = outcome.workdir_id or (prev.workdir_id if prev else start)
+        # a folder handed on as it was keeps what it carried (shared with sibling branches, cut down to some paths)
+        carried = outcome.workdir_id is None and prev is not None and prev.workdir_id == here
+        out = Prev(
+            label, outcome.status, outcome.result, here, carried and prev.fork, prev.only if carried else ()
+        )
+        for i in self.out[node.id]:
+            line = self.edges[i]
+            if failed:
+                self.settle(i, _Mark("failed", error=outcome.error, source=label))
+            elif node.kind == "condition" and (line.sourceHandle or "yes") != outcome.branch:
+                self.settle(i, _Mark("dead"))
+            elif node.kind == "split":
+                handle = line.sourceHandle or ""
+                if handle not in (outcome.taken or ()):
+                    self.settle(i, _Mark("dead"))
+                    continue
+                key = (node.id, handle)
+                if (
+                    key not in self._branch_lanes
+                ):  # each branch point is a lane of its own, running beside the others
+                    branch = _Lane(len(self.lanes), lane.id)
+                    self.lanes[branch.id] = branch
+                    self._branch_lanes[key] = branch.id
+                only = _file_patterns(node.config.get(f"files{handle[1:]}", ""))
+                shared = Prev(label, outcome.status, outcome.result, here, here is not None, only)
+                self.settle(i, _Mark("delivered", shared, self._branch_lanes[key], source=label))
+            else:
+                self.settle(i, _Mark("delivered", out, lane.id, source=label))
 
 
 def _covers(where: str, board: Board) -> bool:
@@ -514,23 +741,29 @@ class WorkflowRunner:
         task = self._live.get(run_id)
         if task is None:
             return False
-        async with self.maker() as s:  # stop the cell the current node is waiting for
-            node = (
+        attempt_ids: list[int] = []
+        async with (
+            self.maker() as s
+        ):  # stop the cells the running nodes are waiting for (branches run side by side)
+            nodes = (
                 await s.execute(
                     select(WorkflowNodeRun.task_id, WorkflowNodeRun.attempt_id).where(
                         WorkflowNodeRun.run_id == run_id, WorkflowNodeRun.status == NodeStatus.RUNNING
                     )
                 )
-            ).first()
-            attempt_id = node.attempt_id if node else None
-            if node and attempt_id is None and node.task_id:  # the engine has not noticed the attempt yet
-                attempt_id = await s.scalar(
-                    select(Attempt.id)
-                    .where(Attempt.task_id == node.task_id, Attempt.status == AttemptStatus.RUNNING)
-                    .order_by(Attempt.id.desc())
-                    .limit(1)
-                )
-        if attempt_id:
+            ).all()
+            for node in nodes:
+                attempt_id = node.attempt_id
+                if attempt_id is None and node.task_id:  # the engine has not noticed the attempt yet
+                    attempt_id = await s.scalar(
+                        select(Attempt.id)
+                        .where(Attempt.task_id == node.task_id, Attempt.status == AttemptStatus.RUNNING)
+                        .order_by(Attempt.id.desc())
+                        .limit(1)
+                    )
+                if attempt_id:
+                    attempt_ids.append(attempt_id)
+        for attempt_id in attempt_ids:
             await self._scheduler().cancel(attempt_id)  # type: ignore[attr-defined]
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -716,66 +949,79 @@ class WorkflowRunner:
     # the run
 
     async def _run(self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None) -> None:
-        nodes = {n.id: n for n in graph.nodes}
-        outgoing: dict[str, list[GraphEdge]] = {}
-        for e in graph.edges:
-            if e.sourceHandle != MOUNT:  # a folder handed to an agent is not a step to follow
-                outgoing.setdefault(e.source, []).append(e)
-        queue: deque[tuple[str, Prev | None]] = deque(
-            (n.id, None) for n in graph.start_nodes if starts is None or n.id in starts
-        )
+        walk = _Walk(graph, starts)
         done: dict[str, Outcome] = {}
         carried_on: set[str] = set()  # failed nodes the workflow continued after
+        running: dict[asyncio.Task, tuple[GraphNode, Prev | None, _Lane, int]] = {}
         seq = 0
         hard_fail, note = False, ""
         workdir = (
             ctx.workdir_id
         )  # where the run's last step worked: what the next stage of a task starts with
         try:
-            while queue:
-                node_id, prev = queue.popleft()
-                if node_id in done:
-                    continue
-                node = nodes[node_id]
-                seq += 1
-                outcome = await self._execute_node(ctx, node, seq, prev)
-                done[node_id] = outcome
-                workdir = outcome.workdir_id or workdir
-                if node.kind == "end":
-                    ended = node.config.get("outcome", "success")
-                    note = node.config.get("note", "").strip() or {
-                        "success": "Finished",
-                        "failed": "Ended as failed",
-                        "review": "Needs review",
-                    }.get(ended, ended)
-                    hard_fail = hard_fail or ended == "failed"
-                if outcome.status == NodeStatus.FAILED:
-                    if node.kind == "agent" and node.config.get("onFailure") == "continue":
-                        carried_on.add(node_id)
-                    else:
-                        hard_fail = True
-                        note = note or f"'{node.label or node.kind}' failed: {outcome.error}"
-                        continue
-                for e in outgoing.get(node_id, []):
-                    if node.kind == "condition" and (e.sourceHandle or "yes") != outcome.branch:
-                        continue
-                    here = outcome.workdir_id or (prev.workdir_id if prev else ctx.workdir_id)
-                    queue.append(
-                        (e.target, Prev(node.label or node.kind, outcome.status, outcome.result, here))
-                    )
-            await self._record_unreached(ctx, graph, done, carried_on, seq)
+            while True:
+                # every lane that is idle starts its next node; the lanes are what run at the same time
+                for lane in list(walk.lanes.values()):
+                    while not lane.busy and lane.queue:
+                        node_id, prev, inputs = lane.queue.popleft()
+                        if hard_fail and lane.parent is not None:
+                            # a branch failed: the other branches finish what they are doing and start nothing new
+                            lane.queue.clear()
+                            break
+                        seq += 1
+                        node = walk.nodes[node_id]
+                        task = asyncio.create_task(self._execute_node(ctx, node, seq, prev, inputs))
+                        running[task] = (node, prev, lane, seq)
+                        lane.busy = True
+                if not running:
+                    break
+                finished, _ = await asyncio.wait(list(running), return_when=asyncio.FIRST_COMPLETED)
+                for task in sorted(finished, key=lambda t: running[t][3]):
+                    node, prev, lane, _seq = running.pop(task)
+                    lane.busy = False
+                    outcome = task.result()
+                    done[node.id] = outcome
+                    workdir = outcome.workdir_id or workdir
+                    if node.kind == "end":
+                        ended = node.config.get("outcome", "success")
+                        note = node.config.get("note", "").strip() or {
+                            "success": "Finished",
+                            "failed": "Ended as failed",
+                            "review": "Needs review",
+                        }.get(ended, ended)
+                        hard_fail = hard_fail or ended == "failed"
+                    failed = False
+                    if outcome.status == NodeStatus.FAILED:
+                        if node.kind == "agent" and node.config.get("onFailure") == "continue":
+                            carried_on.add(node.id)
+                        else:
+                            failed = hard_fail = True
+                            note = note or f"'{node.label or node.kind}' failed: {outcome.error}"
+                    walk.finish(node, outcome, prev, lane, failed, ctx.workdir_id)
+            await self._record_unreached(ctx, graph, done, carried_on, seq, stopped=hard_fail)
             await self._finish(
                 ctx.run_id, RunStatus.FAILED if hard_fail else RunStatus.SUCCEEDED, note, workdir
             )
         except asyncio.CancelledError:
+            await self._stop_nodes(running)
             if not self._stopping:
                 await self._cancelled(ctx.run_id)
             raise
         except Exception as e:
+            await self._stop_nodes(running)
             log.exception("workflow run %s crashed", ctx.run_id)
             await self._finish(ctx.run_id, RunStatus.FAILED, f"Unexpected error: {e}", workdir)
 
-    async def _execute_node(self, ctx: _Ctx, node: GraphNode, seq: int, prev: Prev | None) -> Outcome:
+    @staticmethod
+    async def _stop_nodes(running: dict) -> None:
+        """The run ended early: stop the nodes still going. Each marks its own record as cancelled."""
+        for task in running:
+            task.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
+
+    async def _execute_node(
+        self, ctx: _Ctx, node: GraphNode, seq: int, prev: Prev | None, inputs: list[_MergeIn] | None = None
+    ) -> Outcome:
         label = node.label or node.kind.capitalize()
         async with self.maker() as s:
             row = WorkflowNodeRun(
@@ -785,7 +1031,7 @@ class WorkflowRunner:
             await s.commit()
             nr_id = row.id
         try:
-            outcome = await self._dispatch(ctx, nr_id, node, prev)
+            outcome = await self._dispatch(ctx, nr_id, node, prev, inputs)
         except NodeError as e:
             outcome = Outcome(NodeStatus.FAILED, error=str(e))
         except asyncio.CancelledError:
@@ -807,7 +1053,9 @@ class WorkflowRunner:
         await self._update_node(nr_id, **fields)
         return outcome
 
-    async def _dispatch(self, ctx: _Ctx, nr_id: int, node: GraphNode, prev: Prev | None) -> Outcome:
+    async def _dispatch(
+        self, ctx: _Ctx, nr_id: int, node: GraphNode, prev: Prev | None, inputs: list[_MergeIn] | None = None
+    ) -> Outcome:
         c = node.config
         if node.kind in START_KINDS:
             return Outcome(NodeStatus.SUCCEEDED, log="Run started.\n")
@@ -824,9 +1072,136 @@ class WorkflowRunner:
                 result="yes" if answer else "no",
                 branch="yes" if answer else "no",
             )
+        if node.kind == "split":
+            return self._split(node, prev)
+        if node.kind == "merge":
+            return await self._merge(ctx, node, inputs or [])
         if node.kind == "agent":
             return await self._agent(ctx, nr_id, node, prev)
         return await self._task(ctx, nr_id, node, prev)
+
+    # splitter, merger and the folders they hand on
+
+    @staticmethod
+    def _split(node: GraphNode, prev: Prev | None) -> Outcome:
+        """Sends the run down its branches. Every branch gets the result of the step before; a branch whose rule is
+        not met (the result must contain some text) is not sent anything, so a Splitter can also pick between ways."""
+        c = node.config
+        result = prev.result if prev else ""
+        taken: set[str] = set()
+        lines = []
+        for number in range(1, branch_count(c) + 1):
+            name, need, files = (
+                branch_name(c, number),
+                c.get(f"contains{number}", "").strip(),
+                c.get(f"files{number}", "").strip(),
+            )
+            if not need or need.casefold() in result.casefold():
+                taken.add(f"o{number}")
+                lines.append(f"{name}: sent" + (f", only {files}" if files else ""))
+            else:
+                lines.append(f"{name}: not sent, the result does not contain {need!r}")
+        if not taken:
+            lines.append("No branch was sent anything.")
+        return Outcome(
+            NodeStatus.SUCCEEDED, result=result, log="\n".join(lines) + "\n", taken=frozenset(taken)
+        )
+
+    async def _merge(self, ctx: _Ctx, node: GraphNode, inputs: list[_MergeIn]) -> Outcome:
+        """Waits for its branches (the run only gets here once every one is settled) and carries on with all of them:
+        their results in one text, and their working folders side by side, each in a folder named after its branch."""
+        c = node.config
+        good = [i for i in inputs if i.mark.state == "delivered"]
+        bad = [i for i in inputs if i.mark.state == "failed"]
+        if bad and (c.get("onFailure") != "continue" or not good):
+            names = ", ".join(f"'{i.mark.source}'" for i in bad)
+            raise NodeError(
+                f"{'Branch' if len(bad) == 1 else 'Branches'} {names} failed, so there is nothing to merge. "
+                f"{bad[0].mark.error}".strip()
+            )
+        taken: set[str] = set()
+        sections, folders, lines = [], [], []
+        for i in good:
+            prev = i.mark.prev
+            folder = ""
+            if prev and prev.workdir_id:
+                base = _slug(i.name, f"branch-{i.number}")
+                folder, n = base, 2
+                while folder in taken:
+                    folder, n = f"{base}-{n}", n + 1
+                taken.add(folder)
+                folders.append((i, folder))
+            text = (prev.result if prev else "").strip()
+            heading = f"## {i.name}" + (f" (files in {folder}/)" if folder else "")
+            sections.append(f"{heading}\n{text}".rstrip() if text else heading)
+            how = "failed, carried on" if prev and prev.status == NodeStatus.FAILED else "arrived"
+            lines.append(f"{i.name}: {how}" + (f", files in {folder}/" if folder else ""))
+        for i in bad:
+            lines.append(f"{i.name}: failed ({i.mark.error}), left out")
+        workdir_id = None
+        if folders:
+            summary = "Combined the work of " + ", ".join(f"{i.name} (in {f}/)" for i, f in folders) + "."
+            workdir_id = await self._folder_record(
+                ctx, f"{node.label or 'Merger'}: combined folder", summary, [f"{f}/" for _, f in folders]
+            )
+            target = workdir_path(ctx.project_id, workdir_id)
+            try:
+                for i, f in folders:
+                    source = workdir_path(ctx.project_id, i.mark.prev.workdir_id)
+                    if await asyncio.to_thread(source.is_dir):
+                        await asyncio.to_thread(_copy_folder, source, target / f, i.mark.prev.only)
+            except OSError as e:
+                raise NodeError(f"Could not combine the working folders: {e}") from None
+        return Outcome(
+            NodeStatus.SUCCEEDED,
+            result="\n\n".join(sections),
+            log="\n".join(lines) + "\n",
+            workdir_id=workdir_id,
+        )
+
+    async def _folder_record(self, ctx: _Ctx, title: str, result: str, added: list[str] | None = None) -> int:
+        """A working folder made by the workflow itself (a branch's copy, a merged folder) has to be named by an
+        attempt, like every other one: that is how the scheduler finds it, tells the next agent what is in it, and
+        removes it after the retention period. This makes the finished, hidden step that owns it."""
+        now = utcnow()
+        async with self.maker() as s:
+            board = await boards.default_board(s, ctx.project_id)
+            task = Task(
+                project_id=ctx.project_id, board_id=board.id, title=title[:200], status=TaskStatus.DONE,
+                internal=True, position=await boards.next_position(s, board.id, TaskStatus.DONE),
+            )  # fmt: skip
+            s.add(task)
+            await s.flush()
+            attempt = Attempt(
+                task_id=task.id, status=AttemptStatus.SUCCEEDED, started_at=now, finished_at=now, exit_code=0,
+                result=result, changes={"added": added or [], "changed": [], "removed": [], "more": 0},
+            )  # fmt: skip
+            s.add(attempt)
+            await s.flush()
+            attempt.workdir_id = attempt.id
+            await s.commit()
+            return attempt.id
+
+    async def _continue_in(self, ctx: _Ctx, node: GraphNode, prev: Prev | None) -> int | None:
+        """The working folder a step that asked to continue starts in: the one the step before left, or the run's own.
+        When that folder is shared with the sibling branches of a Splitter, the step gets a copy of its own (or just
+        the paths its branch was given), so parallel branches never write into the same files."""
+        source = prev.workdir_id if prev else ctx.workdir_id
+        if not source or prev is None or not prev.fork:
+            return source
+        folder = workdir_path(ctx.project_id, source)
+        if not await asyncio.to_thread(folder.is_dir):
+            return source  # gone: the scheduler tells the agent so, as for any folder that was removed
+        name = node.label or node.kind.capitalize()
+        note = f"A copy of the working folder as it was after '{prev.label}', made for the branch that leads to '{name}'."
+        if prev.only:
+            note += f" Only {', '.join(prev.only)} was copied."
+        copy = await self._folder_record(ctx, f"{name}: copy of the folder", note)
+        try:
+            await asyncio.to_thread(_copy_folder, folder, workdir_path(ctx.project_id, copy), prev.only)
+        except OSError as e:
+            raise NodeError(f"Could not copy the working folder for this branch: {e}") from None
+        return copy
 
     # task and agent nodes
 
@@ -849,7 +1224,7 @@ class WorkflowRunner:
         title = node.label or "Agent"
         # "Continue" works in the folder the step before left (or the one the run started in); with none yet, or by
         # default, the agent gets a fresh folder like any other run
-        workdir = (prev.workdir_id if prev else ctx.workdir_id) if c.get("workdir") == "inherit" else None
+        workdir = await self._continue_in(ctx, node, prev) if c.get("workdir") == "inherit" else None
         run_options = self._run_options(c, ctx.graph.mounts_for(node.id), workdir)
         async with self.maker() as s:
             agent = None
@@ -945,9 +1320,7 @@ class WorkflowRunner:
             step = await _Step.open(s, ctx, node)
             before = 0
             if action == "create":
-                workdir = (
-                    (prev.workdir_id if prev else ctx.workdir_id) if c.get("workdir") == "inherit" else None
-                )
+                workdir = await self._continue_in(ctx, node, prev) if c.get("workdir") == "inherit" else None
                 task = await self._create(s, step, c, title, target, link, workdir)
                 note = (
                     f'Created task "{title}" on {(await s.get_one(Board, task.board_id)).name} in {target}.'
@@ -1054,7 +1427,11 @@ class WorkflowRunner:
         self._scheduler().wake()  # type: ignore[attr-defined]
         async with self.maker() as s:
             cfg = await load_settings(s)
-        deadline = time.monotonic() + cfg.cell_timeout_seconds + 600
+        # Two clocks. A task that no cell has picked up is queued behind the others (several branches may want cells at
+        # once, and the resource budget lets them in turn), so it is waited for patiently. The time limit only starts
+        # once its attempt does, so a branch is never failed for waiting its turn.
+        queued_at = time.monotonic()
+        started_at: float | None = None
         shown: tuple[int, str] = (0, "")
         while True:
             await asyncio.sleep(self.POLL_SECONDS)
@@ -1067,6 +1444,7 @@ class WorkflowRunner:
                 )
                 task = await s.get(Task, task_id)
             if attempt is not None:
+                started_at = started_at or time.monotonic()
                 if (attempt.id, attempt.log) != shown:
                     shown = (attempt.id, attempt.log)
                     await self._update_node(
@@ -1091,7 +1469,10 @@ class WorkflowRunner:
                 raise NodeError("The task was deleted while the workflow was waiting for it.")
             elif task.status not in (TaskStatus.READY, TaskStatus.RUNNING):
                 raise NodeError(f"The task was moved to {task.status} before it could run.")
-            if time.monotonic() > deadline:
+            now = time.monotonic()
+            if started_at is None and now - queued_at > QUEUE_PATIENCE_SECONDS:
+                raise NodeError("Timed out waiting for a free cell to start the task.")
+            if started_at is not None and now - started_at > cfg.cell_timeout_seconds + 600:
                 raise NodeError("Timed out waiting for the task to run.")
 
     # records
@@ -1102,7 +1483,13 @@ class WorkflowRunner:
             await s.commit()
 
     async def _record_unreached(
-        self, ctx: _Ctx, graph: Graph, done: dict[str, Outcome], carried_on: set[str], seq: int
+        self,
+        ctx: _Ctx,
+        graph: Graph,
+        done: dict[str, Outcome],
+        carried_on: set[str],
+        seq: int,
+        stopped: bool = False,
     ) -> None:
         """A record for every node that never ran, saying why (so a missing checkmark is never a mystery)."""
         nodes = {n.id: n for n in graph.nodes}
@@ -1114,7 +1501,7 @@ class WorkflowRunner:
             rows.append(
                 WorkflowNodeRun(
                     run_id=ctx.run_id, node_id=n.id, kind=n.kind, label=n.label or n.kind.capitalize(), seq=seq,
-                    status=NodeStatus.SKIPPED, error=self._why_skipped(n, graph, nodes, done, carried_on),
+                    status=NodeStatus.SKIPPED, error=self._why_skipped(n, graph, nodes, done, carried_on, stopped),
                 )
             )  # fmt: skip
         if rows:
@@ -1129,6 +1516,7 @@ class WorkflowRunner:
         nodes: dict[str, GraphNode],
         done: dict[str, Outcome],
         carried_on: set[str],
+        stopped: bool = False,
     ) -> str:
         incoming = [e for e in graph.edges if e.target == node.id and e.sourceHandle != MOUNT]
         if not incoming:
@@ -1143,6 +1531,8 @@ class WorkflowRunner:
                 return f"Not run: '{name}' failed before this node."
             if src.kind == "condition" and (e.sourceHandle or "yes") != outcome.branch:
                 return f"Not run: the condition '{name}' answered {outcome.branch}, which leads elsewhere."
+        if stopped and any(e.source in done for e in incoming):
+            return "Not run: a branch failed, so the branches still going started nothing new."
         return "Not run: the run never reached a node that leads here."
 
     async def _finish(self, run_id: int, status: str, outcome: str, workdir_id: int | None = None) -> None:

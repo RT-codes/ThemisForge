@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { agentSteps, seedGraph, MOUNT, canConnect, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, isSavedNode, presetNodeData, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type Graph, type NodeKind } from './workflow.ts'
+import { agentSteps, seedGraph, MOUNT, branchCount, branchPoints, canConnect, crowdedLines, isMountEdge, mountsFromGraph, formatMounts, parseMounts, nextWorkflowName, NODE_FIELDS, NODE_KINDS, defaultConfig, fromGraph, kindInfo, nextNodeNumber, isSavedNode, presetNodeData, summary, toGraph, visibleFields, watchersByStatus, coversBoard, type Graph, type NodeKind } from './workflow.ts'
 
 test('every kind has fields, and every select has options', () => {
   for (const { kind } of NODE_KINDS) {
@@ -238,4 +238,57 @@ test('a node reads as saved only while it is exactly what was saved', () => {
   assert.ok(!isSavedNode(saved, { ...same, label: 'Ship 2' }))
   assert.ok(!isSavedNode(saved, { ...same, config: { ...same.config, title: 'Other' } }))
   assert.ok(!isSavedNode(saved, { ...same, kind: 'agent' }))
+})
+
+test('a Splitter sends out at its branch points and a Merger takes in at its own, and nothing else may', () => {
+  assert.ok(canConnect('start', 'split'))
+  assert.ok(canConnect('split', 'task', 'o2'))
+  assert.ok(canConnect('task', 'merge', null, 'i1'))
+  assert.ok(canConnect('merge', 'end'))
+  assert.ok(!canConnect('split', 'task')) // a Splitter line has to leave from a branch point
+  assert.ok(!canConnect('task', 'merge')) // and a Merger line has to arrive at one
+  assert.ok(!canConnect('task', 'end', 'o1')) // no other node has them
+  assert.ok(!canConnect('task', 'task', null, 'i1'))
+  assert.ok(!canConnect('split', 'volume', 'o1'))
+})
+
+test('branch points follow the number of branches and the names the person gave', () => {
+  assert.equal(branchCount({}), 2)
+  assert.equal(branchCount({ branches: '3' }), 3)
+  assert.equal(branchCount({ branches: '9' }), 4) // there are no more than four
+  assert.equal(branchCount({ branches: 'x' }), 2)
+  assert.deepEqual(branchPoints('split', { branches: '3', name2: ' Docs ' }), [
+    { id: 'o1', label: 'Branch 1' },
+    { id: 'o2', label: 'Docs' },
+    { id: 'o3', label: 'Branch 3' },
+  ])
+  assert.deepEqual(branchPoints('merge', { branches: '2' }), [
+    { id: 'i1', label: '1' },
+    { id: 'i2', label: '2' },
+  ])
+  assert.deepEqual(branchPoints('agent', {}), []) // nothing to spread on other nodes
+})
+
+test('a Splitter and a Merger only show the settings of the branches they have', () => {
+  const keys = (kind: NodeKind, c: Record<string, string>) => visibleFields(kind, c).map((f) => f.key)
+  assert.deepEqual(keys('split', { branches: '2' }), ['branches', 'name1', 'contains1', 'files1', 'name2', 'contains2', 'files2'])
+  assert.ok(keys('split', { branches: '4' }).includes('files4'))
+  assert.deepEqual(keys('merge', { branches: '3' }), ['branches', 'name1', 'name2', 'name3', 'onFailure'])
+  assert.equal(summary('split', { branches: '3' }), '3 branches at the same time')
+  assert.equal(summary('merge', { branches: '2' }), 'Waits for 2 branches')
+})
+
+test('lines that share a connection point are the ones the editor warns about', () => {
+  const line = (id: string, source: string, target: string, sourceHandle: string | null = null, targetHandle: string | null = null) => ({ id, source, target, sourceHandle, targetHandle })
+  const crowded = crowdedLines([
+    line('a', 'x', 'y'),
+    line('b', 'x', 'z'), // two lines out of the same point of x
+    line('c', 'y', 'm', null, 'i1'),
+    line('d', 'z', 'm', null, 'i2'), // different points of a Merger: fine
+    line('e', 'c1', 'p', 'yes'),
+    line('f', 'c1', 'q', 'no'), // a Condition's two answers: fine
+    line('g', 'f1', 'ag', MOUNT, MOUNT),
+    line('h', 'f1', 'ag2', MOUNT, MOUNT), // a folder may feed several agents
+  ])
+  assert.deepEqual([...crowded].sort(), ['a', 'b'])
 })

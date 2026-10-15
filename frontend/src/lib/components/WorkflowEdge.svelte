@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { BaseEdge, EdgeToolbar, getBezierPath, getSmoothStepPath, useSvelteFlow, type EdgeProps } from '@xyflow/svelte'
-	import { EDGE_CURVES, type EdgeCurve } from '$lib/workflow'
+	import { CROWDED_LINES, EDGE_CURVES, type EdgeCurve } from '$lib/workflow'
 	import { GLOW_MS, RUN_VIEW, type RunView } from '$lib/workflowRun.svelte'
 	import { getContext } from 'svelte'
 
@@ -11,6 +11,10 @@
 	let { id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, style, interactionWidth, selected, data }: EdgeProps = $props()
 
 	const run = getContext<RunView | undefined>(RUN_VIEW)
+	// A line that shares its connection point with another (the editor no longer allows it, old workflows have them) runs
+	// after the other, one at a time. It is drawn in amber so a Splitter or Merger can be put there instead.
+	const crowded = getContext<{ has: (id: string) => boolean } | undefined>(CROWDED_LINES)
+	const warn = $derived(crowded?.has(id) ?? false)
 	const { updateEdge } = useSvelteFlow()
 	const curve = $derived<EdgeCurve>(data?.curve === 'angular' ? 'angular' : 'organic')
 	// a smooth-step path with no corner radius is the "step" line: only horizontal and vertical pieces, sharp corners
@@ -25,7 +29,12 @@
 	const dur = `${GLOW_MS}ms`
 </script>
 
-<BaseEdge {id} {path} {markerEnd} {style} {interactionWidth} class={walked ? 'run-walked' : ''} />
+<g>
+	<BaseEdge {id} {path} {markerEnd} style={warn ? `${style ?? ''}; stroke: #f59e0b` : style} {interactionWidth} class={walked ? 'run-walked' : ''} />
+	{#if warn}
+		<title>Several lines share this connection point, so they run one after another. Put a Splitter after it to run them side by side, or a Merger before it to wait for all of them.</title>
+	{/if}
+</g>
 
 {#if selected}
 	<EdgeToolbar x={labelX} y={labelY} isVisible>

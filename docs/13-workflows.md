@@ -248,8 +248,10 @@ Nodes that failed unfold on their own. Nodes the run never reached are listed un
 reason: a failed node before it, the other side of a condition, or no line leading to it.
 
 Node results open as formatted Markdown, with clickable web links and **Copy** buttons on code blocks. Switch to
-**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Selecting
-another run opens its results in Rendered view.
+**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Use **Enlarge result**
+for a wide reading window with more room for reports, tables and code. You can switch views there too; closing the window
+keeps your chosen view. Press **Esc** or the close button to return to the node. Selecting another run opens its results
+in Rendered view.
 
 A run that is still going can be cancelled; this also stops the container its current task is running in.
 

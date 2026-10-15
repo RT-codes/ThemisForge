@@ -281,6 +281,16 @@ _CODEX_TRANSIENT = (
 )
 
 
+# What Codex says when its copy of the login is one whose refresh token another run already used up (or that was
+# revoked). Which of the two it is only the stored login can tell: see Scheduler._execute.
+_CODEX_LOGIN_REJECTED = (
+    "refresh token was already used",
+    "refresh token has already been used",
+    "refresh_token_reused",
+    "log out and sign in again",
+)
+
+
 class CodexRenderer:
     """Turns `codex exec --json` events into a readable log, line by line. Unknown events are kept, shortened."""
 
@@ -295,6 +305,12 @@ class CodexRenderer:
         """The error that ended this run when it is one worth starting the run again for, else ''."""
         lowered = self.error.lower()
         return self.error if any(marker in lowered for marker in _CODEX_TRANSIENT) else ""
+
+    @property
+    def login_rejected(self) -> bool:
+        """The run ended because Codex's login was refused: nothing the agent did, and not worth a plain retry."""
+        lowered = self.error.lower()
+        return any(marker in lowered for marker in _CODEX_LOGIN_REJECTED)
 
     def feed(self, text: str) -> str:
         self._buf += text

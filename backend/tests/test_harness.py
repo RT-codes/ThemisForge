@@ -14,7 +14,8 @@ from app.models import Attempt, AttemptStatus, utcnow
 from tests.conftest import drain, make_project, make_task, register
 
 
-def fake_auth(refresh: str = "R1", account: str = "acct-1") -> str:
+def fake_auth(refresh: str = "R1", account: str = "acct-1", age: timedelta = timedelta(0)) -> str:
+    """A login refreshed `age` ago (negative: that long from now), so tests do not depend on today's date."""
     return json.dumps(
         {
             "auth_mode": "chatgpt",
@@ -25,7 +26,7 @@ def fake_auth(refresh: str = "R1", account: str = "acct-1") -> str:
                 "refresh_token": refresh,
                 "account_id": account,
             },
-            "last_refresh": "2026-10-05T12:00:00Z",
+            "last_refresh": (utcnow() - age).isoformat(),
         }
     )
 

@@ -152,6 +152,9 @@ class AppSettings(BaseModel):
     codex_image: str = "themisforge/cell-codex:latest"  # built with ./themis build-images
     codex_model: str = "gpt-6-luna"
     codex_reasoning_effort: Literal["low", "medium", "high"] = "high"
+    # How many Codex runs of one person may use their ChatGPT login at once (parallel workflow branches, several
+    # tasks). Every run draws on the same plan's usage limits, so this is also how fast a plan gets used up.
+    codex_max_parallel: int = Field(default=3, ge=1, le=16)
     cell_package: CellPackage = CellPackage()  # what Themis adds to every Codex cell, see app/cell_package.py
     # The client id of the GitHub OAuth App (device flow switched on) that "Sign in with GitHub" uses. It is public by
     # design, and empty until an administrator adds it: only the token way of connecting works until then.

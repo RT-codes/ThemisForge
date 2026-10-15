@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -39,6 +40,6 @@ else:
             "refresh_token": "REFRESH-TOKEN-SECRET",
             "account_id": "acct-1",
         },
-        "last_refresh": "2026-10-05T12:00:00Z",
+        "last_refresh": datetime.now(UTC).isoformat(),
     }
     Path(os.environ["CODEX_HOME"], "auth.json").write_text(json.dumps(auth))

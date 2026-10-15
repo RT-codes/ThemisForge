@@ -35,8 +35,8 @@ Every user connects their own Codex. Nobody else, administrators included, can s
   signs in with a Codex CLI installed on the server instead, found through `THEMIS_CODEX_BIN`.)
 - When a task needs it, the login is streamed into the cell's memory (a tmpfs under `/run/themis-secrets`), never an
   environment variable, command line argument, host file or log line. It disappears with the cell.
-- Runs for one user take turns using the login, because Codex rotates refresh tokens and two cells refreshing at once
-  could invalidate each other.
+- Runs for one user share the login side by side (up to the limit in **Settings, Codex agents**), except for the moment
+  it may be refreshed: see [Runs at the same time](#runs-at-the-same-time).
 
 > [!NOTE]
 > Whatever runs inside a cell can read the login while the cell is alive. Only connect Codex if you trust the
@@ -71,5 +71,23 @@ skills and agents cannot change it), and an administrator can read it, edit it o
 package**, without rebuilding the image. If you use your own image, edit it to match what your image has. The browser makes
 the default image about 700 MB larger on disk.
 
-Runs of the same user take turns: Codex rotates its refresh tokens, so two cells refreshing the same login at once
-could lock each other out. A second run waits and says so in its log.
+### Runs at the same time
+
+Parallel workflow branches and several ready tasks can use the same Codex login at once, up to **Runs at the same time**
+in **Settings, Codex agents** (3 by default; 1 makes runs take turns). Extra runs wait and say so in their log.
+
+Each cell gets its own copy of the login, and Codex **rotates its refresh tokens**: the first copy to refresh makes every
+other copy of the old login unusable. Codex only refreshes a login that is about 8 days old, or one that is rejected, so
+Themis keeps the refreshing apart rather than the running:
+
+- While the login is fresh enough that a run cannot make Codex refresh it, runs share it.
+- A run that might (the login is close to 8 days old, or its access token would end before the run's time limit) waits
+  for the others to finish and has the login alone. The runs after it share the refreshed login again.
+- A refreshed login is only stored when it is newer than the stored one, so a long run that began earlier can not put an
+  old login back.
+- If a run is refused because another run already refreshed the login, it starts again once with the newer login. If
+  nothing newer exists the login is dead and the run fails with "connect Codex again".
+
+> [!NOTE]
+> All parallel runs draw on the same ChatGPT plan, so its usage limit is reached faster. Themis only ever shares a login
+> between the runs of the person who connected it.

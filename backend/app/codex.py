@@ -22,7 +22,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -110,46 +110,178 @@ async def save_auth(
 
 # ----- using the login (cells) -----
 
-_locks: dict[int, asyncio.Lock] = {}
+# Codex refreshes its login when `last_refresh` is about 8 days old and when a request is rejected (OpenAI's CI/CD auth
+# guide). Refresh tokens rotate: the first copy to refresh invalidates every other copy of the old login, which then
+# fails with "refresh token already used" until someone signs in again. Every cell gets its own copy, so what has to
+# be kept apart is the refreshing, not the running (the way the Codex CLI and pi share one file and lock the refresh).
+CODEX_REFRESH_AFTER = timedelta(days=8)
+REFRESH_SLACK = timedelta(
+    minutes=5
+)  # on top of the run's own time limit, for clock differences and slow starts
+
+
+def _token_expiry(token: object) -> datetime | None:
+    """When an access token (a JWT) says it ends. Only the unverified, non-secret claims are read."""
+    try:
+        payload = str(token).split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return datetime.fromtimestamp(float(claims["exp"]), UTC)
+    except (IndexError, KeyError, TypeError, ValueError, OverflowError):
+        return None
+
+
+def _refreshed_at(auth: dict) -> datetime | None:
+    when = _parse_time(auth.get("last_refresh"))
+    return when if when is None or when.tzinfo else when.replace(tzinfo=UTC)
+
+
+def login_needs_refresh(auth: dict, run_seconds: int, now: datetime | None = None) -> bool:
+    """Whether a run of up to `run_seconds` might make Codex refresh this login. Unknown counts as yes: the only
+    cost of a false yes is that this run takes its turn alone, which is how every run used to go."""
+    horizon = (now or utcnow()) + timedelta(seconds=run_seconds) + REFRESH_SLACK
+    last = _refreshed_at(auth)
+    if last is None or last + CODEX_REFRESH_AFTER <= horizon:
+        return True
+    expires = _token_expiry(auth["tokens"].get("access_token"))
+    return expires is not None and expires <= horizon
+
+
+class _Gate:
+    """Who is using one user's login right now. Runs share it side by side, a run that may refresh it is alone with
+    it. Plain counters, no awaits between checking and claiming, so the single event loop makes them atomic."""
+
+    def __init__(self) -> None:
+        self.sharing = 0  # runs using the login in parallel
+        self.alone = False  # a run that may refresh it has it to itself
+        self.refreshers_waiting = 0  # these hold back new sharers, or a refresh would starve behind them
+        self._waiters: set[asyncio.Future[None]] = set()
+
+    def busy_for(self, max_parallel: int) -> bool:
+        return self.alone or self.refreshers_waiting > 0 or self.sharing >= max_parallel
+
+    async def wait(self) -> None:
+        future = asyncio.get_running_loop().create_future()
+        self._waiters.add(future)
+        try:
+            await future
+        finally:
+            self._waiters.discard(future)
+
+    def wake(self) -> None:
+        for future in self._waiters:
+            if not future.done():
+                future.set_result(None)
+
+
+_gates: dict[int, _Gate] = {}
+
+
+def _newer(candidate: dict, stored: dict) -> bool:
+    """Whether `candidate` is a later refresh than `stored`: the write-back of a run that began before another run
+    refreshed would otherwise put back a login whose refresh token is already used up."""
+    a, b = _refreshed_at(candidate), _refreshed_at(stored)
+    return a is not None and (b is None or a > b)
 
 
 class CodexLease:
-    """The decrypted login, held exclusively. Write the refreshed login back with save_back()."""
+    """The decrypted login, as one run holds it. Write the refreshed login back with save_back()."""
 
     def __init__(self, maker: async_sessionmaker[AsyncSession], user_id: int, auth_json: str) -> None:
         self._maker = maker
         self._user_id = user_id
         self.auth_json = auth_json
 
-    async def save_back(self, text: str) -> None:
-        """Store a refreshed login. It must belong to the same ChatGPT account: a cell is not trusted to swap it."""
+    async def save_back(self, text: str) -> bool:
+        """Store a refreshed login if it is newer than the stored one, and say whether it was. It must belong to
+        the same ChatGPT account (a cell is not trusted to swap it). When another run refreshed first, this lease
+        takes over that newer login instead, so a retry starts from a login that still works."""
         old = parse_auth(self.auth_json)["tokens"].get("account_id")
-        new = parse_auth(text)["tokens"].get("account_id")
-        if old and old != new:
+        new = parse_auth(text)
+        if old and old != new["tokens"].get("account_id"):
             raise CodexError("The refreshed login belongs to a different account, so it was not stored")
         async with self._maker() as session:
+            conn = await get_connection(session, self._user_id)
+            stored = decrypt(conn.auth_encrypted) if conn else None
+            if stored is not None and not _newer(new, parse_auth(stored)):
+                await self.adopt_newer()
+                return False
             await save_auth(session, self._user_id, text)
         self.auth_json = text
+        return True
+
+    async def adopt_newer(self) -> bool:
+        """Take over the stored login when another run refreshed it after this lease took it. Whether it did."""
+        try:
+            stored = await _stored_login(self._maker, self._user_id)
+        except CodexError:
+            return False
+        if not _newer(parse_auth(stored), parse_auth(self.auth_json)):
+            return False
+        self.auth_json = stored
+        return True
 
 
-def lease_is_busy(user_id: int) -> bool:
-    lock = _locks.get(user_id)
-    return lock is not None and lock.locked()
+def lease_is_busy(user_id: int, max_parallel: int = 1) -> bool:
+    gate = _gates.get(user_id)
+    return gate is not None and gate.busy_for(max_parallel)
+
+
+async def _stored_login(maker: async_sessionmaker[AsyncSession], user_id: int) -> str:
+    async with maker() as session:
+        conn = await get_connection(session, user_id)
+        text = decrypt(conn.auth_encrypted) if conn else None
+    if text is None:
+        raise CodexError(
+            "Codex is not connected for the project owner (or needs reconnecting). Connect it in Settings."
+        )
+    return text
 
 
 @asynccontextmanager
-async def lease_codex(maker: async_sessionmaker[AsyncSession], user_id: int) -> AsyncIterator[CodexLease]:
-    """Exclusive use of one user's login. Codex rotates refresh tokens, so two cells refreshing the same
-    login at once could invalidate each other: runs for one user take turns."""
-    async with _locks.setdefault(user_id, asyncio.Lock()):
-        async with maker() as session:
-            conn = await get_connection(session, user_id)
-            text = decrypt(conn.auth_encrypted) if conn else None
-        if text is None:
-            raise CodexError(
-                "Codex is not connected for the project owner (or needs reconnecting). Connect it in Settings."
-            )
+async def lease_codex(
+    maker: async_sessionmaker[AsyncSession], user_id: int, *, max_parallel: int = 1, run_seconds: int = 3600
+) -> AsyncIterator[CodexLease]:
+    """Use one user's login for a run of at most `run_seconds`.
+
+    While the login is fresh enough that Codex will not refresh it, up to `max_parallel` runs hold it at once. A
+    run that may trigger a refresh waits for the others to finish and has the login alone; the runs after it
+    find the refreshed login in the database and share again. With `max_parallel=1` runs simply take turns."""
+    gate = _gates.setdefault(user_id, _Gate())
+    refresher = alone = False  # whether this run is waiting for / holds the login by itself
+    try:
+        while True:
+            text = await _stored_login(maker, user_id)
+            needs_refresh = login_needs_refresh(parse_auth(text), run_seconds)
+            # the login may have been refreshed by someone else while this run waited
+            if refresher != needs_refresh:
+                gate.refreshers_waiting += 1 if needs_refresh else -1
+                refresher = needs_refresh
+                if not needs_refresh:
+                    gate.wake()  # runs held back by this one as a refresher can look again
+            if needs_refresh and gate.sharing == 0 and not gate.alone:
+                gate.alone = alone = True
+                break
+            if (
+                not needs_refresh
+                and not gate.alone
+                and not gate.refreshers_waiting
+                and gate.sharing < max_parallel
+            ):
+                gate.sharing += 1
+                break
+            await gate.wait()
+    finally:
+        if refresher:
+            gate.refreshers_waiting -= 1
+            gate.wake()  # sharers held back by this run may go ahead
+    try:
         yield CodexLease(maker, user_id, text)
+    finally:
+        if alone:
+            gate.alone = False
+        else:
+            gate.sharing -= 1
+        gate.wake()
 
 
 # ----- signing in -----

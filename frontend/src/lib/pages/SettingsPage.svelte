@@ -191,7 +191,7 @@
 			? `Rules ${form.cell_package.rules_enabled ? 'on' : 'off'} · skill ${form.cell_package.skill_enabled ? 'on' : 'off'} · ${form.cell_package.retry_waits.length} retr${form.cell_package.retry_waits.length === 1 ? 'y' : 'ies'}`
 			: ''
 	)
-	const agentSummary = $derived(form ? `${form.codex_model} · ${form.codex_reasoning_effort} effort` : '')
+	const agentSummary = $derived(form ? `${form.codex_model} · ${form.codex_reasoning_effort} effort · ${form.codex_max_parallel} at once` : '')
 	const keySummary = $derived(`${secrets.length} ${secrets.length === 1 ? 'key' : 'keys'}`)
 
 	function discard() {
@@ -534,6 +534,14 @@
 										{#each ['low', 'medium', 'high'] as e (e)}<Select.Item value={e} label={e} class="capitalize">{e}</Select.Item>{/each}
 									</Select.Content>
 								</Select.Root>
+							</div>
+							<div class="grid gap-2">
+								<Label for="codex-parallel">Runs at the same time</Label>
+								<NumberField id="codex-parallel" bind:value={form.codex_max_parallel} unit="runs" min={1} max={16} />
+								<p class="text-xs text-muted-foreground">
+									Codex runs of one person that may use their ChatGPT login together (parallel workflow branches, several tasks). They all
+									draw on the same plan's usage limits, so more runs use it up faster. 1 makes them take turns.
+								</p>
 							</div>
 						</div>
 					</SettingsSection>

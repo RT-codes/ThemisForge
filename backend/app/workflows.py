@@ -30,7 +30,7 @@ from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import event, func, inspect, select, update
@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import automation, boards, halt
 from .app_settings import load_settings
 from .cells import workdir_path
-from .harness import log_tail
+from .harness import Effort, clean_model_name, log_tail
 from .models import (
     Agent,
     Attempt,
@@ -1286,8 +1286,9 @@ class WorkflowRunner:
 
     @staticmethod
     def _run_options(c: dict, attached: list[dict] | None = None, workdir: int | None = None) -> dict | None:
-        """The cell size and shared folders set on an Agent node, for this run only. Node settings are plain text:
-        the cell fields are separate keys, the folders one string like "3:rw,5:ro" (volume id and mode). Folders handed
+        """The model, cell size and shared folders set on an Agent node, for this run only. Node settings are plain
+        text: the model and effort are `model` and `reasoningEffort` (empty: the agent's own, or Settings), the cell
+        fields are separate keys, the folders one string like "3:rw,5:ro" (volume id and mode). Folders handed
         over by lines from Folder nodes (`attached`) come first; one named in the node's own list wins for that folder.
         `workdir` is the earlier attempt whose working folder this step continues in (see Attempt.workdir_id)."""
         try:
@@ -1299,13 +1300,17 @@ class WorkflowRunner:
             }
             asked = {name: c[key].strip() for key, name in fields.items() if c.get(key, "").strip()}
             profile = ProfileOverrides.model_validate(asked).clean() if asked else None
+            model = clean_model_name(c.get("model", ""))
+            effort = c.get("reasoningEffort", "").strip()
+            if effort and effort not in get_args(Effort):
+                raise ValueError(effort)
             mounts = [MountRef.model_validate(m).model_dump() for m in attached or []]
             for part in filter(None, (p.strip() for p in c.get("mounts", "").split(","))):
                 volume_id, _, mode = part.partition(":")
                 mounts.append(MountRef(volume_id=int(volume_id), mode=mode or "rw").model_dump())
         except (ValidationError, ValueError):
-            raise NodeError("The cell or folder settings of this agent node are not valid") from None
-        extras = {"profile": profile, "mounts": mounts, "workdir": workdir}
+            raise NodeError("The model, cell or folder settings of this agent node are not valid") from None
+        extras = {"profile": profile, "mounts": mounts, "workdir": workdir, "model": model, "effort": effort}
         return {k: v for k, v in extras.items() if v} or None
 
     async def _task(self, ctx: _Ctx, nr_id: int, node: GraphNode, prev: Prev | None = None) -> Outcome:

@@ -1,5 +1,6 @@
 """Agents of a project: a name, a role, instructions, a harness and the cell and folders they run with."""
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Literal
 
@@ -13,7 +14,7 @@ from .. import skills as skill_store
 from ..app_settings import load_settings
 from ..connections import providers
 from ..deps import CurrentUser, SessionDep
-from ..harness import CATALOG, clean_model_name
+from ..harness import CATALOG, Effort, clean_model_name
 from ..models import Agent, McpServer, Project, Secret, Task, TaskStatus, Volume
 from ..profiles import ProfileOverrides
 from ..toolcheck import image_for, missing_commands
@@ -30,7 +31,7 @@ class AgentIn(BaseModel):
     instructions: str = Field(default="", max_length=20_000)
     harness: Literal["codex"] = "codex"
     model: str = Field(default="", max_length=100)  # empty: the model in Settings
-    reasoning_effort: Literal["", "low", "medium", "high"] = ""  # empty: the effort in Settings
+    reasoning_effort: Effort | Literal[""] = ""  # empty: the effort in Settings
     cell_profile: ProfileOverrides | None = None
     mounts: list[MountRef] = Field(default_factory=list, max_length=50)
     skills: list[str] = Field(default_factory=list, max_length=50)  # skill names, see app/skills.py
@@ -67,7 +68,7 @@ class AgentPatch(BaseModel):
     instructions: str | None = Field(default=None, max_length=20_000)
     harness: Literal["codex"] | None = None
     model: str | None = Field(default=None, max_length=100)
-    reasoning_effort: Literal["", "low", "medium", "high"] | None = None
+    reasoning_effort: Effort | Literal[""] | None = None
     cell_profile: ProfileOverrides | None = None  # sent as null: back to the project's cell
     mounts: list[MountRef] | None = Field(default=None, max_length=50)
     skills: list[str] | None = Field(default=None, max_length=50)
@@ -116,6 +117,13 @@ class CheckOut(BaseModel):
     warnings: list[str]
 
 
+class ModelOut(BaseModel):
+    id: str
+    label: str
+    efforts: list[str]
+    default_effort: str
+
+
 class HarnessOut(BaseModel):
     id: str
     label: str
@@ -123,6 +131,10 @@ class HarnessOut(BaseModel):
     supports_skills: bool
     supports_mcp: bool
     supports_keys: bool
+    models: list[ModelOut]
+    # what an empty model and an empty effort mean (the ones in Settings), so the editors can name them
+    default_model: str
+    default_effort: str
 
 
 async def _agent(session, agent_id: int, user) -> Agent:
@@ -209,8 +221,16 @@ async def check_agent_tools(
 
 
 @router.get("/harnesses", response_model=list[HarnessOut])
-async def list_harnesses(_: CurrentUser) -> list[HarnessOut]:
-    return [HarnessOut(**vars(h)) for h in CATALOG]
+async def list_harnesses(session: SessionDep, _: CurrentUser) -> list[HarnessOut]:
+    cfg = await load_settings(session)
+    return [
+        HarnessOut(
+            **asdict(h),
+            default_model=cfg.codex_model if h.id == "codex" else "",
+            default_effort=cfg.codex_reasoning_effort if h.id == "codex" else "",
+        )
+        for h in CATALOG
+    ]
 
 
 @router.get("/projects/{project_id}/agents", response_model=list[AgentOut])

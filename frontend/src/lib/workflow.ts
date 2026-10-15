@@ -90,6 +90,9 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue works in the folder of the step before this one (or of the stage before this workflow), and is told what that step changed. Without anything before it, the agent gets a fresh folder.' },
     // the Advanced tab: most steps should simply stop the workflow
     { key: 'onFailure', label: 'If it fails', type: 'select', advanced: true, options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on']) },
+    // the model and effort are drawn as one picker whose efforts follow the model (see ModelPicker.svelte); empty means the agent's own
+    { key: 'model', label: 'Model', type: 'text', advanced: true },
+    { key: 'reasoningEffort', label: 'Reasoning effort', type: 'text', advanced: true },
     { key: 'cellCpus', label: 'CPUs', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellMemory', label: 'Memory (MB)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellTimeout', label: 'Time limit (seconds)', type: 'text', advanced: true, placeholder: 'From the agent or project' },

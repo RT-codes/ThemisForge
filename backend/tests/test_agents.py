@@ -38,7 +38,7 @@ async def test_names_are_unique_per_project_and_checked(client):
         {"name": "x", "harness": "pi"},
         {"name": "x", "model": "a b"},
         {"name": "x", "model": "-m"},
-        {"name": "x", "reasoning_effort": "max"},
+        {"name": "x", "reasoning_effort": "extreme"},
     ):
         assert (await client.post(f"/api/projects/{p1}/agents", json=bad)).status_code == 422, bad
 
@@ -166,6 +166,50 @@ async def test_an_agent_runs_with_its_own_words_model_cell_and_folders(client, s
     assert prompt.startswith("You are Archivist, files the reports.\n\nAlways name files by date.")
     assert "/workspace/docs (read only)" in prompt and "/workspace/shared (read and write)" in prompt
     assert "File today's report." in prompt
+
+
+async def test_the_harness_list_offers_models_with_the_efforts_each_accepts(client):
+    await register(client)
+    codex = next(h for h in (await client.get("/api/harnesses")).json() if h["id"] == "codex")
+    models = {m["id"]: m for m in codex["models"]}
+    assert codex["default_model"] in models and codex["default_effort"] == "high"
+    assert "ultra" in models["gpt-6-sol"]["efforts"] and "ultra" not in models["gpt-6-luna"]["efforts"]
+    assert models["gpt-6-luna"]["default_effort"] in models["gpt-6-luna"]["efforts"]
+
+
+async def test_a_workflow_step_overrides_the_model_and_effort_of_its_agent(client, runner, cells, maker):
+    me, pid = await setup(client)
+    await connect(maker, me["id"])
+    agent = await make_agent(client, pid, model="gpt-6-sol", reasoning_effort="ultra")
+    aid = str(agent["id"])
+    detail = await run(
+        client, pid,
+        [node("s", "start"),
+         node("a", "agent", "Own", agentId=aid, instructions="x"),
+         node("b", "agent", "Model", agentId=aid, instructions="x", model="gpt-5.6-terra"),
+         node("c", "agent", "Both", agentId=aid, instructions="x", model="gpt-6-luna", reasoningEffort="low"),
+         node("d", "agent", "Plain", harness="codex", instructions="x", reasoningEffort="max"),
+         node("e", "end")],
+        [edge("s", "a"), edge("a", "b"), edge("b", "c"), edge("c", "d"), edge("d", "e")],
+    )  # fmt: skip
+    assert detail["status"] == "succeeded", detail
+    script = {s.title: s.script for s in cells.specs}
+    assert "-m gpt-6-sol" in script["Own"] and "model_reasoning_effort=ultra" in script["Own"]
+    assert "-m gpt-5.6-terra" in script["Model"] and "model_reasoning_effort=ultra" in script["Model"]
+    assert "-m gpt-6-luna" in script["Both"] and "model_reasoning_effort=low" in script["Both"]
+    # no agent: the model of Settings with the step's own effort
+    assert "-m gpt-6-luna" in script["Plain"] and "model_reasoning_effort=max" in script["Plain"]
+
+
+async def test_a_step_with_a_model_that_cannot_run_is_refused(client, runner, cells):
+    _, pid = await setup(client)
+    for options in ({"model": "a b"}, {"reasoningEffort": "extreme"}):
+        detail = await run(
+            client, pid,
+            [node("s", "start"), node("a", "agent", harness="codex", instructions="x", **options)],
+            [edge("s", "a")],
+        )  # fmt: skip
+        assert "not valid" in by_id(detail)["a"]["error"] and not cells.specs
 
 
 async def test_without_an_agent_the_prompt_and_model_are_what_they_were(client, scheduler, cells, maker):

@@ -1,8 +1,10 @@
 import BotIcon from '@lucide/svelte/icons/bot'
+import BrainIcon from '@lucide/svelte/icons/brain'
 import CircleDotIcon from '@lucide/svelte/icons/circle-dot'
 import ClipboardListIcon from '@lucide/svelte/icons/clipboard-list'
 import ClockIcon from '@lucide/svelte/icons/clock'
 import ContainerIcon from '@lucide/svelte/icons/container'
+import CpuIcon from '@lucide/svelte/icons/cpu'
 import FlagIcon from '@lucide/svelte/icons/flag'
 import FolderIcon from '@lucide/svelte/icons/folder'
 import FolderInputIcon from '@lucide/svelte/icons/folder-input'
@@ -59,6 +61,8 @@ export const fieldIcons: Record<string, typeof ZapIcon> = {
   instructions: NotepadTextIcon,
   brief: ClipboardListIcon,
   onFailure: TriangleAlertIcon,
+  model: CpuIcon,
+  reasoningEffort: BrainIcon,
   mounts: FoldersIcon,
   cell: ContainerIcon,
   handedOver: FolderInputIcon,

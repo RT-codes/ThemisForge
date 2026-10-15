@@ -453,14 +453,15 @@ class Scheduler:
                 f"A key of this agent is called {min(clash)}, which a connection of the agent already provides. "
                 "Rename the key."
             )
+        extra = task.run_options or {}
+        # a workflow step may override the agent's model and effort for its own run (see Workflows._run_options)
         hp = plan_for(
             harness,
             cfg,
-            model=agent.model if agent else "",
-            effort=agent.reasoning_effort if agent else "",
+            model=extra.get("model") or (agent.model if agent else ""),
+            effort=extra.get("effort") or (agent.reasoning_effort if agent else ""),
             key_envs=sorted(secret_envs | set(keys.values())),
         )
-        extra = task.run_options or {}
         profile = resolve_profile(
             cfg,
             hp.image if hp else cfg.cell_image,

@@ -65,6 +65,15 @@ def test_codex_uses_luna_with_high_effort_by_default():
     assert "-m gpt-6-sol" in custom.script and "model_reasoning_effort=low" in custom.script
 
 
+def test_an_effort_the_model_does_not_accept_falls_back_to_the_models_own():
+    cfg = AppSettings(codex_model="gpt-6-luna", codex_reasoning_effort="high")
+    # luna has no "ultra"; its own default is medium
+    assert "model_reasoning_effort=medium" in plan_for("codex", cfg, effort="ultra").script
+    assert "model_reasoning_effort=ultra" in plan_for("codex", cfg, model="gpt-6-sol", effort="ultra").script
+    # a model that is not in the list is trusted with whatever was asked
+    assert "model_reasoning_effort=ultra" in plan_for("codex", cfg, model="gpt-9-new", effort="ultra").script
+
+
 def test_model_name_cannot_inject_shell():
     import pytest
     from pydantic import ValidationError

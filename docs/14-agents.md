@@ -25,7 +25,7 @@ to the Overview, and leaving with unsaved changes asks first.
 | **Role** | One line on what it is responsible for, shown in lists so it is clear what each agent is for. |
 | **Description** | For people: a longer note on what the agent does. The agent never sees it. |
 | **Harness** | The program that runs inside the cell. Codex today (see [Connecting Codex](/docs/codex)). |
-| **Model** and **reasoning effort** | Empty means the ones in **Settings, Codex agents**. |
+| **Model** and **reasoning effort** | Pick them from the lists. Empty means the ones in **Settings, Codex agents**. The efforts offered depend on the model. A [workflow step](/docs/workflows) can override both for one run. |
 | **Instructions** | For the agent: always put in front of whatever task it is given. How to work, what to produce, what to avoid. |
 | **Cell** | The size of its container. **Automatic** by default (the project's cell, which uses the defaults in Settings); press **Customise** only if this agent needs something different. |
 | **Folders** | The [shared folders](/docs/cells#shared-folders) mounted in its work folder, and whether it may write to them. |

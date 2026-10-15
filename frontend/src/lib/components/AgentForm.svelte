@@ -2,6 +2,7 @@
 	import { api, ApiError, type Agent, type AgentInput, type CellDefaults, type HarnessInfo, type KeyInfo, type McpServer, type Project, type Skill } from '$lib/api'
 	import { auth } from '$lib/auth.svelte'
 	import CellChoice from '$lib/components/CellChoice.svelte'
+	import ModelPicker from '$lib/components/ModelPicker.svelte'
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
 	import SkillPicker from '$lib/components/SkillPicker.svelte'
 	import ToolPicker from '$lib/components/ToolPicker.svelte'
@@ -116,12 +117,6 @@
 	const inherited = $derived(defaults ? effectiveCell(defaults, project?.cell_profile) : null)
 	const harness = $derived(harnesses.find((h) => h.id === draft.harness))
 	const isAdmin = $derived(!!auth.user?.is_admin)
-	const efforts = [
-		{ value: '', label: 'Default from Settings' },
-		{ value: 'low', label: 'Low' },
-		{ value: 'medium', label: 'Medium' },
-		{ value: 'high', label: 'High' },
-	]
 
 	$effect(() => {
 		counts = { skills: draft.skills.length, tools: draft.mcp_servers.length, hasSkills: !!harness?.supports_skills, hasTools: !!harness?.supports_mcp }
@@ -241,19 +236,19 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-				<div class="grid gap-1.5">
-					<Label for="agent-model">Model</Label>
-					<Input id="agent-model" bind:value={draft.model} maxlength={100} class="font-mono" placeholder="Default from Settings" />
-				</div>
-				<div class="grid gap-1.5">
-					<Label for="agent-effort">Reasoning effort</Label>
-					<Select.Root type="single" bind:value={draft.reasoning_effort}>
-						<Select.Trigger id="agent-effort" class="w-full">{efforts.find((e) => e.value === draft.reasoning_effort)?.label}</Select.Trigger>
-						<Select.Content>
-							{#each efforts as e (e.value)}<Select.Item value={e.value} label={e.label}>{e.label}</Select.Item>{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+				<ModelPicker
+					models={harness?.models ?? []}
+					model={draft.model}
+					effort={draft.reasoning_effort}
+					onchange={(model, effort) => {
+						draft.model = model
+						draft.reasoning_effort = effort as AgentInput['reasoning_effort']
+					}}
+					inheritedModel={harness?.default_model ?? ''}
+					inheritedEffort={harness?.default_effort ?? ''}
+					inheritLabel="Default from Settings"
+					prefix="agent"
+				/>
 			</div>
 			{#if harness}<p class="-mt-2 text-xs text-muted-foreground">{harness.description}</p>{/if}
 			<div class="grid gap-1.5">

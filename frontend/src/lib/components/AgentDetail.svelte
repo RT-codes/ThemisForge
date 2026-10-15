@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button/index.js'
 	import AgentConnections from '$lib/components/AgentConnections.svelte'
 	import { describeCell, effectiveCell } from '$lib/cell'
+	import { effortLabel, modelLabel } from '$lib/models'
 	import { relative } from '$lib/format'
 	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
 	import { cn } from '$lib/utils'
@@ -41,7 +42,6 @@
 	} = $props()
 
 	const harness = $derived(harnesses.find((h) => h.id === agent.harness))
-	const efforts = { '': 'Default effort', low: 'Low effort', medium: 'Medium effort', high: 'High effort' } as const
 	const mySkills = $derived(agent.skills.map((name) => ({ name, skill: skills.find((s) => s.name === name) })))
 	const myServers = $derived(agent.mcp_servers.map((id) => servers.find((s) => s.id === id)).filter((s): s is McpServer => !!s))
 	const myKeys = $derived(agent.secrets.map((id) => keys.find((k) => k.id === id)).filter((k): k is KeyInfo => !!k))
@@ -62,8 +62,8 @@
 				<p class="text-sm text-muted-foreground">{agent.role || 'No role yet'}</p>
 				<div class="mt-2 flex flex-wrap gap-1.5 text-xs">
 					<span class="rounded-md bg-muted px-1.5 py-0.5">{harness?.label ?? agent.harness}</span>
-					<span class="rounded-md bg-muted px-1.5 py-0.5 font-mono">{agent.model || 'Default model'}</span>
-					<span class="rounded-md bg-muted px-1.5 py-0.5">{efforts[agent.reasoning_effort]}</span>
+					<span class="rounded-md bg-muted px-1.5 py-0.5">{agent.model ? modelLabel(harness?.models ?? [], agent.model) : 'Default model'}</span>
+					<span class="rounded-md bg-muted px-1.5 py-0.5">{agent.reasoning_effort ? `${effortLabel(agent.reasoning_effort)} effort` : 'Default effort'}</span>
 				</div>
 			</div>
 			<div class="flex shrink-0 items-center gap-2">

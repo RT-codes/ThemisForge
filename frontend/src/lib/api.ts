@@ -1,3 +1,4 @@
+import type { ModelInfo } from './models'
 import type { Graph, NodeKind } from './workflow'
 export interface User {
   id: number
@@ -266,7 +267,7 @@ export interface Agent {
   instructions: string
   harness: string
   model: string
-  reasoning_effort: '' | 'low' | 'medium' | 'high'
+  reasoning_effort: '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   cell_profile: ProfileOverrides | null
   mounts: MountRef[]
   skills: string[]
@@ -429,6 +430,9 @@ export interface HarnessInfo {
   supports_skills: boolean
   supports_mcp: boolean
   supports_keys: boolean
+  models: ModelInfo[] // what the Model dropdown offers; empty when the harness has no model to choose
+  default_model: string // what an empty model means: the one in Settings
+  default_effort: string
 }
 
 /** the numbers signing in to tool servers depends on (backend/app/app_settings.py McpAuthPolicy) */

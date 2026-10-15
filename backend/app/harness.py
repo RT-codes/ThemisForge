@@ -13,12 +13,26 @@ import re
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from .app_settings import AppSettings
 from .cells import SECRETS_DIR
 from .keys import ENV_NAME, key_path
 
 HARNESSES = ("", "codex")  # "" = the placeholder program
+
+# Every reasoning effort a Codex model can have, weakest first. A model supports some of them (CodexModel.efforts).
+Effort = Literal["low", "medium", "high", "xhigh", "max", "ultra"]
+
+
+@dataclass(frozen=True)
+class ModelInfo:
+    """A model the editors offer in a dropdown, with the reasoning efforts it accepts."""
+
+    id: str
+    label: str
+    efforts: tuple[str, ...]
+    default_effort: str  # what Codex itself uses when no effort is asked for
 
 
 @dataclass(frozen=True)
@@ -31,6 +45,31 @@ class HarnessInfo:
     supports_skills: bool = False
     supports_mcp: bool = False
     supports_keys: bool = False
+    models: tuple[ModelInfo, ...] = ()  # empty: the harness has no model to choose
+
+
+_BASE = ("low", "medium", "high", "xhigh", "max")
+
+# The models Codex lists for a ChatGPT login (the `models` of ~/.codex/models_cache.json, hidden ones left out), newest
+# first. A model that is not here still works when typed into an agent file or Settings; the editors keep showing it.
+# Keep this in step with the Codex CLI when it gets new models.
+CODEX_MODELS = (
+    ModelInfo("gpt-6.1-sol", "GPT-6.1 Sol", (*_BASE, "ultra"), "low"),
+    ModelInfo("gpt-6-astra", "GPT-6 Astra", (*_BASE, "ultra"), "low"),
+    ModelInfo("gpt-6-sol", "GPT-6 Sol", (*_BASE, "ultra"), "medium"),
+    ModelInfo("gpt-6-luna", "GPT-6 Luna", _BASE, "medium"),
+    ModelInfo("gpt-5.6-sol", "GPT-5.6 Sol", (*_BASE, "ultra"), "low"),
+    ModelInfo("gpt-5.6-terra", "GPT-5.6 Terra", (*_BASE, "ultra"), "medium"),
+    ModelInfo("gpt-5.6-luna", "GPT-5.6 Luna", _BASE, "medium"),
+)
+
+
+def effort_for(model: str, effort: str) -> str:
+    """The effort a run really gets. The model, the effort or both can come from different layers (a workflow step
+    overriding the model of an agent that asks for `ultra`), so an effort the model does not accept falls back to the
+    model's own default instead of failing the run. A model that is not in the list is trusted as it is."""
+    known = next((m for m in CODEX_MODELS if m.id == model), None)
+    return known.default_effort if known and effort not in known.efforts else effort
 
 
 CATALOG = (
@@ -41,6 +80,7 @@ CATALOG = (
         supports_skills=True,
         supports_mcp=True,
         supports_keys=True,
+        models=CODEX_MODELS,
     ),
 )
 
@@ -92,9 +132,10 @@ def plan_for(
     """None means the placeholder program, which needs nothing special. An agent may choose its own model and
     reasoning effort (empty means the ones in Settings) and be given keys, available as these variables."""
     if harness == "codex":
+        model = model or cfg.codex_model
         return HarnessPlan(
             image=cfg.codex_image,
-            script=codex_script(model or cfg.codex_model, effort or cfg.codex_reasoning_effort, key_envs),
+            script=codex_script(model, effort_for(model, effort or cfg.codex_reasoning_effort), key_envs),
             writeback=(CODEX_AUTH,),
             uses_codex=True,
         )

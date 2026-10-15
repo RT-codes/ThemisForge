@@ -76,7 +76,10 @@ Pick an **agent** and write the **instructions** for this step. The agent's own 
 and what you write here is the task it is given. With **No agent** the node runs a plain Codex agent, as before.
 
 The window of an Agent node has two tabs. **Settings** holds the name, the agent and what it should do. **Advanced** holds
-**If it fails** (stop the whole workflow, the default, or carry on to the next step) and **Cell and folders**: a step can
+**If it fails** (stop the whole workflow, the default, or carry on to the next step), **Model** and **Cell and folders**.
+**Model** picks another model and reasoning effort for this one step; left on the default, the step uses the agent's own
+(or the ones in Settings when no agent is chosen). The efforts offered follow the model. If the agent asks for an effort the
+step's model does not have, the model's own default effort is used instead. A step can
 change the cell size or mount extra [shared folders](/docs/cells#shared-folders) (or join Folder nodes to it, see below) for
 this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press
 **Customise**. A dot on the Advanced tab tells you something in there is not at its default. Nodes with nothing advanced

@@ -53,8 +53,18 @@ then fails with that reason, whatever the exit code.
 | `projects` | Name, description and the custom property definitions. Owned by one user. |
 | `workspaces` and `boards` | A project holds workspaces, a workspace holds boards. Organisation only: tasks, the scheduler and cells stay project wide. Not the `/workspace` folder inside a cell. |
 | `tasks` | Title, description, board, status, position, property values, schedule and next run time, and the task it was spawned from. |
-| `attempts` | One row per execution: status, times, exit code, log and result. |
+| `board_statuses` | The statuses a board added to the seven built-in ones: name, colour, icon and what it is for. |
+| `task_stages` | The workflows a task plays, in order. A stage's progress is the run it started in the task's latest attempt. |
+| `attempts` | One row per execution: status, times, exit code, log and result, and why it failed when it did. |
+| `project_events` | A project's history: one line for each thing done to it. Kept when the thing itself is gone. |
+| `agents` | A project's agents: role, instructions, model, cell settings and the folders, tools and services each may use. The agent's file in the project's config folder is the source of truth; the row keeps its identity and a parsed copy. |
+| `mcp_servers` and `mcp_logins` | A project's tool servers (MCP), written into the Codex config of each run, and a user's sign ins to the tool servers that ask for one (encrypted). |
+| `workflows` | A project's workflow library: the nodes and lines of each flowchart. |
+| `workflow_runs` and `workflow_node_runs` | One execution of a workflow, with the graph as it was when it began, and what happened at each node: when, how it ended, its log, result and error. |
+| `node_presets` | The configured nodes a project keeps in the workflow editor's palette ("saved nodes"). |
+| `volumes` | The managed and host folders agents can be given, with the most a cell may do in each. The project's config folder is one of them, and is never mountable. |
 | `secrets` | Named credentials, encrypted. |
+| `codex_connections` | A user's Codex login (their ChatGPT plan), encrypted, which cells of that user share. |
 | `connections` and `project_connections` | A user's sign ins to outside services (encrypted), and the one a project uses per service. An agent's opt-in is a list of services on the agent. |
 | `app_settings` | The operator settings edited on the Settings page. |
 | `access_requests` and `invites` | The invite only access flow. Only a hash of each invite token is stored. |

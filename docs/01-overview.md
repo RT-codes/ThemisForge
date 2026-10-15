@@ -29,6 +29,8 @@ Nothing here depends on you being logged in. Close the browser and the schedule 
 | **Workspace** | A named area of a project, such as research or publishing. It holds one or more boards. A new project has one, called Main. |
 | **Board** | A Kanban with its own statuses. A workspace can hold several; every task lives on one board. |
 | **Task** | A durable piece of work with a status, an optional schedule and your own custom properties. |
+| **Agent** | A configured worker of a project: a role, instructions, a model and the skills, tools, keys and folders it may use. See [Agents](/docs/agents). |
+| **Workflow** | A flowchart of steps (tasks, agents, conditions, branches) that a task can play. See [Workflows](/docs/workflows). |
 | **Attempt** | One execution of a task. A recurring task has many attempts, each with its own log and result. |
 | **Cell** | The short-lived container an attempt runs in. Created per attempt, removed afterwards. |
 
@@ -47,11 +49,15 @@ See [Projects and tasks](/docs/tasks) and [Scheduling](/docs/scheduling).
 
 ## What works today, and what is next
 
-Themis currently runs a **placeholder program** inside each cell: it reads the task, prints it, and writes a
-result file. That is deliberate. The whole pipeline (projects, boards, schedules, cells, logs, results, access
-control, installation) is in place, and agent harnesses plug into exactly that spot.
+A task can be done by an **agent**: a role and instructions, run by **Codex** inside the cell, in a private working
+folder, with the skills, tools and keys you gave it. Tasks can be chained into **workflows** (a flowchart where one
+agent's result feeds the next step), and agents hand files to each other through shared folders. See
+[Agents](/docs/agents), [Workflows](/docs/workflows) and [Codex](/docs/codex).
 
-Skills, tools and keys for agents are the next steps. See the [roadmap](/docs/roadmap).
+A task with no agent runs a small **placeholder program** instead: it reads the task, prints it, and writes a result
+file. It needs nothing installed, which makes it a quick way to try the board, the schedule and the cells.
+
+More agent engines (Claude and OpenRouter) are next. See the [roadmap](/docs/roadmap).
 
 > [!TIP]
 > New here? Go to [Getting started](/docs/getting-started). It takes about five minutes.

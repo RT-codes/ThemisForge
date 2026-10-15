@@ -31,11 +31,25 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Cell profiles**: the cell size layered from Settings, to the project, to the agent, to a single workflow step.
 - **Invite only** access with requests, invite links and an administrator.
 - **Update notice**: administrators are told when a newer release exists, with a daily check that can be switched off.
+- **Workspaces and boards**: a project holds workspaces, a workspace holds boards, and each board has statuses of its own.
+  Tasks move between boards, and a task can make linked follow-ups.
+- **Task stages**: a task plays an ordered list of workflows, with working folders carried from one stage to the next.
+- **Connected automation**: workflows start from a status change, and move and make tasks across boards, with a guard
+  against loops. **Halt** stops all work of a project or a board at once.
+- **Branches**: a Splitter and a Merger run workflow branches side by side, and Codex runs of one user share their login
+  in parallel.
+- **A sturdier workflow editor**: a vertical flow, line styles, snapping and saved nodes.
+- **Project history and Needs attention**: what was done at every level, and what waits for a person, with results
+  readable in an enlarged view.
+- **Tools from the MCP registry**, including hosted tools you sign in to, and a Themis cell package of skills for
+  agents, with Chromium and the GitHub CLI in the Codex image.
+- **Model and reasoning effort** chosen from lists, per agent and per workflow step.
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next
 
-1. **Tasks from agents, webhooks and workflows**, using the same task path as everything else.
+1. **Tasks from agents and webhooks**, using the same task path as everything else. Workflows can already make and move
+   tasks.
 2. **Notifications and email.** Tell the administrator about new access requests, and tell people when work needs
    review or fails. Email the invite link.
 3. **Live updates** instead of polling.

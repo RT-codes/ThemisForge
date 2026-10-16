@@ -28,6 +28,7 @@ from .routers import (
     system,
     tools,
     volumes,
+    webhooks,
     workflows,
     workspaces,
 )
@@ -128,6 +129,8 @@ api.include_router(agents.router)
 api.include_router(skills.router)
 api.include_router(tools.router)
 api.include_router(mcp_auth.router)
+api.include_router(webhooks.router)
+api.include_router(webhooks.receiver)
 
 
 @api.get("/health")

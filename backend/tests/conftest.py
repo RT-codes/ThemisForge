@@ -143,3 +143,11 @@ async def make_task(client: AsyncClient, project_id: int, **body) -> dict:
     r = await client.post(f"/api/projects/{project_id}/tasks", json=body)
     assert r.status_code == 201, r.text
     return r.json()
+
+
+@pytest.fixture(autouse=True)
+def fresh_webhook_limits():
+    """The per-minute count of messages is kept in memory; every test starts a new minute."""
+    from app import webhooks
+
+    webhooks._hits.clear()

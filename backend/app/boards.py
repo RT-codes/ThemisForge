@@ -15,10 +15,10 @@ The routers and the workflow runner go through here instead of querying boards t
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Board, BoardStatus, ProjectEvent, Task, TaskStatus, Workspace
+from .models import Board, BoardStatus, ProjectEvent, Task, TaskStatus, Webhook, Workspace
 
 DEFAULT_WORKSPACE_NAME = "Main"
 DEFAULT_BOARD_NAME = "Tasks"
@@ -485,6 +485,10 @@ async def remove_status(
         task.position = await next_position(session, board.id, destination)
         await session.flush()
     board.columns = [k for k in board.columns if k != key]
+    # a webhook that put its tasks there now puts them where this status's tasks went
+    await session.execute(
+        update(Webhook).where(Webhook.board_id == board.id, Webhook.status == key).values(status=destination)
+    )
     _record_status(session, "status_removed", board, status.name, actor, moved=len(tasks), to=destination)
     await session.delete(status)
     return len(tasks)

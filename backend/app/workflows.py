@@ -1455,13 +1455,16 @@ class WorkflowRunner:
         while True:
             await asyncio.sleep(self.POLL_SECONDS)
             async with self.maker() as s:
+                # The task first, then its attempt: the scheduler writes the attempt no later than the status it
+                # leaves the task in, so a task seen as finished always has its attempt to be found. The other way
+                # round, a task could fail between the two reads and be reported as moved, without its reason.
+                task = await s.get(Task, task_id)
                 attempt = await s.scalar(
                     select(Attempt)
                     .where(Attempt.task_id == task_id, Attempt.id > before)
                     .order_by(Attempt.id.desc())
                     .limit(1)
                 )
-                task = await s.get(Task, task_id)
             if attempt is not None:
                 started_at = started_at or time.monotonic()
                 if (attempt.id, attempt.log) != shown:

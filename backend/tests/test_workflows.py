@@ -1,9 +1,22 @@
 import asyncio
 
 from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.codex import save_auth
-from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
+from app.models import (
+    Attempt,
+    AttemptStatus,
+    NodeStatus,
+    RunStatus,
+    Task,
+    TaskStatus,
+    Workflow,
+    WorkflowNodeRun,
+    WorkflowRun,
+    utcnow,
+)
+from app.workflows import WorkflowRunner
 from tests.conftest import login, make_project, make_task, register
 from tests.test_harness import fake_auth
 
@@ -193,6 +206,65 @@ async def test_cancelling_a_run_records_its_waiting_nodes_as_cancelled_not_faile
     r = await client.post(f"/api/workflow-runs/{run_id}/cancel")
     assert r.status_code == 200 and r.json()["status"] == RunStatus.CANCELLED
     assert by_id(r.json())["t"]["status"] == NodeStatus.CANCELLED
+
+
+async def test_a_task_that_fails_between_two_reads_of_the_wait_still_reports_its_reason(
+    client, scheduler, maker, monkeypatch
+):
+    """The scheduler fails a task (its attempt and its status together) at the moment the waiting node is between its
+    two reads. The node must report the attempt's reason, not that the task "was moved to failed"."""
+    _, pid = await setup(client)
+    task_id = (await make_task(client, pid, status="backlog"))["id"]
+    runner = WorkflowRunner(
+        maker, lambda: scheduler
+    )  # no pump: nothing but the wait itself may read these rows
+    fired = False
+
+    async def scheduler_fails_it() -> None:
+        async with maker() as s:
+            s.add(
+                Attempt(
+                    task_id=task_id,
+                    status=AttemptStatus.FAILED,
+                    finished_at=utcnow(),
+                    failure={
+                        "source": "themis",
+                        "reason": "Folder 3 no longer exists.",
+                        "action": "",
+                        "tail": "",
+                    },
+                )
+            )
+            (await s.get_one(Task, task_id)).status = TaskStatus.FAILED
+            await s.commit()
+
+    async def after_first_read() -> None:
+        nonlocal fired
+        if not fired:
+            fired = True
+            await scheduler_fails_it()
+
+    real_scalar, real_get = AsyncSession.scalar, AsyncSession.get
+
+    async def scalar(self, statement, *args, **kwargs):
+        result = await real_scalar(self, statement, *args, **kwargs)
+        if "FROM attempts" in str(statement):
+            await after_first_read()
+        return result
+
+    async def get(self, entity, *args, **kwargs):
+        result = await real_get(self, entity, *args, **kwargs)
+        if entity is Task:
+            await after_first_read()
+        return result
+
+    monkeypatch.setattr(AsyncSession, "scalar", scalar)
+    monkeypatch.setattr(AsyncSession, "get", get)
+    try:
+        outcome = await asyncio.wait_for(runner._wait_for_task(0, task_id, 0), 10)
+    finally:
+        await runner.shutdown()
+    assert outcome.status == NodeStatus.FAILED and outcome.error == "Folder 3 no longer exists."
 
 
 async def test_a_run_cut_off_while_its_node_creates_a_task_still_ends_cancelled(client, runner, maker):

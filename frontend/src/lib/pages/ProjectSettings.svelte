@@ -6,6 +6,7 @@
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
+	import WebhooksSection from '$lib/components/WebhooksSection.svelte'
 	import WorkflowLibrary from '$lib/components/WorkflowLibrary.svelte'
 	import GroupHeading from '$lib/components/GroupHeading.svelte'
 	import ProjectCells from '$lib/components/project/ProjectCells.svelte'
@@ -100,6 +101,7 @@
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<AgentsSection projectId={id} />
 				<WorkflowLibrary projectId={id} now={Date.now()} />
+				<WebhooksSection projectId={id} />
 			</div>
 		</div>
 

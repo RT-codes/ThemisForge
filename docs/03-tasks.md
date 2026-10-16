@@ -26,9 +26,9 @@ setup** strip at the top says so and links to the section that fixes it. Everyth
 - **General**: its icon, name, what it is for and its description.
 - **Cells and automation**: the container its tasks run in, and its automation guard (see [Scheduling](/docs/scheduling)).
 - **Task properties**: its custom properties (see below).
-- **Agents**, **Workflows**, **Connections**, **Tools**, **Skills** and **Shared folders**: each with its list and its
-  buttons, as described on the pages for [agents](/docs/agents), [workflows](/docs/workflows),
-  [connections](/docs/connections) and [cells](/docs/cells).
+- **Agents**, **Workflows**, **Webhooks**, **Connections**, **Tools**, **Skills** and **Shared folders**: each with its list
+  and its buttons, as described on the pages for [agents](/docs/agents), [workflows](/docs/workflows),
+  [webhooks](/docs/webhooks), [connections](/docs/connections) and [cells](/docs/cells).
 - **Danger zone**: delete the project.
 
 The overview's **Needs attention** section brings together tasks waiting for review and failed tasks across all boards.

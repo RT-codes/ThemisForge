@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, ApiError, type NodeRun, type NodeRunStatus, type RunStatus, type WorkflowRunDetail, type WorkflowRunSummary } from '$lib/api'
+	import { approvals } from '$lib/approvals.svelte'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import ResultView from '$lib/components/ResultView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -11,6 +12,7 @@
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleDashedIcon from '@lucide/svelte/icons/circle-dashed'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
+	import HourglassIcon from '@lucide/svelte/icons/hourglass'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import { onMount } from 'svelte'
 	import { SvelteSet } from 'svelte/reactivity'
@@ -34,6 +36,7 @@
 		failed: CircleXIcon,
 		skipped: CircleDashedIcon,
 		cancelled: BanIcon,
+		waiting: HourglassIcon,
 	}
 	const statusTone: Record<NodeRunStatus, string> = {
 		running: 'text-primary',
@@ -41,6 +44,7 @@
 		failed: 'text-destructive',
 		skipped: 'text-muted-foreground/60',
 		cancelled: 'text-muted-foreground',
+		waiting: 'text-amber-400',
 	}
 	const runLabel: Record<RunStatus, string> = { running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }
 	const runTone: Record<RunStatus, string> = {
@@ -73,9 +77,9 @@
 				autoOpened = new Set()
 				open.clear()
 			}
-			// unfold what went wrong as soon as it happens, so the reason is right there
+			// unfold what went wrong, or what waits for an answer, as soon as it happens, so it is right there
 			for (const n of fresh.nodes) {
-				if (n.status === 'failed' && !autoOpened.has(n.id)) {
+				if ((n.status === 'failed' || n.status === 'waiting') && !autoOpened.has(n.id)) {
 					autoOpened.add(n.id)
 					open.add(n.id)
 				}
@@ -199,7 +203,7 @@
 									<span class="flex size-6 shrink-0 items-center justify-center rounded bg-primary/15 text-primary"><KindIcon class="size-3.5" /></span>
 									<span class="min-w-0 flex-1">
 										<span class="block truncate text-sm font-medium">{n.label}</span>
-										<span class="block text-xs text-muted-foreground capitalize">{n.kind}{n.status === 'failed' ? ' · failed' : n.status === 'cancelled' ? ' · cancelled' : ''}</span>
+										<span class="block text-xs text-muted-foreground capitalize">{n.kind}{n.status === 'failed' ? ' · failed' : n.status === 'cancelled' ? ' · cancelled' : n.status === 'waiting' ? ' · waiting' : ''}</span>
 									</span>
 									{#if n.started_at}<span class="shrink-0 text-xs text-muted-foreground tabular-nums">{duration(n.started_at, end(n))}</span>{/if}
 									<ChevronDownIcon class={cn('size-4 shrink-0 text-muted-foreground transition-transform duration-200', open.has(n.id) && 'rotate-180')} />
@@ -242,6 +246,12 @@
 
 {#snippet details(n: NodeRun)}
 	<div class="ms-[34px] me-1 grid gap-3 pt-1 pb-3" transition:slide={{ duration: 200 }}>
+		{#if n.status === 'waiting'}
+			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
+				<p class="min-w-0 flex-1">{n.gate?.prompt.trim() || 'This run is waiting for someone to approve or reject it.'}</p>
+				<Button size="sm" onclick={() => approvals.show(n.id)}>Review and answer</Button>
+			</div>
+		{/if}
 		{#if n.error}
 			<div class={cn('rounded-lg border px-3 py-2 text-sm', n.status === 'skipped' ? 'bg-card' : 'border-destructive/30 bg-destructive/5')}>
 				<p class={cn('text-xs font-medium tracking-wide uppercase', n.status === 'skipped' ? 'text-muted-foreground' : 'text-destructive')}>{reasonTitle(n)}</p>

@@ -723,7 +723,8 @@ export interface CodexStatus {
 }
 
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled'
-export type NodeRunStatus = 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled'
+/** 'waiting' is an approval gate that has not been answered yet */
+export type NodeRunStatus = 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled' | 'waiting'
 
 export interface NodeRun {
   id: number
@@ -739,6 +740,28 @@ export interface NodeRun {
   error: string
   task_id: number | null
   attempt_id: number | null
+  /** an approval gate: what it asks, and how it was answered ('' while it is open) */
+  gate: { prompt: string } | null
+  decision: '' | 'approved' | 'rejected'
+  decision_note: string
+  decided_by: string
+}
+
+/** a workflow run parked at an approval gate, waiting for a person */
+export interface Approval {
+  /** the gate's record in the run: what the decision is sent to */
+  id: number
+  run_id: number
+  project_id: number
+  project_name: string
+  workflow_id: number
+  workflow_name: string
+  label: string
+  prompt: string
+  /** the step before the gate, and what it produced: the thing to approve */
+  previous_label: string
+  previous: string
+  waiting_since: string
 }
 
 export interface WorkflowSummary {
@@ -1040,6 +1063,8 @@ export const api = {
   workflowRuns: (workflowId: number) => request<WorkflowRunSummary[]>(`/workflows/${workflowId}/runs`),
   workflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}`),
   cancelWorkflowRun: (id: number) => request<WorkflowRunDetail>(`/workflow-runs/${id}/cancel`, send('POST')),
+  approvals: () => request<Approval[]>('/approvals'),
+  decideApproval: (id: number, approved: boolean, note: string) => request<void>(`/approvals/${id}/decision`, send('POST', { approved, note })),
 
   connections: () => request<ConnectionsList>('/connections'),
   connectWithToken: (provider: string, token: string) => request<Connection>('/connections', send('POST', { provider, token })),

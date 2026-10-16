@@ -48,7 +48,7 @@
 	const nodeTypes = { workflow: WorkflowNode }
 	const edgeTypes = { workflow: WorkflowEdge }
 	// the minimap tells node types apart by colour
-	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf', split: '#38bdf8', merge: '#38bdf8' }
+	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', approval: '#f472b6', end: '#f87171', volume: '#2dd4bf', split: '#38bdf8', merge: '#38bdf8' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	// the dotted background and the snapping share one grid, so a snapped node sits exactly on the dots (Svelte Flow

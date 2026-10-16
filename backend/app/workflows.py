@@ -14,6 +14,8 @@ waits for all its branches before it carries on:
   (the result must contain some text; only some files go along).
 - Merger: waits until every branch has finished or can no longer arrive, then merges their results into one text and
   their working folders into one, each branch in a folder named after it.
+- Approval: parks the run until a person approves or rejects (see `WorkflowRunner._approval`). What the node before
+  it produced passes on unchanged. The gate is stored, so a run parked at one survives a restart.
 - End: records how the run ended.
 
 A node that fails stops its branch (an Agent node can be told to carry on). Every node that did run gets a record
@@ -21,6 +23,7 @@ with its output and error; nodes that did not run get a record saying why.
 """
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -28,12 +31,12 @@ import shutil
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
-from sqlalchemy import event, func, inspect, select, update
+from sqlalchemy import and_, event, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload
 
@@ -64,7 +67,9 @@ log = logging.getLogger("themis.workflows")
 
 MAX_NESTING = 5  # workflows playing tasks that play workflows...
 
-Kind = Literal["start", "trigger", "task", "agent", "condition", "end", "volume", "split", "merge"]
+Kind = Literal[
+    "start", "trigger", "task", "agent", "condition", "approval", "end", "volume", "split", "merge"
+]
 
 MAX_BRANCHES = (
     4  # the branch points of a Splitter (its outputs, "o1"...) and of a Merger (its inputs, "i1"...)
@@ -244,6 +249,31 @@ class _MergeIn:
     mark: _Mark
 
 
+@dataclass
+class _Gate:
+    """An approval gate that was waiting when Themis stopped."""
+
+    node_id: str
+    nr_id: int  # its WorkflowNodeRun row, which the resumed gate keeps using
+    prev: Prev | None
+
+
+@dataclass
+class _Resume:
+    """What it takes to pick a run up again at its approval gates after a restart (see WorkflowRunner.resume_parked).
+    Only the path below the gates carries on: the walker's other state lived in memory and is gone."""
+
+    gates: list[_Gate]
+    ran: set[str]  # the nodes that already ran in this run, so nothing runs twice
+    seq: int  # the last sequence number of the run's records
+    failure: str  # why the run is bound to end as failed, when something in it already failed ("" if not)
+
+
+def _prev_from(data: dict | None) -> Prev | None:
+    """A Prev read back from the JSON an approval gate stored it as (`asdict`, with the paths as a list)."""
+    return Prev(**{**data, "only": tuple(data.get("only", ()))}) if data else None
+
+
 def _slug(text: str, fallback: str) -> str:
     """A name that is safe and easy to read as a folder name: "Research A" becomes "research-a"."""
     slug = re.sub(r"[^a-z0-9._-]+", "-", text.casefold()).strip("-._")
@@ -292,7 +322,7 @@ class _Walk:
     condition went the other way, or every line into that node is itself dead. That is what lets a Merger sit behind
     the two sides of a Condition without waiting for the side that was never taken."""
 
-    def __init__(self, graph: Graph, starts: list[str] | None) -> None:
+    def __init__(self, graph: Graph, starts: list[str] | None, resume: _Resume | None = None) -> None:
         self.nodes = {n.id: n for n in graph.nodes}
         self.edges = [e for e in graph.edges if e.sourceHandle != MOUNT]  # a folder handed over is not a step
         self.into: dict[str, list[int]] = defaultdict(list)
@@ -305,12 +335,44 @@ class _Walk:
         self.marks: dict[str, dict[int, _Mark]] = defaultdict(dict)
         self.queued: set[str] = set()
         self.dead: set[str] = set()
+        if resume:
+            self._resume_at(resume)
+            return
         begin = [n.id for n in graph.start_nodes if starts is None or n.id in starts]
         for node_id in begin:
             self._queue(node_id, None, self.lanes[0])
         for n in graph.nodes:  # nothing leads here, so nothing can: whatever waits on it must not wait
             if n.kind != "volume" and n.id not in begin and (n.kind in START_KINDS or not self.into[n.id]):
                 self.kill(n.id)
+
+    def _resume_at(self, resume: _Resume) -> None:
+        """Start from the approval gates a run was parked at. The first gate plays in the run's own lane; each further
+        one gets a lane beside it, as parallel branches had. Whatever already ran counts as queued, so a loop cannot
+        run it again, and every node that is neither a gate nor below one is dead, so that a Merger below the gates
+        waits for the gates and not for branches that no longer exist."""
+        for i, gate in enumerate(resume.gates):
+            if i:
+                self.lanes[i] = _Lane(i, 0)
+            self._queue(gate.node_id, gate.prev, self.lanes[i])
+        self.queued |= resume.ran
+        below, todo = set(), [g.node_id for g in resume.gates]
+        while todo:
+            for i in self.out[todo.pop()]:
+                if (target := self.edges[i].target) not in below:
+                    below.add(target)
+                    todo.append(target)
+        gates = {g.node_id for g in resume.gates}
+        for n in self.nodes.values():
+            if n.kind != "volume" and n.id not in gates and (n.id in resume.ran or n.id not in below):
+                self._abandon(n.id)
+
+    def _abandon(self, node_id: str) -> None:
+        """Nothing more comes of this node: it ran before the gates, or is not below them. Its lines are dead."""
+        if node_id in self.dead:
+            return
+        self.dead.add(node_id)
+        for i in self.out[node_id]:
+            self.settle(i, _Mark("dead"))
 
     def _queue(
         self, node_id: str, prev: Prev | None, lane: _Lane, inputs: list[_MergeIn] | None = None
@@ -536,11 +598,16 @@ class WorkflowRunner:
     """Runs workflows in the background and records every node of every run."""
 
     POLL_SECONDS = 0.5  # how often a node waiting for a task looks at it
+    GATE_POLL_SECONDS = 5  # how often an approval gate looks for an answer the live path did not announce
+    RESTARTED = "Themis restarted while this node was running"
 
     def __init__(self, maker: async_sessionmaker[AsyncSession], scheduler: Callable[[], object]) -> None:
         self.maker = maker
         self._scheduler = scheduler  # a getter, so the current scheduler is always the one used
         self._live: dict[int, asyncio.Task] = {}
+        # set when an approval gate (by node run id) is answered, so a waiting gate wakes at once instead of polling
+        self._answers: dict[int, asyncio.Event] = {}
+        self._parked: list[int] = []  # runs reconcile() kept alive for resume_parked() to pick up
         self._stopping = False
         self._firing: set[asyncio.Task] = set()
         # Every task that moves into a status is noticed where it is saved, so the board, the API, the scheduler and
@@ -552,21 +619,45 @@ class WorkflowRunner:
     # lifecycle
 
     async def reconcile(self) -> None:
-        """After a restart nothing is running: close dangling runs and nodes."""
+        """After a restart nothing is running: close dangling runs and nodes. The exception is a run parked at an
+        approval gate: a person may take days to answer, so it stays open for `resume_parked`. Only a top-level run can
+        stay: one that a task plays dies with that task's attempt, which the scheduler closes on its own restart."""
         async with self.maker() as s:
             now = utcnow()
-            await s.execute(
-                update(WorkflowNodeRun)
-                .where(WorkflowNodeRun.status == NodeStatus.RUNNING)
-                .values(
-                    status=NodeStatus.FAILED,
-                    finished_at=now,
-                    error="Themis restarted while this node was running",
+            keep = list(
+                await s.scalars(
+                    select(WorkflowRun.id)
+                    .where(
+                        WorkflowRun.status == RunStatus.RUNNING,
+                        WorkflowRun.parent_run_id.is_(None),
+                        WorkflowRun.trigger != "task",
+                        WorkflowRun.id.in_(
+                            select(WorkflowNodeRun.run_id).where(WorkflowNodeRun.status == NodeStatus.WAITING)
+                        ),
+                    )
+                    .order_by(WorkflowRun.id)
                 )
             )
             await s.execute(
+                update(WorkflowNodeRun)
+                .where(
+                    or_(
+                        WorkflowNodeRun.status == NodeStatus.RUNNING,
+                        and_(
+                            WorkflowNodeRun.status == NodeStatus.WAITING, WorkflowNodeRun.run_id.not_in(keep)
+                        ),
+                        # a graceful stop records the nodes it cut off as cancelled; in a run that carries on after
+                        # the restart that is what happened to them: they were interrupted, and they failed
+                        and_(
+                            WorkflowNodeRun.status == NodeStatus.CANCELLED, WorkflowNodeRun.run_id.in_(keep)
+                        ),
+                    )
+                )
+                .values(status=NodeStatus.FAILED, finished_at=now, error=self.RESTARTED)
+            )
+            await s.execute(
                 update(WorkflowRun)
-                .where(WorkflowRun.status == RunStatus.RUNNING)
+                .where(WorkflowRun.status == RunStatus.RUNNING, WorkflowRun.id.not_in(keep))
                 .values(
                     status=RunStatus.FAILED,
                     finished_at=now,
@@ -574,6 +665,7 @@ class WorkflowRunner:
                 )
             )
             await s.commit()
+        self._parked = keep
 
     async def shutdown(self) -> None:
         self._stopping = True
@@ -636,15 +728,62 @@ class WorkflowRunner:
             s.add(run)
             await s.commit()
             run_id = run.id
-        task = asyncio.create_task(
-            self._run(
-                _Ctx(run_id, project_id, graph, trigger_task_id, stage_task_id, workdir_id), graph, starts
-            ),
-            name=f"workflow-run-{run_id}",
+        self._spawn(
+            _Ctx(run_id, project_id, graph, trigger_task_id, stage_task_id, workdir_id), graph, starts
         )
-        self._live[run_id] = task
-        task.add_done_callback(lambda _t, rid=run_id: self._live.pop(rid, None))
         return run_id
+
+    def _spawn(
+        self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None, resume: _Resume | None = None
+    ) -> None:
+        task = asyncio.create_task(self._run(ctx, graph, starts, resume), name=f"workflow-run-{ctx.run_id}")
+        self._live[ctx.run_id] = task
+        task.add_done_callback(lambda _t, rid=ctx.run_id: self._live.pop(rid, None))
+
+    async def resume_parked(self) -> None:
+        """Pick up the runs `reconcile` kept open, at the approval gates they were parked at. Called once the scheduler
+        is up, because the steps below a gate need it."""
+        parked, self._parked = self._parked, []
+        for run_id in parked:
+            try:
+                await self._resume(run_id)
+            except Exception:
+                log.exception("could not resume workflow run %s", run_id)
+                await self._finish(run_id, RunStatus.FAILED, "Themis could not pick this run up again")
+
+    async def _resume(self, run_id: int) -> None:
+        async with self.maker() as s:
+            run = await s.get(WorkflowRun, run_id)
+            rows = (
+                await s.scalars(
+                    select(WorkflowNodeRun)
+                    .where(WorkflowNodeRun.run_id == run_id)
+                    .order_by(WorkflowNodeRun.seq)
+                )
+            ).all()
+        if run is None:
+            return
+        graph = Graph.model_validate(run.graph)
+        waiting = [n for n in rows if n.status == NodeStatus.WAITING]
+        gates = [_Gate(n.node_id, n.id, _prev_from((n.gate or {}).get("previous"))) for n in waiting]
+        by_id = {n.id: n for n in graph.nodes}
+        # what already failed: the run will end as failed, as it would have had it never stopped (a node that a restart
+        # caught running is one of them)
+        failed = [
+            n
+            for n in rows
+            if n.status == NodeStatus.FAILED
+            and not (n.kind == "agent" and by_id[n.node_id].config.get("onFailure") == "continue")
+        ]
+        failure = f"'{failed[0].label}' failed: {failed[0].error}" if failed else ""
+        resume = _Resume(
+            gates=gates,
+            ran={n.node_id for n in rows if n.status != NodeStatus.WAITING},
+            seq=max((n.seq for n in rows), default=0),
+            failure=failure,
+        )
+        ctx = _Ctx(run.id, run.project_id, graph, run.trigger_task_id, None, run.workdir_id)
+        self._spawn(ctx, graph, None, resume)
 
     # runs started by a task moving into a status
 
@@ -951,12 +1090,15 @@ class WorkflowRunner:
 
     # the run
 
-    async def _run(self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None) -> None:
-        walk = _Walk(graph, starts)
+    async def _run(
+        self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None, resume: _Resume | None = None
+    ) -> None:
+        walk = _Walk(graph, starts, resume)
+        gate_rows = {g.node_id: g.nr_id for g in resume.gates} if resume else {}
         done: dict[str, Outcome] = {}
         carried_on: set[str] = set()  # failed nodes the workflow continued after
         running: dict[asyncio.Task, tuple[GraphNode, Prev | None, _Lane, int]] = {}
-        seq = 0
+        seq = resume.seq if resume else 0
         hard_fail, note = False, ""
         workdir = (
             ctx.workdir_id
@@ -972,9 +1114,12 @@ class WorkflowRunner:
                             # a branch failed: the other branches finish what they are doing and start nothing new
                             lane.queue.clear()
                             break
-                        seq += 1
                         node = walk.nodes[node_id]
-                        task = asyncio.create_task(self._execute_node(ctx, node, seq, prev, inputs))
+                        # a gate picked up again keeps its record (and its place in the run's order)
+                        reuse = gate_rows.get(node_id)
+                        if reuse is None:
+                            seq += 1
+                        task = asyncio.create_task(self._execute_node(ctx, node, seq, prev, inputs, reuse))
                         running[task] = (node, prev, lane, seq)
                         lane.busy = True
                 if not running:
@@ -1002,7 +1147,14 @@ class WorkflowRunner:
                             failed = hard_fail = True
                             note = note or f"'{node.label or node.kind}' failed: {outcome.error}"
                     walk.finish(node, outcome, prev, lane, failed, ctx.workdir_id)
-            await self._record_unreached(ctx, graph, done, carried_on, seq, stopped=hard_fail)
+            await self._record_unreached(
+                ctx, graph, done, carried_on, seq, stopped=hard_fail, ran=resume.ran if resume else set()
+            )
+            if resume and resume.failure and not hard_fail:
+                hard_fail, note = (
+                    True,
+                    resume.failure,
+                )  # something failed before the restart: the run still fails
             await self._finish(
                 ctx.run_id, RunStatus.FAILED if hard_fail else RunStatus.SUCCEEDED, note, workdir
             )
@@ -1027,16 +1179,31 @@ class WorkflowRunner:
         await asyncio.gather(*running, return_exceptions=True)
 
     async def _execute_node(
-        self, ctx: _Ctx, node: GraphNode, seq: int, prev: Prev | None, inputs: list[_MergeIn] | None = None
+        self,
+        ctx: _Ctx,
+        node: GraphNode,
+        seq: int,
+        prev: Prev | None,
+        inputs: list[_MergeIn] | None = None,
+        reuse: int | None = None,
     ) -> Outcome:
+        """Run one node and record it. `reuse` is the record of an approval gate that is being picked up again."""
         label = node.label or node.kind.capitalize()
-        async with self.maker() as s:
-            row = WorkflowNodeRun(
-                run_id=ctx.run_id, node_id=node.id, kind=node.kind, label=label, seq=seq, started_at=utcnow()
-            )
-            s.add(row)
-            await s.commit()
-            nr_id = row.id
+        if reuse is not None:
+            nr_id = reuse
+        else:
+            async with self.maker() as s:
+                row = WorkflowNodeRun(
+                    run_id=ctx.run_id,
+                    node_id=node.id,
+                    kind=node.kind,
+                    label=label,
+                    seq=seq,
+                    started_at=utcnow(),
+                )
+                s.add(row)
+                await s.commit()
+                nr_id = row.id
         cancelled = False
         try:
             outcome = await self._dispatch(ctx, nr_id, node, prev, inputs)
@@ -1048,6 +1215,8 @@ class WorkflowRunner:
             log.exception("workflow node %s crashed", node.id)
             outcome = Outcome(NodeStatus.FAILED, error=f"Unexpected error: {e}")
         if cancelled:
+            if self._stopping and node.kind == "approval":
+                raise asyncio.CancelledError  # Themis is stopping, not the run: the gate stays parked for the restart
             # Not inside the `except`: while it runs, the exception's traceback keeps alive whatever the cut-off work was
             # holding. A statement that was executing when the cancel arrived (an INSERT of a task, say) is finished by
             # its worker thread but never read, and SQLite keeps its write lock until that cursor is released. Writing
@@ -1086,6 +1255,8 @@ class WorkflowRunner:
                 result="yes" if answer else "no",
                 branch="yes" if answer else "no",
             )
+        if node.kind == "approval":
+            return await self._approval(nr_id, node, prev)
         if node.kind == "split":
             return self._split(node, prev)
         if node.kind == "merge":
@@ -1093,6 +1264,70 @@ class WorkflowRunner:
         if node.kind == "agent":
             return await self._agent(ctx, nr_id, node, prev)
         return await self._task(ctx, nr_id, node, prev)
+
+    # approval gates
+
+    async def _approval(self, nr_id: int, node: GraphNode, prev: Prev | None) -> Outcome:
+        """Park the run here until a person answers (see `decide`). Approving passes on what the node before produced,
+        unchanged; rejecting fails the node with the person's note as the reason.
+
+        The gate is stored on its record (the question, and what the node before handed on), so after a restart
+        `_resume` can pick the run up at this node without any state of the walker."""
+        async with self.maker() as s:
+            row = await s.get(WorkflowNodeRun, nr_id)
+            assert row is not None
+            if row.gate is None:  # not a gate being picked up again
+                row.gate = {
+                    "prompt": node.config.get("prompt", "").strip(),
+                    "previous": asdict(prev) if prev else None,
+                }
+                row.status = NodeStatus.WAITING
+                row.log = "Waiting for approval.\n"
+                await s.commit()
+        answered = self._answers.setdefault(nr_id, asyncio.Event())
+        try:
+            while True:
+                async with self.maker() as s:
+                    row = await s.get(WorkflowNodeRun, nr_id)
+                assert row is not None
+                if row.decision:
+                    break
+                # the event wakes the gate the moment it is answered; the timeout only guards against a missed one
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(answered.wait(), self.GATE_POLL_SECONDS)
+        finally:
+            self._answers.pop(nr_id, None)
+        who, note = row.decided_by or "someone", row.decision_note.strip()
+        verb = "Approved" if row.decision == "approved" else "Rejected"
+        said = f"{verb} by {who}" + (f": {note}" if note else ".")
+        log = f"Waiting for approval.\n{said}\n"
+        result = prev.result if prev else ""
+        if row.decision == "approved":
+            return Outcome(NodeStatus.SUCCEEDED, result=result, log=log)
+        return Outcome(NodeStatus.FAILED, result=result, log=log, error=said)
+
+    async def decide(self, nr_id: int, approved: bool, note: str, by: str) -> bool:
+        """Record the answer to an open approval gate and wake it. False when it is not open: answered already (the first
+        answer stands), or not waiting. The update is conditional, so two people answering at once cannot both win."""
+        async with self.maker() as s:
+            result = await s.execute(
+                update(WorkflowNodeRun)
+                .where(
+                    WorkflowNodeRun.id == nr_id,
+                    WorkflowNodeRun.status == NodeStatus.WAITING,
+                    WorkflowNodeRun.decision == "",
+                )
+                .values(decision="approved" if approved else "rejected", decision_note=note, decided_by=by)
+            )
+            await s.commit()
+        if result.rowcount != 1:  # type: ignore[attr-defined]
+            return False
+        if answered := self._answers.get(nr_id):
+            answered.set()
+        return True
+
+    def is_live(self, run_id: int) -> bool:
+        return run_id in self._live
 
     # splitter, merger and the folders they hand on
 
@@ -1512,12 +1747,16 @@ class WorkflowRunner:
         carried_on: set[str],
         seq: int,
         stopped: bool = False,
+        ran: set[str] | None = None,
     ) -> None:
-        """A record for every node that never ran, saying why (so a missing checkmark is never a mystery)."""
+        """A record for every node that never ran, saying why (so a missing checkmark is never a mystery). `ran` is what
+        a resumed run did before it was picked up again: those nodes have their records already."""
         nodes = {n.id: n for n in graph.nodes}
         rows = []
         for n in graph.nodes:
-            if n.id in done or n.kind == "volume":  # a Folder node is never a step, so it is never "not run"
+            if (
+                n.id in done or n.id in (ran or ()) or n.kind == "volume"
+            ):  # a Folder is never a step: never "not run"
                 continue
             seq += 1
             rows.append(
@@ -1570,7 +1809,10 @@ class WorkflowRunner:
         async with self.maker() as s:
             await s.execute(
                 update(WorkflowNodeRun)
-                .where(WorkflowNodeRun.run_id == run_id, WorkflowNodeRun.status == NodeStatus.RUNNING)
+                .where(
+                    WorkflowNodeRun.run_id == run_id,
+                    WorkflowNodeRun.status.in_([NodeStatus.RUNNING, NodeStatus.WAITING]),
+                )
                 .values(status=NodeStatus.CANCELLED, finished_at=utcnow(), error="The run was cancelled")
             )
             await s.execute(

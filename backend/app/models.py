@@ -437,6 +437,7 @@ class NodeStatus(StrEnum):
     FAILED = "failed"
     SKIPPED = "skipped"
     CANCELLED = "cancelled"
+    WAITING = "waiting"  # an approval gate, parked until a person decides (see WorkflowNodeRun.gate)
 
 
 class Workflow(Base):
@@ -564,12 +565,20 @@ class WorkflowNodeRun(Base):
     kind: Mapped[str] = mapped_column(String(20))
     label: Mapped[str] = mapped_column(String(100))
     seq: Mapped[int] = mapped_column(Integer)  # chronological order within the run
-    status: Mapped[str] = mapped_column(String(20), default=NodeStatus.RUNNING)
+    # indexed because the open approvals (status "waiting") are looked up on every poll of the app
+    status: Mapped[str] = mapped_column(String(20), default=NodeStatus.RUNNING, index=True)
     started_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
     log: Mapped[str] = mapped_column(Text, default="")
     result: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
+    # An approval gate keeps what it needs to be picked up again after a restart: what it asks ("prompt") and what the
+    # node before it handed on ("previous", a Prev). The person's answer goes in the next three columns; the gate
+    # polls them. `decision` is "" while open, then "approved" or "rejected" (written once, see decide_approval).
+    gate: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    decision: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    decision_note: Mapped[str] = mapped_column(Text, default="", server_default="")
+    decided_by: Mapped[str] = mapped_column(String(100), default="", server_default="")
     task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), default=None)
     attempt_id: Mapped[int | None] = mapped_column(
         ForeignKey("attempts.id", ondelete="SET NULL"), default=None

@@ -9,7 +9,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from ..deps import CurrentUser, SessionDep
-from ..models import NodePreset, NodeStatus, Project, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
+from ..models import (
+    NodePreset,
+    NodeStatus,
+    Project,
+    RunStatus,
+    Workflow,
+    WorkflowNodeRun,
+    WorkflowRun,
+    utcnow,
+)
 from ..workflows import Graph, Kind, NodeConfig, WorkflowRunner
 from .projects import _project, _task
 
@@ -82,6 +91,11 @@ class NodeRunOut(BaseModel):
     error: str
     task_id: int | None
     attempt_id: int | None
+    # an approval gate: what it asks and what it was told ("" while it is open), see WorkflowNodeRun.gate
+    gate: dict[str, Any] | None
+    decision: str
+    decision_note: str
+    decided_by: str
 
 
 class RunSummary(BaseModel):
@@ -403,3 +417,72 @@ async def cancel_run(run_id: int, request: Request, session: SessionDep, user: C
         raise HTTPException(status.HTTP_409_CONFLICT, "This run is not running")
     await session.commit()  # same: look again at what the engine wrote while cancelling
     return _detail(await _run(session, run_id, user))
+
+
+# ----- approvals: the gates that runs are parked at, waiting for a person -----
+
+
+class ApprovalOut(BaseModel):
+    id: int  # the gate's node run: what the decision is sent to
+    run_id: int
+    project_id: int
+    project_name: str
+    workflow_id: int
+    workflow_name: str
+    label: str
+    prompt: str  # what the gate asks, as the workflow's author wrote it
+    previous_label: str  # the node before the gate...
+    previous: str  # ...and what it produced: the thing to approve
+    waiting_since: datetime
+
+
+class DecisionIn(BaseModel):
+    approved: bool
+    note: str = Field(default="", max_length=2000)
+
+
+@router.get("/approvals", response_model=list[ApprovalOut])
+async def list_approvals(session: SessionDep, user: CurrentUser) -> list[ApprovalOut]:
+    """Every open approval of the user's projects, oldest first (the one waiting longest comes first)."""
+    rows = await session.execute(
+        select(WorkflowNodeRun, WorkflowRun, Workflow.name, Project.name)
+        .join(WorkflowRun, WorkflowRun.id == WorkflowNodeRun.run_id)
+        .join(Workflow, Workflow.id == WorkflowRun.workflow_id)
+        .join(Project, Project.id == WorkflowRun.project_id)
+        .where(
+            WorkflowNodeRun.status == NodeStatus.WAITING,
+            WorkflowNodeRun.decision == "",
+            WorkflowRun.status == RunStatus.RUNNING,
+            Project.owner_id == user.id,
+        )
+        .order_by(WorkflowNodeRun.started_at, WorkflowNodeRun.id)
+    )
+    out = []
+    for node, run, workflow_name, project_name in rows:
+        gate = node.gate or {}
+        previous = gate.get("previous") or {}
+        out.append(
+            ApprovalOut(
+                id=node.id, run_id=run.id, project_id=run.project_id, project_name=project_name,
+                workflow_id=run.workflow_id, workflow_name=workflow_name, label=node.label,
+                prompt=gate.get("prompt", ""), previous_label=previous.get("label", ""),
+                previous=previous.get("result", ""), waiting_since=node.started_at or run.started_at,
+            )
+        )  # fmt: skip
+    return out
+
+
+@router.post("/approvals/{approval_id}/decision", status_code=status.HTTP_204_NO_CONTENT)
+async def decide_approval(
+    approval_id: int, body: DecisionIn, request: Request, session: SessionDep, user: CurrentUser
+) -> None:
+    """Approve or reject an open gate. The first answer stands; the run carries on (or the node fails) at once."""
+    node = await session.get(WorkflowNodeRun, approval_id)
+    run = await session.get(WorkflowRun, node.run_id) if node else None
+    project = await session.get(Project, run.project_id) if run else None
+    if node is None or node.kind != "approval" or project is None or project.owner_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Approval not found")
+    if not _runner(request).is_live(run.id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "This run is no longer going")
+    if not await _runner(request).decide(node.id, body.approved, body.note.strip(), user.name):
+        raise HTTPException(status.HTTP_409_CONFLICT, "This approval was already answered")

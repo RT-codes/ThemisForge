@@ -65,6 +65,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.workflows.reconcile()
         if settings.scheduler_enabled:
             await scheduler.start()
+        await (
+            app.state.workflows.resume_parked()
+        )  # after the scheduler: the steps below an approval gate need it
         watcher = asyncio.create_task(
             preflight.watch(SessionLocal, scheduler, trail), name="themis-preflight"
         )

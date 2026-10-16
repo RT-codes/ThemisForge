@@ -1,4 +1,4 @@
-export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'end' | 'volume' | 'split' | 'merge'
+export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'approval' | 'end' | 'volume' | 'split' | 'merge'
 
 export type NodeKindInfo = {
   kind: NodeKind
@@ -25,6 +25,7 @@ export const NODE_KINDS: NodeKindInfo[] = [
   { kind: 'task', label: 'Task', description: 'Creates, moves or runs a task', hasInput: true, hasOutput: true },
   { kind: 'agent', label: 'Agent', description: 'Runs an agent', hasInput: true, hasOutput: true, mountIn: true },
   { kind: 'condition', label: 'Condition', description: 'Branches on a check: yes or no', hasInput: true, hasOutput: true, outputs: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+  { kind: 'approval', label: 'Approval', description: 'Waits for a person to approve or reject before the run goes on', hasInput: true, hasOutput: true },
   { kind: 'split', label: 'Splitter', description: 'Sends the run down several branches that run at the same time', hasInput: true, hasOutput: true, branching: 'out' },
   { kind: 'merge', label: 'Merger', description: 'Waits for its branches, then carries on with all of them together', hasInput: true, hasOutput: true, branching: 'in' },
   { kind: 'end', label: 'End', description: 'Finishes the workflow', hasInput: true, hasOutput: false },
@@ -104,6 +105,9 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'operator', label: 'Is', type: 'select', options: opts(['contains', 'contains'], ['equals', 'equal to'], ['not_equals', 'not equal to'], ['empty', 'empty']) },
     { key: 'value', label: 'Value', type: 'text', when: { key: 'operator', oneOf: ['contains', 'equals', 'not_equals'] } },
   ],
+  approval: [
+    { key: 'prompt', label: 'What to approve', type: 'textarea', placeholder: 'Publish this listing?', hint: 'Shown with the result of the step before, which passes on unchanged when someone approves. Rejecting stops this branch and fails the run, with their note as the reason.' },
+  ],
   volume: [
     // the options of volumeId are the project's folders: the panel fills them in
     { key: 'volumeId', label: 'Folder', type: 'select', options: opts(['', 'Choose a folder']) },
@@ -170,6 +174,8 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
       return c.instructions.trim() ? c.instructions.trim().split('\n')[0] : 'No instructions yet'
     case 'condition':
       return c.operator === 'empty' ? `${optionLabel('condition', 'source', c)} is empty` : `${optionLabel('condition', 'source', c)} ${optionLabel('condition', 'operator', c)} ${c.value || '...'}`
+    case 'approval':
+      return c.prompt?.trim() ? c.prompt.trim().split('\n')[0] : 'Waits for a person'
     case 'end':
       return `Ends as ${c.outcome}`
     case 'volume':

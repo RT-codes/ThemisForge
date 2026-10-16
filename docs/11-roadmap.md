@@ -46,6 +46,8 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Model and reasoning effort** chosen from lists, per agent and per workflow step.
 - **Webhooks**: an address that turns a message from outside into a task, with templates for its title and text, rules for
   which messages count, and a log of everything that arrived.
+- **Approval gates**: an Approval node in a workflow parks the run until a person approves or rejects it, survives a
+  restart, and announces itself with a toast, a button in the top bar and an entry under Needs attention.
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next

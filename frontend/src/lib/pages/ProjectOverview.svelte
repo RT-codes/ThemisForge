@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { api, ApiError, type Project, type ScheduledRun, type Task } from '$lib/api'
 	import { attentionTasks } from '$lib/attention'
+	import { headline } from '$lib/approvals'
+	import { approvals } from '$lib/approvals.svelte'
+	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check'
 	import { destinationLabel, findBoard } from '$lib/boards'
 	import HaltBanner from '$lib/components/project/HaltBanner.svelte'
 	import HaltControl from '$lib/components/project/HaltControl.svelte'
@@ -51,6 +54,8 @@
 	let revision = $state(0)
 	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
+	// runs of this project parked at an Approval node: a person's decision comes before any task's result
+	const pendingApprovals = $derived(approvals.list.filter((a) => a.project_id === id))
 	const attention = $derived(attentionTasks(tasks ?? [], allAttention ? tasks?.length : 5))
 
 	async function loadAttention() {
@@ -213,20 +218,38 @@
 					<h3 id="attention-title" class="flex items-center gap-2 text-base font-semibold tracking-tight">
 						Needs attention
 						{#if !attentionError && tasks !== null}
-							<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">{attention.total}</span>
+							<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">{attention.total + pendingApprovals.length}</span>
 						{/if}
 					</h3>
-					<p class="text-xs text-muted-foreground">Review results and check failures across all boards.</p>
+					<p class="text-xs text-muted-foreground">Approve waiting runs, review results and check failures across all boards.</p>
 				</SectionBanner>
 				<div class="p-5">
+					{#if pendingApprovals.length}
+						<ul class="divide-y" aria-label="Waiting for approval">
+							{#each pendingApprovals as a (a.id)}
+								<li>
+									<button type="button" class="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md px-2 py-3 text-start text-sm transition-colors hover:bg-accent/50" onclick={() => approvals.show(a.id)}>
+										<div class="min-w-0 flex-1">
+											<p class="truncate font-medium" title={headline(a)}>{headline(a)}</p>
+											<p class="truncate text-xs text-muted-foreground">{a.workflow_name} · {a.label}</p>
+										</div>
+										<span class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"><ShieldCheckIcon class="size-3.5" /> Waiting for approval</span>
+										<span class="shrink-0 font-medium text-primary">Review</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
 					{#if attentionError}
 						<p class="text-sm text-destructive" role="alert">Could not refresh tasks needing attention: {attentionError}. Retrying automatically.</p>
 					{:else if tasks === null}
 						<p class="text-sm text-muted-foreground">Loading tasks needing attention...</p>
 					{:else if attention.total === 0}
-						<p class="flex items-center gap-2 text-sm text-muted-foreground">
-							<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" /> No tasks need attention.
-						</p>
+						{#if !pendingApprovals.length}
+							<p class="flex items-center gap-2 text-sm text-muted-foreground">
+								<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" /> No tasks need attention.
+							</p>
+						{/if}
 					{:else}
 						<ul class="divide-y">
 							{#each attention.items as { task, reason } (task.id)}

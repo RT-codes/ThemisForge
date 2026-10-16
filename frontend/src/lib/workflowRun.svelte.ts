@@ -14,7 +14,8 @@ export const GLOW_MS = 800
 const POLL_MS = 700
 const SETTLE_MS = 900 // after the last node, long enough to see it finish before the look fades away
 
-export type Phase = 'playing' | 'done' | 'failed'
+/** 'parked' is an approval gate waiting for a person: the run is not over, and nothing is playing either */
+export type Phase = 'playing' | 'parked' | 'done' | 'failed'
 type Step = { id: string; source: string; target: string }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -96,12 +97,12 @@ export class RunView {
     const phase = this.#phase(id)
     if (this.shown[id] === phase) return
     this.shown[id] = phase
-    if (phase !== 'playing') this.nodePulses[id] = (this.nodePulses[id] ?? 0) + 1
+    if (phase !== 'playing' && phase !== 'parked') this.nodePulses[id] = (this.nodePulses[id] ?? 0) + 1
   }
 
   #phase(id: string): Phase {
     const status = this.#real[id]
-    return status === 'running' ? 'playing' : status === 'succeeded' ? 'done' : 'failed'
+    return status === 'running' ? 'playing' : status === 'waiting' ? 'parked' : status === 'succeeded' ? 'done' : 'failed'
   }
 
   /** shows the queued nodes one at a time, each after the glow along the connections that lead into it */
@@ -118,7 +119,7 @@ export class RunView {
         if (token !== this.#token) return
       }
       this.shown[id] = this.#phase(id) // the latest word from the server, which may be "done" already
-      if (this.shown[id] !== 'playing') this.nodePulses[id] = (this.nodePulses[id] ?? 0) + 1
+      if (this.shown[id] !== 'playing' && this.shown[id] !== 'parked') this.nodePulses[id] = (this.nodePulses[id] ?? 0) + 1
     }
     if (token === this.#token) this.#working = false
   }

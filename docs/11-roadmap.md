@@ -44,12 +44,14 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Tools from the MCP registry**, including hosted tools you sign in to, and a Themis cell package of skills for
   agents, with Chromium and the GitHub CLI in the Codex image.
 - **Model and reasoning effort** chosen from lists, per agent and per workflow step.
+- **Webhooks**: an address that turns a message from outside into a task, with templates for its title and text, rules for
+  which messages count, and a log of everything that arrived.
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next
 
-1. **Tasks from agents and webhooks**, using the same task path as everything else. Workflows can already make and move
-   tasks.
+1. **Tasks from agents**, using the same task path as everything else: an agent lists follow-ups and the run turns them into
+   tasks. Workflows can already make and move tasks, and [webhooks](/docs/webhooks) make them from outside.
 2. **Notifications and email.** Tell the administrator about new access requests, and tell people when work needs
    review or fails. Email the invite link.
 3. **Live updates** instead of polling.

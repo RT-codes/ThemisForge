@@ -6,6 +6,7 @@
 	import { describeSchedule } from '$lib/recurrence'
 	import { applyView, type BoardView } from '$lib/boardView'
 	import { cn } from '$lib/utils'
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
 
 	let { tasks, board, defs, view, now, selectedId = null, onopen }: { tasks: Task[]; board: Board; defs: PropertyDef[]; view: BoardView; now: number; selectedId?: number | null; onopen: (task: Task) => void } = $props()
 
@@ -44,8 +45,16 @@
 			<tbody>
 				{#each shown as t (t.id)}
 					<tr class={cn('cursor-pointer border-b last:border-0 hover:bg-accent/40', t.id === selectedId && 'bg-primary/10 hover:bg-primary/10')} onclick={() => onopen(t)}>
-						<td class="max-w-72 truncate px-4 py-2.5 font-medium">
-							<button type="button" class="truncate text-start" onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>
+						<td class="max-w-72 px-4 py-2.5 font-medium">
+							<button type="button" class="block max-w-full truncate text-start" aria-describedby={t.last_attempt_status === 'failed' && t.status !== 'running' ? `task-last-failure-${t.id}` : undefined} onclick={(e) => (e.stopPropagation(), onopen(t))}>{t.title}</button>
+							{#if t.last_attempt_status === 'failed' && t.status !== 'running'}
+								<div id={`task-last-failure-${t.id}`} class="mt-1 text-xs font-normal text-destructive">
+									<p class="flex items-center gap-1 font-medium"><CircleAlertIcon class="size-3.5 shrink-0" aria-hidden="true" />Last run failed</p>
+									{#if t.last_failure_reason}
+										<p class="mt-0.5 line-clamp-2 [overflow-wrap:anywhere]" title={t.last_failure_reason}>{t.last_failure_reason}</p>
+									{/if}
+								</div>
+							{/if}
 						</td>
 						<td class="px-4 py-2.5"><StatusBadge status={t.status} {board} /></td>
 						<td class="px-4 py-2.5 text-muted-foreground">{schedule(t)}</td>

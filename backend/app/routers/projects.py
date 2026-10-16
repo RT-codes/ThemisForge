@@ -3,14 +3,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import boards, halt
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import (
-    Agent,
     Attempt,
     AttemptStatus,
     Board,
@@ -46,6 +45,7 @@ from ..schemas import (
     TaskWorkflowRun,
     check_schedule,
 )
+from ..tasks import agent_for, new_task, set_stages, workflows_for
 
 router = APIRouter(tags=["projects"])
 
@@ -175,45 +175,7 @@ def _bad(detail: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
 
 
-async def _workflows_for(
-    session: AsyncSession, project_id: int, harness: str, workflow_ids: list[int]
-) -> list[int]:
-    """The workflows a task may play: only when it runs with them, and only ones from its own project."""
-    if harness != "workflow":
-        return []
-    if not workflow_ids:
-        raise _bad("Choose the workflow this task should play")
-    found = set(
-        await session.scalars(
-            select(Workflow.id).where(Workflow.id.in_(set(workflow_ids)), Workflow.project_id == project_id)
-        )
-    )
-    if missing := set(workflow_ids) - found:
-        raise _bad(f"Workflow {min(missing)} does not exist in this project")
-    return workflow_ids
-
-
-async def _set_stages(session: AsyncSession, task: Task, workflow_ids: list[int]) -> None:
-    """Make the task play exactly these workflows. An unchanged list is left alone, so the stages keep their runs."""
-    current = await session.scalars(
-        select(TaskStage.workflow_id).where(TaskStage.task_id == task.id).order_by(TaskStage.position)
-    )
-    if list(current) == workflow_ids:
-        return
-    await session.execute(delete(TaskStage).where(TaskStage.task_id == task.id))
-    session.add_all(
-        TaskStage(task_id=task.id, position=i, workflow_id=wid) for i, wid in enumerate(workflow_ids)
-    )
-
-
 # projects
-
-
-async def _agent_for(session: AsyncSession, project_id: int, agent_id: int) -> Agent:
-    agent = await session.get(Agent, agent_id)
-    if agent is None or agent.project_id != project_id:
-        raise _bad("That agent does not exist in this project")
-    return agent
 
 
 @router.get("/projects", response_model=list[ProjectSummary])
@@ -363,46 +325,7 @@ async def create_task(
     project_id: int, body: TaskIn, request: Request, session: SessionDep, user: CurrentUser
 ) -> TaskOut:
     project = await _project(session, project_id, user)
-    try:
-        props = clean_values(project.properties, body.properties)
-    except ValueError as e:
-        raise _bad(str(e)) from None
-    try:
-        board = (
-            await boards.project_board(session, project.id, body.board_id)
-            if body.board_id is not None
-            else await boards.default_board(session, project.id)
-        )
-        boards.check_status(board, body.status)
-    except boards.BoardError as e:
-        raise _bad(str(e)) from None
-    task = Task(
-        project_id=project.id,
-        board_id=board.id,
-        title=body.title,
-        description=body.description,
-        status=body.status,
-        position=await boards.next_position(session, board.id, body.status),
-        properties=props,
-        schedule_kind=body.schedule_kind,
-        cron=body.cron,
-        run_at=body.run_at,
-        review_on_success=body.review_on_success,
-        harness=body.harness,
-        cooldown_seconds=body.cooldown_seconds,
-        max_hops=body.max_hops,
-    )
-    stages: list[int] = []
-    if body.agent_id is not None:
-        agent = await _agent_for(session, project.id, body.agent_id)
-        task.agent_id, task.harness = agent.id, agent.harness
-    else:
-        stages = await _workflows_for(session, project.id, body.harness, body.workflow_ids)
-    refresh_next_run(task, (await load_settings(session)).timezone, utcnow())
-    session.add(task)
-    await session.flush()
-    await _set_stages(session, task, stages)
-    boards.record_new_task(session, task, board, user.name)
+    task = await new_task(session, project, body, user.name)
     await session.commit()
     if task.status == TaskStatus.READY:
         request.app.state.scheduler.wake()
@@ -444,7 +367,7 @@ async def duplicate_task(task_id: int, session: SessionDep, user: CurrentUser) -
     stages = await session.scalars(
         select(TaskStage.workflow_id).where(TaskStage.task_id == origin.id).order_by(TaskStage.position)
     )
-    await _set_stages(session, copy, list(stages))
+    await set_stages(session, copy, list(stages))
     boards.record_task(
         session,
         "task_created",
@@ -499,19 +422,19 @@ async def update_task(
                 )
             )
         task.harness = harness
-        await _set_stages(session, task, await _workflows_for(session, project.id, harness, wanted))
+        await set_stages(session, task, await workflows_for(session, project.id, harness, wanted))
     if "cooldown_seconds" in fields:  # null puts the project's value back
         task.cooldown_seconds = body.cooldown_seconds
     if "max_hops" in fields:
         task.max_hops = body.max_hops
     if "agent_id" in fields:
         task.agent_id = (
-            None if body.agent_id is None else (await _agent_for(session, project.id, body.agent_id)).id
+            None if body.agent_id is None else (await agent_for(session, project.id, body.agent_id)).id
         )
     if task.agent_id is not None:  # an agent decides how its tasks run
-        agent = await _agent_for(session, project.id, task.agent_id)
+        agent = await agent_for(session, project.id, task.agent_id)
         task.harness = agent.harness
-        await _set_stages(session, task, [])
+        await set_stages(session, task, [])
     if "position" in fields and body.position is not None:
         task.position = body.position
     if "status" in fields and body.status is not None and body.status != task.status:

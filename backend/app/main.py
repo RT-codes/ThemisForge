@@ -3,8 +3,8 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .cells import make_cell_manager
@@ -33,6 +33,7 @@ from .routers import (
 )
 from .runlog import Trail, setup_file_logging
 from .scheduler import Scheduler
+from .tasks import TaskError
 from .updates import UpdateChecker
 from .version import build_info
 from .workflows import WorkflowRunner
@@ -91,6 +92,14 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/openapi.json",
 )
+
+
+@app.exception_handler(TaskError)
+async def task_error(_: Request, e: TaskError) -> JSONResponse:
+    """A task that cannot be made or changed like that (see tasks.py) is a request that cannot be right."""
+    return JSONResponse({"detail": str(e)}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
+
+
 app.state.scheduler = Scheduler(
     SessionLocal, make_cell_manager(), interval=settings.scheduler_interval_seconds
 )

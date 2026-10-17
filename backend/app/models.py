@@ -296,6 +296,21 @@ class Attempt(Base):
     # in /cell/blocked.md); `action` is what to change, empty when nobody knows; `tail` is the last lines of the log.
     # Null on a run that did not fail, and on attempts from before reasons were kept.
     failure: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # What the attempt used, kept as the harness reported it and not as money: prices change, and a subscription has
+    # none, so cost is worked out from these later. `harness`, `model` (the one really used, Settings' default filled
+    # in) and `billing` ("subscription" | "api") are set when the attempt starts; the token counts when it ends,
+    # added up over the runs it took (see Scheduler._execute). All null for attempts that ran no harness (the
+    # placeholder program, a task that plays workflows) and for attempts from before usage was kept. The token counts
+    # are also null when the harness reported none: a run that crashed or was cancelled before its turn ended.
+    harness: Mapped[str | None] = mapped_column(String(20), default=None)
+    model: Mapped[str | None] = mapped_column(String(100), default=None)
+    billing: Mapped[str | None] = mapped_column(String(20), default=None)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, default=None)  # part of input_tokens
+    output_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    reasoning_output_tokens: Mapped[int | None] = mapped_column(
+        Integer, default=None
+    )  # part of output_tokens
 
     task: Mapped[Task] = relationship(back_populates="attempts")
 

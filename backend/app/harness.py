@@ -12,7 +12,7 @@ import json
 import re
 import shlex
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass, fields
 from typing import Literal
 
 from .app_settings import AppSettings
@@ -119,11 +119,34 @@ codex exec -m {shlex.quote(model)} {policy}-c model_reasoning_effort={shlex.quot
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    """The tokens a run spent, as the harness reports them. Cached input is part of the input and reasoning part of
+    the output, so the four numbers are not meant to be added up. Prices are worked out from these later, which is
+    why they are kept as reported and not as money."""
+
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_output_tokens: int = 0
+
+    @classmethod
+    def from_event(cls, usage: dict) -> "TokenUsage":
+        return cls(**{f.name: v for f in fields(cls) if isinstance(v := usage.get(f.name), int)})
+
+    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+        return TokenUsage(*(a + b for a, b in zip(astuple(self), astuple(other), strict=True)))
+
+
+@dataclass(frozen=True)
 class HarnessPlan:
     image: str
     script: str
     writeback: tuple[str, ...] = ()
     uses_codex: bool = False
+    # what the run is recorded under (see Attempt.model and Attempt.billing): the model after the defaults were filled
+    # in, and how the harness is paid for
+    model: str = ""
+    billing: Literal["subscription", "api"] = "subscription"
 
 
 def plan_for(
@@ -138,6 +161,8 @@ def plan_for(
             script=codex_script(model, effort_for(model, effort or cfg.codex_reasoning_effort), key_envs),
             writeback=(CODEX_AUTH,),
             uses_codex=True,
+            model=model,
+            billing="subscription",  # Codex runs on the user's ChatGPT login, never on an API key
         )
     return None
 
@@ -338,7 +363,10 @@ class CodexRenderer:
     def __init__(self) -> None:
         self._buf = ""
         self._emitted = False
-        self.usage: dict[str, int] = {}
+        # What the run spent, once Codex has reported it (None until then: a run that crashed or was cancelled before
+        # finishing its turn reports nothing). Codex reports the total of the thread so far, so a later report
+        # replaces an earlier one instead of adding to it.
+        self.usage: TokenUsage | None = None
         self.error = ""  # the message of the last error event: why the run ended, when it did not end well
 
     @property
@@ -398,7 +426,7 @@ class CodexRenderer:
             return ""
         if kind == "turn.completed":
             u = e.get("usage") or {}
-            self.usage = {k: int(v) for k, v in u.items() if isinstance(v, int)}
+            self.usage = TokenUsage.from_event(u)
             return f"[codex] done - {u.get('input_tokens', 0)} tokens in, {u.get('output_tokens', 0)} out\n"
         if kind in ("turn.failed", "error"):
             detail = e.get("message") or (e.get("error") or {}).get("message") or ""

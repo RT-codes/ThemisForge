@@ -491,6 +491,14 @@ class AttemptOut(BaseModel):
     finished_at: datetime | None
     exit_code: int | None
     workflow_run_id: int | None = None  # the run that did the work, when the task played a workflow
+    # what it used, see Attempt.harness: null when it ran no harness or the harness reported nothing
+    harness: str | None = None
+    model: str | None = None
+    billing: Literal["subscription", "api"] | None = None
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
 
 
 class AttemptFailure(BaseModel):

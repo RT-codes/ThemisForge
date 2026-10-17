@@ -38,6 +38,7 @@ from .harness import (
     CodexRenderer,
     EarlierStep,
     HarnessPlan,
+    TokenUsage,
     agent_preamble,
     build_prompt,
     log_tail,
@@ -393,6 +394,9 @@ class Scheduler:
                 s.add(attempt)
                 await s.flush()
                 spec = self._spec(attempt.id, plan, cfg)
+                if plan.harness:  # recorded now, so a run that never reports tokens still says what it ran on
+                    attempt.harness = spec.harness
+                    attempt.model, attempt.billing = plan.harness.model, plan.harness.billing
                 # a task that plays workflows runs no cell: its attempt takes the folder its stages end in instead
                 if spec.harness != "workflow":
                     attempt.workdir_id = spec.workdir_id
@@ -722,6 +726,7 @@ class Scheduler:
             False  # whether a rejected login was already swapped for a newer one (once per attempt)
         )
         renderer = None
+        renderers: list[CodexRenderer] = []  # one per run of this attempt: each remembers what its run spent
         redact = Redactor(
             []
         )  # replaces the values of the keys this run was given, in everything that is stored
@@ -765,6 +770,8 @@ class Scheduler:
                 while True:
                     # one renderer per run: it remembers the error that ended it
                     renderer = renderer_for(spec.harness)
+                    if renderer is not None:
+                        renderers.append(renderer)
 
                     async def sink(chunk: str, renderer=renderer) -> None:
                         if renderer is None:
@@ -852,13 +859,19 @@ class Scheduler:
                 f"Themis hit an unexpected error: {e}",
                 "This is a bug in Themis: the server log has the details.",
             )
+        # every run counts, also the ones that were started again: the provider billed them all. A run that was
+        # cancelled or timed out mid-turn has reported nothing, so what it spent is not in here.
+        reported = [r.usage for r in renderers if r.usage is not None]
+        usage = sum(reported, TokenUsage()) if reported else None
         changes = None
         if before is not None:  # a failed or cancelled run may have left files too: the next step should know
             changes = changes_between(before, await asyncio.to_thread(snapshot_workdir, spec))
         if outcome == AttemptStatus.FAILED and spec.harness == "workflow" and self.workflows is not None:
             # a task that plays workflows failed because of a step: that step's reason is the one to show
             failure = await self.workflows.failure_for_attempt(attempt_id) or failure
-        await self._finish(attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes, failure)
+        await self._finish(
+            attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes, failure, usage
+        )
 
     async def _login_tokens(self, spec: CellSpec) -> dict[str, str]:
         """The bearer token of each tool of the run that signs in, by the variable the cell reads it from."""
@@ -909,6 +922,7 @@ class Scheduler:
         tz: str,
         changes: dict | None = None,
         failure: dict | None = None,
+        usage: TokenUsage | None = None,
     ) -> None:
         if outcome == AttemptStatus.FAILED:
             # a failure always says something, even when nobody worked out why: the last lines of the log are then the
@@ -933,6 +947,11 @@ class Scheduler:
                 attempt.result = result
                 attempt.changes = changes
                 attempt.failure = failure
+                if usage is not None:
+                    attempt.input_tokens = usage.input_tokens
+                    attempt.cached_input_tokens = usage.cached_input_tokens
+                    attempt.output_tokens = usage.output_tokens
+                    attempt.reasoning_output_tokens = usage.reasoning_output_tokens
             told = None
             if task is not None and task.status == TaskStatus.RUNNING:
                 finish_task(task, outcome, tz, now)

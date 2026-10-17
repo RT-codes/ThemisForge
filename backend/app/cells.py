@@ -319,6 +319,8 @@ class FakeCellManager:
         # and what a task's agent writes to /cell/blocked.md
         self.capacity_errors: dict[str, int] = {}
         self.blocked: dict[str, str] = {}
+        # for tests: the usage a task's runs report, as Codex's turn.completed event does, task title -> tokens
+        self.usage: dict[str, dict[str, int]] = {}
         self._runs: dict[str, int] = {}
 
     async def run(self, spec: CellSpec, on_log: LogSink) -> CellResult:
@@ -333,6 +335,8 @@ class FakeCellManager:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
         self._runs[spec.title] = self._runs.get(spec.title, 0) + 1
+        if spec.title in self.usage:
+            await on_log(json.dumps({"type": "turn.completed", "usage": self.usage[spec.title]}) + "\n")
         if self._runs[spec.title] <= self.capacity_errors.get(spec.title, 0):
             event = {
                 "type": "error",

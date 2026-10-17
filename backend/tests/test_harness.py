@@ -9,7 +9,7 @@ from app.cells import WritebackFilter
 from app.codex import get_connection, save_auth
 from app.config import settings
 from app.crypto import decrypt
-from app.harness import CODEX_AUTH, CodexRenderer, build_prompt, plan_for
+from app.harness import CODEX_AUTH, CodexRenderer, TokenUsage, build_prompt, plan_for
 from app.models import Attempt, AttemptStatus, utcnow
 from tests.conftest import drain, make_project, make_task, register
 
@@ -129,7 +129,7 @@ def test_renderer_makes_codex_events_readable():
         "",
         "[codex] done - 100 tokens in, 7 out",
     ]
-    assert r.usage == {"input_tokens": 100, "output_tokens": 7}
+    assert r.usage == TokenUsage(input_tokens=100, output_tokens=7)
 
 
 def test_renderer_handles_split_chunks_and_non_json():

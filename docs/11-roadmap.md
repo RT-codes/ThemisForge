@@ -50,6 +50,11 @@ summary: What is built, what comes next and what is deliberately left for later.
   restart, and announces itself with a toast, a button in the top bar and an entry under Needs attention.
 - **Notifications**: a project sends a message to a Discord channel when a task fails, waits for review or an approval, or
   finishes, with a test button and the reason a message did not arrive.
+- **Usage per run**: every run records the harness and model it used and the tokens it spent, the base for usage views and
+  spending limits.
+- **Connect an agent (MCP)**: an outside agent such as Claude Code can look at one project, or at all of your projects and
+  the global settings, through MCP with a key made in Settings. Read only to start with: an overview, boards, tasks, runs,
+  how agents and workflows are set up, files and usage.
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next

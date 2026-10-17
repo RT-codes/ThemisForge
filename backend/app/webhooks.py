@@ -10,10 +10,8 @@ Everything that arrives is written to the webhook's delivery log, kept short, wi
 other side really sent is the hard part of every webhook.
 """
 
-import hashlib
 import json
 import re
-import secrets
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -46,17 +44,6 @@ _hits: dict[int, deque[float]] = {}
 
 
 # the address
-
-
-def new_token() -> tuple[str, str, str]:
-    """A secret for an address, its hash (what is stored) and its last characters (what is shown to tell them apart)."""
-    token = secrets.token_urlsafe(32)
-    return token, hash_token(token), token[-6:]
-
-
-def hash_token(token: str) -> str:
-    # fast on purpose: the token is 256 random bits, so there is nothing to guess and nothing for a slow hash to protect
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def too_many(webhook_id: int) -> bool:

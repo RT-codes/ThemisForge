@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import boards, webhooks
+from .. import boards, security, webhooks
 from ..deps import CurrentUser, SessionDep
 from ..models import Project, TaskStatus, Webhook, WebhookDelivery
 from ..schemas import (
@@ -82,7 +82,7 @@ async def create_webhook(
     board_id = body.board_id
     if board_id is None:
         board_id = (await boards.default_board(session, project.id)).id
-    token, token_hash, hint = webhooks.new_token()
+    token, token_hash, hint = security.new_secret()
     hook = Webhook(
         project_id=project.id,
         token_hash=token_hash,
@@ -118,7 +118,7 @@ async def update_webhook(
 async def new_secret(webhook_id: int, session: SessionDep, user: CurrentUser) -> WebhookCreated:
     """A new address. The old one stops working at once, so whatever posts to it has to be given the new one."""
     hook = await _webhook(session, webhook_id, user)
-    token, hook.token_hash, hook.token_hint = webhooks.new_token()
+    token, hook.token_hash, hook.token_hint = security.new_secret()
     await session.commit()
     return await _created(session, hook, token)
 
@@ -188,7 +188,7 @@ async def _body(request: Request) -> bytes:
 
 @receiver.post("/hooks/{token}", response_model=DeliveryResult)
 async def receive(token: str, request: Request, session: SessionDep) -> JSONResponse:
-    hook = await session.scalar(select(Webhook).where(Webhook.token_hash == webhooks.hash_token(token)))
+    hook = await session.scalar(select(Webhook).where(Webhook.token_hash == security.hash_secret(token)))
     if hook is None:  # a wrong address and a deleted webhook look the same
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     if webhooks.too_many(hook.id):

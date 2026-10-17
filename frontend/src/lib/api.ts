@@ -880,6 +880,29 @@ export interface WorkflowRunDetail {
   nodes: NodeRun[]
 }
 
+/** a key an outside agent holds to use one project through MCP; the secret is only in ControlConnect */
+export interface ControlToken {
+  id: number
+  /** the one project it reaches; null: all of the owner's projects */
+  project_id: number | null
+  name: string
+  scope: 'read' | 'write'
+  /** the last characters of the secret, to tell tokens apart */
+  token_hint: string
+  last_used_at: string | null
+  created_at: string
+}
+
+/** everything pasted into an agent to connect it, secret included */
+export interface ControlConnect {
+  url: string
+  token: string
+  /** the command that adds this project to Claude Code */
+  claude_code: string
+  /** the same for clients that read an mcpServers file */
+  config_json: string
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -1084,6 +1107,16 @@ export const api = {
   webhookDeliveries: (id: number) => request<WebhookDelivery[]>(`/webhooks/${id}/deliveries`),
   /** sends the webhook a message of your own; it makes a real task */
   testWebhook: (id: number, body: { payload?: string; event?: string }) => request<DeliveryResult>(`/webhooks/${id}/test`, send('POST', body)),
+  controlTokens: (projectId: number) => request<ControlToken[]>(`/projects/${projectId}/control/tokens`),
+  createControlToken: (projectId: number, body: { name: string; scope?: 'read' | 'write' }) =>
+    request<ControlToken>(`/projects/${projectId}/control/tokens`, send('POST', body)),
+  /** the keys that reach all of the user's projects (and, for an administrator, the global settings) */
+  accountControlTokens: () => request<ControlToken[]>('/control/tokens'),
+  createAccountControlToken: (body: { name: string; scope?: 'read' | 'write' }) =>
+    request<ControlToken>('/control/tokens', send('POST', body)),
+  /** the command and config that connect an agent; can be asked for again at any time */
+  controlConnect: (id: number) => request<ControlConnect>(`/control/tokens/${id}/connect`),
+  deleteControlToken: (id: number) => request<void>(`/control/tokens/${id}`, send('DELETE')),
   notificationOptions: () => request<NotificationOptions>('/notification-options'),
   notifications: (projectId: number) => request<NotificationTarget[]>(`/projects/${projectId}/notifications`),
   createNotification: (projectId: number, body: NotificationInput) =>

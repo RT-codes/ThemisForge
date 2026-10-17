@@ -1,0 +1,521 @@
+"""The MCP control plane: who gets in with which token, and that a tool never reaches outside its project."""
+
+import asyncio
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.config import settings
+from app.control import ControlPlane
+from app.crypto import encrypt
+from app.main import app
+from app.models import ControlToken
+from tests.conftest import drain, login, make_project, make_task, register
+from tests.test_agents import make_agent
+from tests.test_harness import connect
+
+HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+
+
+@pytest.fixture
+async def control(maker, client):
+    """The app's own control plane, on the test database (the lifespan that normally starts it does not run here).
+    Its task group must be left by the task that entered it, so one task holds it open for the whole test."""
+    plane = ControlPlane(maker)
+    app.state.control = plane
+    up, down = asyncio.Event(), asyncio.Event()
+
+    async def hold() -> None:
+        async with plane.running():
+            up.set()
+            await down.wait()
+
+    holder = asyncio.create_task(hold())
+    await up.wait()
+    yield plane
+    down.set()
+    await holder
+
+
+@pytest.fixture
+async def agent_client(control):
+    """What an outside agent is: a caller with no login cookie, only a token."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+
+
+async def make_token(client, pid: int, name: str = "Claude Code", scope: str = "read") -> dict:
+    r = await client.post(f"/api/projects/{pid}/control/tokens", json={"name": name, "scope": scope})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def secret_of(client, token: dict) -> str:
+    return (await client.get(f"/api/control/tokens/{token['id']}/connect")).json()["token"]
+
+
+async def rpc(agent, secret: str | None, method: str, params: dict | None = None):
+    headers = dict(HEADERS, **({"Authorization": f"Bearer {secret}"} if secret is not None else {}))
+    return await agent.post(
+        "/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
+    )
+
+
+async def call(agent, secret: str, tool: str, **arguments):
+    """A tool's answer: the data it returned, or {'error': message} when it failed."""
+    r = await rpc(agent, secret, "tools/call", {"name": tool, "arguments": arguments})
+    assert r.status_code == 200, r.text
+    result = r.json()["result"]
+    if result["isError"]:  # the SDK puts "Error executing tool NAME: " before what the tool said
+        return {"error": result["content"][0]["text"].partition(": ")[2]}
+    data = result["structuredContent"]
+    return data["result"] if set(data) == {"result"} else data  # a list comes wrapped, an object as it is
+
+
+# ----- getting in -----
+
+
+async def test_a_request_without_a_known_token_is_refused(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    token = await make_token(client, pid)
+
+    for secret in (None, "", "nonsense", token["token_hint"]):
+        r = await rpc(agent_client, secret, "tools/list")
+        assert r.status_code == 401 and r.headers["www-authenticate"].startswith("Bearer")
+
+
+async def test_a_token_gets_an_agent_in_until_it_is_deleted(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    token = await make_token(client, pid)
+    secret = await secret_of(client, token)
+
+    names = {t["name"] for t in (await rpc(agent_client, secret, "tools/list")).json()["result"]["tools"]}
+    assert {"get_project", "list_tasks", "get_task", "get_attempt", "get_usage"} <= names
+    assert not {n for n in names if n.startswith(("create", "update", "delete", "run"))}  # v1 only looks
+
+    assert (await client.delete(f"/api/control/tokens/{token['id']}")).status_code == 204
+    assert (await rpc(agent_client, secret, "tools/list")).status_code == 401
+
+
+async def test_using_a_token_is_noted(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    token = await make_token(client, pid)
+    assert token["last_used_at"] is None
+
+    await rpc(agent_client, await secret_of(client, token), "tools/list")
+
+    (listed,) = (await client.get(f"/api/projects/{pid}/control/tokens")).json()
+    assert listed["last_used_at"] is not None
+
+
+# ----- the owner handing out tokens -----
+
+
+async def test_the_owner_can_get_the_connect_command_again_and_the_list_never_holds_the_secret(client):
+    await register(client)
+    pid = (await make_project(client, "Shop front"))["id"]
+    token = await make_token(client, pid)
+    assert "token" not in token and len(token["token_hint"]) == 6
+
+    connect_info = (await client.get(f"/api/control/tokens/{token['id']}/connect")).json()
+    again = (await client.get(f"/api/control/tokens/{token['id']}/connect")).json()
+    assert connect_info == again  # whenever it is needed, not shown once
+    assert connect_info["url"] == "http://test/mcp"
+    assert connect_info["token"].endswith(token["token_hint"])
+    assert connect_info["claude_code"].startswith(
+        "claude mcp add --transport http themis-shop-front http://test/mcp"
+    )
+    assert f"Bearer {connect_info['token']}" in connect_info["config_json"]
+    assert connect_info["token"] not in str((await client.get(f"/api/projects/{pid}/control/tokens")).json())
+
+
+async def test_only_the_owner_sees_or_changes_a_projects_tokens(client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    token = await make_token(client, pid)
+    await register(client, "other@b.co", "Bo")
+
+    assert (await client.get(f"/api/projects/{pid}/control/tokens")).status_code == 404
+    assert (await client.post(f"/api/projects/{pid}/control/tokens", json={"name": "x"})).status_code == 404
+    assert (await client.get(f"/api/control/tokens/{token['id']}/connect")).status_code == 404
+    assert (await client.delete(f"/api/control/tokens/{token['id']}")).status_code == 404
+
+
+async def test_a_token_that_can_no_longer_be_decrypted_says_so_instead_of_failing(client, maker, monkeypatch):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    token = await make_token(client, pid)
+    with monkeypatch.context() as other_key:  # what THEMIS_SECRET_KEY being changed leaves behind
+        other_key.setattr(settings, "secret_key", "a-different-key-than-before-0123456789")
+        old = encrypt("secret")
+    async with maker() as s:
+        (await s.get(ControlToken, token["id"])).token_encrypted = old
+        await s.commit()
+
+    r = await client.get(f"/api/control/tokens/{token['id']}/connect")
+    assert r.status_code == 409 and "THEMIS_SECRET_KEY" in r.json()["detail"]
+
+
+# ----- what the tools show -----
+
+
+async def test_the_tools_describe_the_tokens_project(client, agent_client):
+    await register(client)
+    pid = (await make_project(client, "Alpha"))["id"]
+    await make_task(client, pid, title="First", status="ready")
+    await make_task(client, pid, title="Second", status="backlog")
+    secret = await secret_of(client, await make_token(client, pid))
+
+    assert (await call(agent_client, secret, "get_project"))["name"] == "Alpha"
+    boards = await call(agent_client, secret, "list_boards")
+    assert boards and boards[0]["boards"]
+    assert {t["title"] for t in await call(agent_client, secret, "list_tasks")} == {"First", "Second"}
+    assert [t["title"] for t in await call(agent_client, secret, "list_tasks", status="backlog")] == [
+        "Second"
+    ]
+    assert len(await call(agent_client, secret, "list_tasks", limit=1)) == 1
+
+
+async def test_a_token_never_reaches_another_project_even_one_of_the_same_owner(
+    client, agent_client, scheduler, cells
+):
+    await register(client)
+    mine = (await make_project(client, "Mine"))["id"]
+    theirs = (await make_project(client, "Theirs"))["id"]
+    other = await make_task(client, theirs, title="Not for you", status="ready")
+    await scheduler.tick()
+    await drain(scheduler)
+    attempt = (await client.get(f"/api/tasks/{other['id']}/attempts")).json()[0]
+    secret = await secret_of(client, await make_token(client, mine))
+
+    assert (await call(agent_client, secret, "get_project"))["name"] == "Mine"
+    assert await call(agent_client, secret, "list_tasks") == []
+    missing = await call(agent_client, secret, "get_task", task_id=99999)
+    assert "error" in missing
+    for tool, arguments in (
+        ("get_task", {"task_id": other["id"]}),
+        ("list_attempts", {"task_id": other["id"]}),
+        ("get_attempt", {"attempt_id": attempt["id"]}),
+    ):
+        # the same answer as for an id that does not exist at all, so ids tell nothing about other projects
+        assert await call(agent_client, secret, tool, **arguments) == missing
+    assert await call(agent_client, secret, "get_task", task_id=99999) == missing
+
+
+async def test_an_attempt_is_read_with_the_end_of_its_log_and_what_it_used(
+    client, agent_client, scheduler, cells, maker
+):
+    me = await register(client)
+    await connect(maker, me["id"])
+    pid = (await make_project(client))["id"]
+    agent = await make_agent(client, pid, model="gpt-5-mini")
+    task = await make_task(client, pid, title="Count words", status="ready", agent_id=agent["id"])
+    cells.usage["Count words"] = {"input_tokens": 500, "output_tokens": 40}
+    await scheduler.tick()
+    await drain(scheduler)
+    secret = await secret_of(client, await make_token(client, pid))
+
+    (listed,) = await call(agent_client, secret, "list_attempts", task_id=task["id"])
+    assert (
+        listed["status"] == "succeeded" and listed["model"] == "gpt-5-mini" and listed["input_tokens"] == 500
+    )
+    short = await call(agent_client, secret, "get_attempt", attempt_id=listed["id"], log_chars=12)
+    full = await call(agent_client, secret, "get_attempt", attempt_id=listed["id"], log_chars=50_000)
+    assert len(short["log"]) == 12 and full["log"].endswith(short["log"]) and len(full["log"]) > 12
+    assert (await call(agent_client, secret, "get_attempt", attempt_id=listed["id"], log_chars=0))[
+        "log"
+    ] == ""
+    assert short["result"] == full["result"] != ""
+
+
+async def test_usage_is_added_up_per_model_for_the_tokens_project_only(
+    client, agent_client, scheduler, cells, maker
+):
+    me = await register(client)
+    await connect(maker, me["id"])
+    pid = (await make_project(client, "Mine"))["id"]
+    other = (await make_project(client, "Other"))["id"]
+    for project, title, spent in ((pid, "One", 100), (pid, "Two", 250), (other, "Elsewhere", 9999)):
+        made = await make_agent(client, project, name=f"Agent {title}", model="gpt-5-mini")
+        await make_task(client, project, title=title, status="ready", agent_id=made["id"])
+        cells.usage[title] = {"input_tokens": spent, "output_tokens": 1}
+    await scheduler.tick()
+    await drain(scheduler)
+    secret = await secret_of(client, await make_token(client, pid))
+
+    (row,) = await call(agent_client, secret, "get_usage", days=7)
+    assert (row["harness"], row["model"], row["billing"], row["attempts"]) == (
+        "codex",
+        "gpt-5-mini",
+        "subscription",
+        2,
+    )
+    assert (row["input_tokens"], row["output_tokens"]) == (350, 2)
+    # the owner sees the same numbers in the web interface's API
+    assert (await client.get(f"/api/projects/{pid}/usage")).json() == [row]
+
+
+async def test_a_token_whose_owner_is_logged_out_still_works(client, agent_client):
+    """The token is its own credential: the agent does not need the owner to be signed in anywhere."""
+    me = await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid))
+    client.cookies.clear()
+
+    assert (await call(agent_client, secret, "get_project"))["id"] == pid
+    await login(client, me["email"])
+
+
+# ----- a connection for all of a user's projects -----
+
+
+async def make_account_token(client, name: str = "Claude Code") -> dict:
+    r = await client.post("/api/control/tokens", json={"name": name})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def two_users_with_projects(client):
+    """Ada (the administrator) with two projects and an all-projects key, then Bo with one project."""
+    await register(client)
+    mine, other = (await make_project(client, "Mine"))["id"], (await make_project(client, "Other"))["id"]
+    secret = await secret_of(client, await make_account_token(client))
+    await register(client, "bo@b.co", "Bo")
+    bos = (await make_project(client, "Bo's"))["id"]
+    await login(client, "a@b.co")
+    return secret, mine, other, bos
+
+
+async def test_an_account_connection_sees_all_of_its_users_projects_and_no_ones_elses(client, agent_client):
+    secret, _, other, bos = await two_users_with_projects(client)
+
+    assert {p["name"] for p in await call(agent_client, secret, "list_projects")} == {"Mine", "Other"}
+    # it must say which project it means, and then reaches any of its user's
+    assert "project_id" in (await call(agent_client, secret, "get_project"))["error"]
+    assert (await call(agent_client, secret, "get_project", project_id=other))["name"] == "Other"
+    missing = await call(agent_client, secret, "get_project", project_id=99999)
+    assert "error" in missing
+    # another user's project answers like one that is not there
+    assert await call(agent_client, secret, "get_project", project_id=bos) == missing
+    assert await call(agent_client, secret, "list_tasks", project_id=bos) == missing
+
+
+async def test_a_connection_for_one_project_lists_only_it_and_never_reaches_a_sibling(client, agent_client):
+    await register(client)
+    mine = (await make_project(client, "Mine"))["id"]
+    other = (await make_project(client, "Other"))["id"]
+    secret = await secret_of(client, await make_token(client, mine))
+
+    assert [p["name"] for p in await call(agent_client, secret, "list_projects")] == ["Mine"]
+    assert (await call(agent_client, secret, "get_project"))["name"] == "Mine"  # no id needed
+    missing = await call(agent_client, secret, "get_project", project_id=99999)
+    for tool in ("get_project", "list_tasks", "list_agents", "list_boards", "get_project_overview"):
+        assert await call(agent_client, secret, tool, project_id=other) == missing
+
+
+async def test_account_keys_are_made_listed_and_removed_by_their_owner(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    await make_token(client, pid)  # a key for one project is not an account key
+    key = await make_account_token(client, "Laptop")
+    assert key["project_id"] is None and [
+        k["name"] for k in (await client.get("/api/control/tokens")).json()
+    ] == ["Laptop"]
+    info = (await client.get(f"/api/control/tokens/{key['id']}/connect")).json()
+    assert info["claude_code"].startswith("claude mcp add --transport http themis http://test/mcp ")
+
+    await register(client, "bo@b.co", "Bo")
+    assert (await client.get("/api/control/tokens")).json() == []  # not Bo's
+    assert (await client.get(f"/api/control/tokens/{key['id']}/connect")).status_code == 404
+    assert (await client.delete(f"/api/control/tokens/{key['id']}")).status_code == 404
+    await login(client, "a@b.co")
+    assert (await client.delete(f"/api/control/tokens/{key['id']}")).status_code == 204
+    assert (await rpc(agent_client, info["token"], "tools/list")).status_code == 401
+
+
+# ----- knowing what is going on -----
+
+
+async def test_the_overview_says_what_needs_a_person_and_what_happened(
+    client, agent_client, scheduler, cells
+):
+    await register(client)
+    pid = (await make_project(client, "Shop"))["id"]
+    await make_task(client, pid, title="Ships tonight", status="backlog")
+    await make_task(client, pid, title="Check the copy", status="review")
+    await make_task(client, pid, title="This will fail", status="ready")
+    await make_agent(client, pid, name="Writer")
+    await client.post(f"/api/projects/{pid}/workflows", json={"name": "Daily"})
+    await scheduler.tick()
+    await drain(scheduler)
+    secret = await secret_of(client, await make_token(client, pid))
+
+    overview = await call(agent_client, secret, "get_project_overview")
+
+    assert overview["project"]["name"] == "Shop" and overview["halted"] is False
+    assert overview["project"]["task_counts"] == {"backlog": 1, "review": 1, "failed": 1}
+    waiting = {t["title"]: t for t in overview["needs_attention"]}
+    assert set(waiting) == {"Check the copy", "This will fail"}
+    assert waiting["This will fail"]["status"] == "failed" and waiting["This will fail"]["reason"]
+    assert overview["running"] == [] and overview["approvals"] == []
+    assert [b["name"] for b in overview["boards"]] and overview["boards"][0]["task_counts"]["backlog"] == 1
+    assert (overview["agents"], overview["workflows"]) == (1, 1)
+    assert overview["recent_events"], "what happened lately is part of it"
+
+
+async def test_a_board_comes_with_its_tasks_and_columns(client, agent_client):
+    await register(client)
+    mine = (await make_project(client, "Mine"))["id"]
+    other = (await make_project(client, "Other"))["id"]
+    await make_task(client, mine, title="On the board", status="ready")
+    secret = await secret_of(client, await make_token(client, mine))
+    board = (await call(agent_client, secret, "list_boards"))[0]["boards"][0]
+    foreign = (await client.get(f"/api/projects/{other}/workspaces")).json()[0]["boards"][0]
+
+    view = await call(agent_client, secret, "get_board", board_id=board["id"])
+    assert [t["title"] for t in view["tasks"]] == ["On the board"]
+    assert view["board"]["id"] == board["id"] and view["board"]["columns"] and view["workspace"]
+    missing = await call(agent_client, secret, "get_board", board_id=99999)
+    assert (
+        "error" in missing
+        and await call(agent_client, secret, "get_board", board_id=foreign["id"]) == missing
+    )
+
+
+async def test_how_a_project_is_set_up_can_be_read_without_its_secrets(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    agent = await make_agent(client, pid, name="Writer", instructions="Be brief.")
+    wid = (await client.post(f"/api/projects/{pid}/workflows", json={"name": "Daily"})).json()["id"]
+    hook = (await client.post(f"/api/projects/{pid}/webhooks", json={"name": "Orders"})).json()
+    secret = await secret_of(client, await make_token(client, pid))
+    other = (await make_project(client, "Other"))["id"]
+    foreign = await make_agent(client, other, name="Foreign")
+
+    assert [a["name"] for a in await call(agent_client, secret, "list_agents")] == ["Writer"]
+    assert (await call(agent_client, secret, "get_agent", agent_id=agent["id"]))[
+        "instructions"
+    ] == "Be brief."
+    assert "error" in await call(agent_client, secret, "get_agent", agent_id=foreign["id"])
+    assert [w["name"] for w in await call(agent_client, secret, "list_workflows")] == ["Daily"]
+    assert "nodes" in (await call(agent_client, secret, "get_workflow", workflow_id=wid))["graph"]
+    assert await call(agent_client, secret, "list_workflow_runs", workflow_id=wid) == []
+    assert "error" in await call(agent_client, secret, "get_workflow_run", run_id=99999)
+
+    hooks = await call(agent_client, secret, "list_webhooks")
+    assert [h["name"] for h in hooks] == ["Orders"]
+    assert hook["path"].removeprefix("/api/hooks/") not in str(hooks)  # the address is a secret
+    assert await call(agent_client, secret, "list_webhook_deliveries", webhook_id=hook["id"]) == []
+    for empty in (
+        "list_skills",
+        "list_tool_servers",
+        "list_notifications",
+        "list_project_connections",
+        "list_approvals",
+    ):
+        assert await call(agent_client, secret, empty) == [], empty
+
+
+async def test_folders_can_be_listed_and_files_read_only_inside_their_folder(client, agent_client):
+    await register(client)
+    mine = (await make_project(client, "Mine"))["id"]
+    other = (await make_project(client, "Other"))["id"]
+    secret = await secret_of(client, await make_token(client, mine))
+    foreign_secret = await secret_of(client, await make_token(client, other))
+    shared = settings.data_dir / "projects" / str(mine) / "volumes" / "shared"
+    (shared / "notes").mkdir(parents=True)
+    (shared / "notes" / "plan.md").write_text("# Plan\n" + "x" * 100, encoding="utf-8")
+    (shared / "logo.bin").write_bytes(b"\x00\x01\x02")
+
+    folders = await call(agent_client, secret, "list_folders")
+    assert {f["kind"] for f in folders} >= {"managed", "config"}  # the shared folders and the config folder
+    fid = next(f["id"] for f in folders if f["is_default"])
+
+    top = await call(agent_client, secret, "list_files", folder_id=fid)
+    assert {e["name"] for e in top["entries"]} == {"notes", "logo.bin"}
+    inside = await call(agent_client, secret, "list_files", folder_id=fid, path="notes")
+    assert [e["name"] for e in inside["entries"]] == ["plan.md"]
+    read = await call(agent_client, secret, "read_file", folder_id=fid, path="notes/plan.md")
+    assert read["text"].startswith("# Plan") and read["truncated"] is False
+    cut = await call(agent_client, secret, "read_file", folder_id=fid, path="notes/plan.md", max_chars=10)
+    assert len(cut["text"]) == 10 and cut["truncated"] is True
+
+    assert (
+        "binary" in (await call(agent_client, secret, "read_file", folder_id=fid, path="logo.bin"))["error"]
+    )
+    assert "error" in await call(agent_client, secret, "read_file", folder_id=fid, path="../../../etc/passwd")
+    missing = await call(agent_client, secret, "read_file", folder_id=fid, path="nothing.md")
+    assert "error" in missing
+    # another project's key cannot look into this folder, and is told what a missing folder is told
+    assert await call(agent_client, foreign_secret, "list_files", folder_id=fid) == await call(
+        agent_client, foreign_secret, "list_files", folder_id=99999
+    )
+
+
+# ----- the installation itself -----
+
+
+async def test_global_settings_need_an_all_projects_connection_of_an_administrator(client, agent_client):
+    secret, mine, *_ = await two_users_with_projects(client)
+    one_project = await secret_of(client, await make_token(client, mine))
+
+    settings_out = await call(agent_client, secret, "get_settings")
+    assert settings_out["timezone"] and "cell_image" in settings_out
+    assert any(h["id"] == "codex" for h in await call(agent_client, secret, "list_harnesses"))
+    assert isinstance(await call(agent_client, secret, "list_keys"), list)
+    status = await call(agent_client, secret, "get_system_status")
+    assert status["version"] and "scheduler" in status and "cells_ready" in status
+
+    for tool in ("get_settings", "get_system_status", "list_harnesses", "list_keys"):
+        assert "all projects" in (await call(agent_client, one_project, tool))["error"]
+
+    await login(client, "bo@b.co")  # Bo is no administrator
+    bos_secret = await secret_of(client, await make_account_token(client, "Bo's"))
+    assert "administrator" in (await call(agent_client, bos_secret, "get_settings"))["error"]
+    assert {p["name"] for p in await call(agent_client, bos_secret, "list_projects")} == {"Bo's"}
+
+
+def test_a_handler_that_needs_an_administrator_is_checked_by_hand_in_its_tool():
+    """The tools call route handlers as plain functions, so a route's `AdminUser` dependency does not run for them. Every
+    handler a tool calls that has one must be named here, and its tool must make the check itself."""
+    import inspect
+    import re
+
+    from app import control_tools
+    from app.deps import require_admin
+    from app.routers import (
+        agents,
+        connections,
+        notifications,
+        projects,
+        skills,
+        system,
+        tools,
+        volumes,
+        webhooks,
+        workflows,
+        workspaces,
+    )
+
+    modules = {
+        "agents": agents, "connections": connections, "notifications": notifications, "projects": projects,
+        "skills": skills, "system": system, "tools": tools, "volumes": volumes, "webhooks": webhooks,
+        "workflows": workflows, "workspaces_router": workspaces,
+    }  # fmt: skip
+    source = inspect.getsource(control_tools)
+    needing_admin = set()
+    for module_name, function_name in set(re.findall(r"\b(\w+)\.(\w+)\(", source)):
+        handler = getattr(modules.get(module_name), function_name, None)
+        if not inspect.iscoroutinefunction(handler):
+            continue
+        for parameter in inspect.signature(handler).parameters.values():
+            depends = [
+                m for m in getattr(parameter.annotation, "__metadata__", ()) if hasattr(m, "dependency")
+            ]
+            if any(d.dependency is require_admin for d in depends):
+                needing_admin.add(f"{module_name}.{function_name}")
+    assert needing_admin == {"system.get_settings"}
+    assert "require_admin(owner)" in source

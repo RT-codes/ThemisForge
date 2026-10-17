@@ -3,6 +3,7 @@
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import ConnectionsSettings from '$lib/components/ConnectionsSettings.svelte'
+	import ControlSection from '$lib/components/ControlSection.svelte'
 	import CellPackageSettings from '$lib/components/CellPackageSettings.svelte'
 	import McpAuthSettings from '$lib/components/McpAuthSettings.svelte'
 	import RegistrySettings from '$lib/components/RegistrySettings.svelte'
@@ -257,6 +258,7 @@
 		<SettingsSection id="tool-sign-ins" title="Tool sign ins" description="Your sign ins to tool servers that ask for one, such as Notion. The tools of your projects use them.">
 			{#if form}<McpAuthSettings bind:policy={form.mcp_auth} />{:else}<McpAuthSettings />{/if}
 		</SettingsSection>
+		<ControlSection />
 		{#if auth.user?.is_admin}
 		<SettingsSection id="keys" title="Keys" description="Credentials for model providers and tools. They are encrypted and never shown again." summary={keySummary}>
 			{#if secrets.length}

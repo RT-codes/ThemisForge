@@ -883,7 +883,8 @@ export interface WorkflowRunDetail {
 /** a key an outside agent holds to use one project through MCP; the secret is only in ControlConnect */
 export interface ControlToken {
   id: number
-  project_id: number
+  /** the one project it reaches; null: all of the owner's projects */
+  project_id: number | null
   name: string
   scope: 'read' | 'write'
   /** the last characters of the secret, to tell tokens apart */
@@ -1109,6 +1110,10 @@ export const api = {
   controlTokens: (projectId: number) => request<ControlToken[]>(`/projects/${projectId}/control/tokens`),
   createControlToken: (projectId: number, body: { name: string; scope?: 'read' | 'write' }) =>
     request<ControlToken>(`/projects/${projectId}/control/tokens`, send('POST', body)),
+  /** the keys that reach all of the user's projects (and, for an administrator, the global settings) */
+  accountControlTokens: () => request<ControlToken[]>('/control/tokens'),
+  createAccountControlToken: (body: { name: string; scope?: 'read' | 'write' }) =>
+    request<ControlToken>('/control/tokens', send('POST', body)),
   /** the command and config that connect an agent; can be asked for again at any time */
   controlConnect: (id: number) => request<ControlConnect>(`/control/tokens/${id}/connect`),
   deleteControlToken: (id: number) => request<void>(`/control/tokens/${id}`, send('DELETE')),

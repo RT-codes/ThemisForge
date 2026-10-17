@@ -22,16 +22,18 @@ async def _project(session: AsyncSession, project_id: int, user: CurrentUser) ->
     return project
 
 
-async def _token(session: AsyncSession, token_id: int, user: CurrentUser) -> tuple[ControlToken, Project]:
+async def _token(
+    session: AsyncSession, token_id: int, user: CurrentUser
+) -> tuple[ControlToken, Project | None]:
     token = await session.get(ControlToken, token_id)
-    project = await session.get(Project, token.project_id) if token else None
-    if token is None or project is None or project.owner_id != user.id:
+    if token is None or token.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Token not found")
-    return token, project
+    return token, await session.get(Project, token.project_id) if token.project_id else None
 
 
 @router.get("/projects/{project_id}/control/tokens", response_model=list[ControlTokenOut])
 async def list_tokens(project_id: int, session: SessionDep, user: CurrentUser) -> list[ControlToken]:
+    """The keys that reach this one project."""
     await _project(session, project_id, user)
     rows = await session.scalars(
         select(ControlToken).where(ControlToken.project_id == project_id).order_by(ControlToken.id)
@@ -48,8 +50,31 @@ async def create_token(
     project_id: int, body: ControlTokenIn, session: SessionDep, user: CurrentUser
 ) -> ControlToken:
     await _project(session, project_id, user)
+    return await _make(session, user, body, project_id)
+
+
+@router.get("/control/tokens", response_model=list[ControlTokenOut])
+async def list_account_tokens(session: SessionDep, user: CurrentUser) -> list[ControlToken]:
+    """The keys that reach all of the user's projects (and the global settings, when the user is an administrator)."""
+    rows = await session.scalars(
+        select(ControlToken)
+        .where(ControlToken.user_id == user.id, ControlToken.project_id.is_(None))
+        .order_by(ControlToken.id)
+    )
+    return list(rows)
+
+
+@router.post("/control/tokens", response_model=ControlTokenOut, status_code=status.HTTP_201_CREATED)
+async def create_account_token(body: ControlTokenIn, session: SessionDep, user: CurrentUser) -> ControlToken:
+    return await _make(session, user, body, None)
+
+
+async def _make(
+    session: AsyncSession, user: CurrentUser, body: ControlTokenIn, project_id: int | None
+) -> ControlToken:
     secret, secret_hash, hint = security.new_secret()
     token = ControlToken(
+        user_id=user.id,
         project_id=project_id,
         name=body.name,
         scope=body.scope,
@@ -75,7 +100,9 @@ async def connect(token_id: int, request: Request, session: SessionDep, user: Cu
         )
     url = f"{str(request.base_url).rstrip('/')}/mcp"
     # one name per project, so several projects can be connected to the same agent side by side
-    name = "themis-" + (re.sub(r"[^a-z0-9]+", "-", project.name.lower()).strip("-") or str(project.id))
+    name = "themis"
+    if project is not None:
+        name += "-" + (re.sub(r"[^a-z0-9]+", "-", project.name.lower()).strip("-") or str(project.id))
     return ControlConnect(
         url=url,
         token=secret,

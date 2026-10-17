@@ -787,7 +787,7 @@ class ControlTokenOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    project_id: int
+    project_id: int | None  # None: reaches all of the owner's projects
     name: str
     scope: Literal["read", "write"]
     token_hint: str  # the last characters, to tell tokens apart

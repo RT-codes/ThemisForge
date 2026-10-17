@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { auth } from '$lib/auth.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { api, ApiError, type ControlConnect, type ControlToken } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -12,9 +13,10 @@
 	import { onMount } from 'svelte'
 	import { slide } from 'svelte/transition'
 
-	// Agents outside Themis (Claude Code, another machine's agent) that may look at this project through MCP. A row is a
-	// key: copying its command is all it takes to connect, and it can be copied again later.
-	let { projectId }: { projectId: number } = $props()
+	// Agents outside Themis (Claude Code, another machine's agent) that may look through MCP: at this project, or without
+	// a project at all: all of the user's projects. A row is a key: copying its command is all it takes to connect, and it
+	// can be copied again later.
+	let { projectId }: { projectId?: number } = $props()
 
 	let tokens = $state<ControlToken[]>([])
 	let loaded = $state(false)
@@ -31,7 +33,7 @@
 
 	async function load() {
 		try {
-			tokens = await api.controlTokens(projectId)
+			tokens = projectId === undefined ? await api.accountControlTokens() : await api.controlTokens(projectId)
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the connections'
@@ -45,7 +47,8 @@
 		e.preventDefault()
 		busy = true
 		try {
-			const made = await api.createControlToken(projectId, { name: name.trim() })
+			const body = { name: name.trim() }
+			const made = projectId === undefined ? await api.createAccountControlToken(body) : await api.createControlToken(projectId, body)
 			adding = false
 			name = 'Claude Code'
 			await load()
@@ -95,11 +98,17 @@
 	}
 </script>
 
-<section id="agent-access" class="rounded-xl border bg-card">
+<section id="agent-access" class="scroll-mt-6 rounded-xl border bg-card">
 	<div class="flex items-center gap-3 p-5 pb-3">
 		<div class="min-w-0 flex-1">
 			<h3 class="text-base font-semibold tracking-tight">Connect an agent</h3>
-			<p class="text-sm text-muted-foreground">Let Claude Code or another agent look at this project through MCP. They can only read for now.</p>
+			<p class="text-sm text-muted-foreground">
+				{#if projectId === undefined}
+					Let Claude Code or another agent look at all of your projects through MCP{auth.user?.is_admin ? ', and at how Themis is set up' : ''}. They can only read for now.
+				{:else}
+					Let Claude Code or another agent look at this project through MCP. They can only read for now.
+				{/if}
+			</p>
 		</div>
 		{#if !adding}<Button size="sm" onclick={() => (adding = true)}><PlusIcon /> Connect</Button>{/if}
 	</div>
@@ -131,7 +140,7 @@
 						<span class="min-w-0 flex-1">
 							<span class="block truncate text-sm font-medium">{t.name}</span>
 							<span class="block truncate text-xs text-muted-foreground">
-								{t.scope === 'read' ? 'Can read' : 'Can read and change'} · {t.last_used_at ? `used ${relative(t.last_used_at)}` : 'not used yet'} · ends in {t.token_hint}
+								{t.scope === 'read' ? 'Can read' : 'Can read and change'}{t.project_id === null ? ' all projects' : ''} · {t.last_used_at ? `used ${relative(t.last_used_at)}` : 'not used yet'} · ends in {t.token_hint}
 							</span>
 						</span>
 						<Button size="sm" variant="outline" onclick={() => show(t)}>{openId === t.id ? 'Hide' : 'Connect'}</Button>

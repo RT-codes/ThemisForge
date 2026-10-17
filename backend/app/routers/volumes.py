@@ -326,9 +326,9 @@ def _in_use(runs: list[tuple[int, str]], what: str) -> str:
     return f"A run is using this folder right now: {who}. {what} when it finishes"
 
 
-async def _root(request: Request, session, volume_id: int, user, *, write: bool = False):
-    """The volume's real folder, after checking the person owns the project and (for changes) that the folder
-    can be written to and no run is using it. Problems come back as plain messages."""
+async def volume_root(session, volume_id: int, user) -> tuple[Path, bool, Volume]:
+    """The volume's real folder and whether it can be written to, after checking the person owns the project. The Files
+    page and the MCP control plane both read through this, so a folder is resolved the same way for each."""
     volume, _ = await _volume(session, volume_id, user)
     cfg = await load_settings(session)
     try:
@@ -341,6 +341,13 @@ async def _root(request: Request, session, volume_id: int, user, *, write: bool 
         )  # `shared` exists in the database before any cell made its folder
     if volume.kind == "config":
         project_config.ensure_layout(volume.project_id)
+    return root, allowed, volume
+
+
+async def _root(request: Request, session, volume_id: int, user, *, write: bool = False):
+    """`volume_root`, plus (for changes) the check that the folder can be written to and no run is using it. Problems
+    come back as plain messages."""
+    root, allowed, volume = await volume_root(session, volume_id, user)
     runs = request.app.state.scheduler.runs_using(
         volume.id
     )  # never any for the config folder: it is not mounted

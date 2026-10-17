@@ -6,6 +6,7 @@
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
+	import NotificationsSection from '$lib/components/NotificationsSection.svelte'
 	import WebhooksSection from '$lib/components/WebhooksSection.svelte'
 	import WorkflowLibrary from '$lib/components/WorkflowLibrary.svelte'
 	import GroupHeading from '$lib/components/GroupHeading.svelte'
@@ -102,6 +103,7 @@
 				<AgentsSection projectId={id} />
 				<WorkflowLibrary projectId={id} now={Date.now()} />
 				<WebhooksSection projectId={id} />
+				<NotificationsSection projectId={id} />
 			</div>
 		</div>
 

@@ -32,6 +32,7 @@ Nothing here depends on you being logged in. Close the browser and the schedule 
 | **Agent** | A configured worker of a project: a role, instructions, a model and the skills, tools, keys and folders it may use. See [Agents](/docs/agents). |
 | **Workflow** | A flowchart of steps (tasks, agents, conditions, branches) that a task can play. See [Workflows](/docs/workflows). |
 | **Webhook** | An address other programs send messages to; each message makes a task. See [Webhooks](/docs/webhooks). |
+| **Notification** | A chat (Discord today) a project sends a message to when a task fails or something waits for you. See [Notifications](/docs/notifications). |
 | **Attempt** | One execution of a task. A recurring task has many attempts, each with its own log and result. |
 | **Cell** | The short-lived container an attempt runs in. Created per attempt, removed afterwards. |
 

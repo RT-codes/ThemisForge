@@ -151,3 +151,11 @@ def fresh_webhook_limits():
     from app import webhooks
 
     webhooks._hits.clear()
+
+
+@pytest.fixture(autouse=True)
+def fresh_notification_repeats():
+    """A message is not sent twice for the same thing within minutes; every test starts a new window."""
+    from app import notifications
+
+    notifications._recent.clear()

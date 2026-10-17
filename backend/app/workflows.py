@@ -60,6 +60,7 @@ from .models import (
     WorkflowRun,
     utcnow,
 )
+from .notifications import notify
 from .profiles import ProfileOverrides
 from .volumes import MountRef
 
@@ -1284,6 +1285,12 @@ class WorkflowRunner:
                 row.status = NodeStatus.WAITING
                 row.log = "Waiting for approval.\n"
                 await s.commit()
+                # Told once, when the gate first opens: a gate picked up again after a restart has already said so.
+                run = await s.get(WorkflowRun, row.run_id)
+                workflow = await s.get(Workflow, run.workflow_id) if run else None
+                if run is not None and workflow is not None:
+                    question = row.gate["prompt"].split("\n")[0] or row.label
+                    notify(self.maker, run.project_id, "attention", question, f"Approval in {workflow.name}")
         answered = self._answers.setdefault(nr_id, asyncio.Event())
         try:
             while True:

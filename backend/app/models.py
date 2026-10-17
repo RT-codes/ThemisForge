@@ -523,6 +523,30 @@ class WebhookDelivery(Base):
     payload: Mapped[str] = mapped_column(Text, default="")  # the start of the message
 
 
+class NotificationTarget(Base):
+    """Somewhere Themis tells a project's owner that something happened: a Discord channel today (see
+    app/notifications.py). `kind` names the adapter that knows how to talk to it; what that adapter needs (a channel
+    address, a bot token) is kept in `config_encrypted`, like a stored key, and never returned by the API."""
+
+    __tablename__ = "notification_targets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    kind: Mapped[str] = mapped_column(String(20))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    config_encrypted: Mapped[str] = mapped_column(Text)  # the adapter's fields as JSON, encrypted
+    hint: Mapped[str] = mapped_column(String(20), default="")  # the end of the secret, to tell targets apart
+    events: Mapped[list[str]] = mapped_column(
+        JSON, default=list
+    )  # which events it hears: app/notifications.EVENTS
+    last_sent_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+    last_error: Mapped[str] = mapped_column(
+        String(300), default=""
+    )  # empty when the last message went through
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class WorkflowRun(Base):
     """One execution of a workflow, with the graph as it was when the run began."""
 

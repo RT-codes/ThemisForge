@@ -50,6 +50,7 @@ from .keys import Redactor, key_path, unique_env_names
 from .mcp import CONFIG_PATH, McpSpec, config_toml, login_env_name
 from .mcp_auth import ACTIVE, login_for
 from .models import Agent, Attempt, AttemptStatus, Board, McpServer, Project, Secret, Task, TaskStatus, utcnow
+from .notifications import notify
 from .profiles import Profile, resolve_profile
 from .project_config import sync_project
 from .scheduling import finish_task
@@ -626,6 +627,8 @@ class Scheduler:
         )
         plan.task.last_run_at = now
         finish_task(plan.task, AttemptStatus.FAILED, cfg.timezone, now)
+        if not plan.task.internal:
+            notify(self.maker, plan.task.project_id, "failed", plan.task.title, reason)
 
     async def prune_workspaces(self) -> int:
         """Remove the working folders that nothing has used for the retention period, and those that no attempt
@@ -930,9 +933,19 @@ class Scheduler:
                 attempt.result = result
                 attempt.changes = changes
                 attempt.failure = failure
+            told = None
             if task is not None and task.status == TaskStatus.RUNNING:
                 finish_task(task, outcome, tz, now)
+                # The steps of a workflow are internal tasks: the task that plays the workflow speaks for them. A
+                # cancelled attempt was the person's own doing, so it says nothing.
+                if not task.internal and outcome == AttemptStatus.FAILED:
+                    told = (task.project_id, "failed", task.title, (failure or {}).get("reason", ""))
+                elif not task.internal and outcome == AttemptStatus.SUCCEEDED:
+                    event = "attention" if task.status == TaskStatus.REVIEW else "done"
+                    told = (task.project_id, event, task.title, "")
             await s.commit()
+        if told is not None:
+            notify(self.maker, *told)
 
     # cancelling
 

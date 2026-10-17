@@ -519,6 +519,29 @@ class Webhook(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
 
 
+class ControlToken(Base):
+    """The key an outside agent (or, later, a run) holds to use Themis's MCP control plane for one project (see
+    app/control.py). It acts as the project's owner and sees nothing outside the project. `scope` says what it may do:
+    "read" looks, "write" also changes things.
+
+    Unlike a webhook address it can be shown again: the secret is kept encrypted besides its hash, so the project's
+    settings can always give the owner the full connect command instead of making them mint a new token."""
+
+    __tablename__ = "control_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    scope: Mapped[str] = mapped_column(String(10), default="read", server_default="read")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # what a request is looked up by
+    token_encrypted: Mapped[str] = mapped_column(Text)  # what the owner is shown again
+    token_hint: Mapped[str] = mapped_column(
+        String(8), default=""
+    )  # the last characters, to tell tokens apart
+    last_used_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), default=None)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), default=utcnow)
+
+
 class WebhookDelivery(Base):
     """One message that arrived at a webhook and what became of it. The newest few are kept, with the message itself,
     because the hard part of a webhook is knowing what the other side actually sent."""

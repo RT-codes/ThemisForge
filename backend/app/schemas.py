@@ -501,6 +501,19 @@ class AttemptOut(BaseModel):
     reasoning_output_tokens: int | None = None
 
 
+class UsageRow(BaseModel):
+    """What the attempts of one harness and model used, added up (see app/usage.py)."""
+
+    harness: str
+    model: str
+    billing: Literal["subscription", "api"]
+    attempts: int
+    input_tokens: int
+    cached_input_tokens: int  # part of input_tokens
+    output_tokens: int
+    reasoning_output_tokens: int  # part of output_tokens
+
+
 class AttemptFailure(BaseModel):
     """Why an attempt failed, see Attempt.failure."""
 
@@ -753,3 +766,39 @@ class NotificationOptions(BaseModel):
 
     kinds: list[NotificationKindOut]
     events: list[NotificationEventOut]
+
+
+# control tokens: how an outside agent gets into a project through MCP (see app/control.py)
+
+
+class ControlTokenIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    scope: Literal["read", "write"] = "read"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("A token needs a name")
+        return v.strip()
+
+
+class ControlTokenOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    name: str
+    scope: Literal["read", "write"]
+    token_hint: str  # the last characters, to tell tokens apart
+    last_used_at: datetime | None
+    created_at: datetime
+
+
+class ControlConnect(BaseModel):
+    """Everything an owner pastes into an agent to connect it, with the secret in it."""
+
+    url: str
+    token: str
+    claude_code: str  # the command that adds this project to Claude Code
+    config_json: str  # the same for clients that read an mcpServers file

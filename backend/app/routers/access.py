@@ -1,7 +1,5 @@
 """Invite-only access: strangers ask, the administrator approves, an invite link creates the account."""
 
-import hashlib
-import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Response, status
@@ -21,7 +19,7 @@ from ..schemas import (
     InviteOut,
     UserOut,
 )
-from ..security import hash_password
+from ..security import hash_password, hash_secret, new_secret
 from .auth import set_session_cookie
 
 router = APIRouter(tags=["access"])
@@ -34,10 +32,6 @@ class Received(BaseModel):
     status: str = "received"
 
 
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
 async def _email_taken(session, email: str) -> bool:
     return await session.scalar(select(User.id).where(User.email == email)) is not None
 
@@ -47,10 +41,10 @@ async def _new_invite(session, email: str, admin: User) -> InviteCreated:
     if await _email_taken(session, email):
         raise HTTPException(status.HTTP_409_CONFLICT, "This email already has an account")
     await session.execute(delete(Invite).where(Invite.email == email, Invite.used_at.is_(None)))
-    token = secrets.token_urlsafe(32)
+    token, token_hash, _ = new_secret()
     invite = Invite(
         email=email,
-        token_hash=_hash(token),
+        token_hash=token_hash,
         created_by=admin.id,
         expires_at=utcnow() + timedelta(days=INVITE_DAYS),
     )
@@ -155,7 +149,7 @@ async def revoke_invite(invite_id: int, session: SessionDep, _: AdminUser) -> No
 
 
 async def _live_invite(session, token: str) -> Invite:
-    invite = await session.scalar(select(Invite).where(Invite.token_hash == _hash(token)))
+    invite = await session.scalar(select(Invite).where(Invite.token_hash == hash_secret(token)))
     if invite is None or invite.used_at is not None or invite.expires_at <= utcnow():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This invite link is invalid or has expired")
     return invite

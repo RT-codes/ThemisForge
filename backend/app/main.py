@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -11,6 +11,7 @@ from .cells import make_cell_manager
 from .codex import CodexLogins
 from .config import DEFAULT_SECRET_KEY, settings
 from .connections import DeviceLogins
+from .control import ControlEndpoint, ControlPlane
 from .db import SessionLocal
 from .mcp_auth import McpLogins
 from .migrate import upgrade_database
@@ -22,6 +23,7 @@ from .routers import (
     auth,
     codex,
     connections,
+    control,
     mcp_auth,
     notifications,
     projects,
@@ -52,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_file_logging(settings.log_dir)
     run_id = trail.begin()
     log.info("Themis %s starting (run %s)", build_info().version, run_id)
+    served = AsyncExitStack()  # what stays open while requests are served
     watcher: asyncio.Task | None = None
     update_watcher: asyncio.Task | None = None
     try:
@@ -69,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await (
             app.state.workflows.resume_parked()
         )  # after the scheduler: the steps below an approval gate need it
+        await served.enter_async_context(app.state.control.running())
         watcher = asyncio.create_task(
             preflight.watch(SessionLocal, scheduler, trail), name="themis-preflight"
         )
@@ -81,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for task in (watcher, update_watcher):
         if task:
             task.cancel()
+    await served.aclose()
     await app.state.workflows.shutdown()
     await scheduler.stop()
     await app.state.codex_logins.shutdown()
@@ -117,6 +122,7 @@ app.state.device_logins = DeviceLogins(SessionLocal)
 app.state.mcp_logins = McpLogins(SessionLocal)
 app.state.scheduler.mcp_logins = app.state.mcp_logins
 app.state.workflows = WorkflowRunner(SessionLocal, lambda: app.state.scheduler)
+app.state.control = ControlPlane(SessionLocal)
 app.state.scheduler.workflows = app.state.workflows
 
 api = APIRouter(prefix="/api")
@@ -135,6 +141,7 @@ api.include_router(tools.router)
 api.include_router(mcp_auth.router)
 api.include_router(notifications.router)
 api.include_router(webhooks.router)
+api.include_router(control.router)
 api.include_router(webhooks.receiver)
 
 
@@ -151,6 +158,8 @@ async def version() -> dict[str, str]:
 
 
 app.include_router(api)
+# MCP, for agents outside Themis. Before the frontend's catch-all below, which would answer a GET with the web page.
+app.add_route("/mcp", ControlEndpoint(), methods=["GET", "POST", "DELETE"], include_in_schema=False)
 
 # Serve the built frontend (single-page app) when it exists.
 _dist = settings.frontend_dist

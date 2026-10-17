@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import boards, halt
+from .. import boards, halt, usage
 from ..app_settings import load_settings
 from ..deps import CurrentUser, SessionDep
 from ..models import (
@@ -43,6 +43,7 @@ from ..schemas import (
     TaskSnapshot,
     TaskStageOut,
     TaskWorkflowRun,
+    UsageRow,
     check_schedule,
 )
 from ..tasks import agent_for, new_task, set_stages, workflows_for
@@ -584,6 +585,21 @@ async def get_attempt(attempt_id: int, session: SessionDep, user: CurrentUser) -
         run = await session.get(WorkflowRun, attempt.workflow_run_id)
         out.workflow_id = run.workflow_id if run else None
     return out
+
+
+# usage
+
+
+@router.get("/projects/{project_id}/usage", response_model=list[UsageRow])
+async def project_usage(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+    days: Annotated[int, Query(ge=1, le=365, description="Only attempts of the last this many days")] = 7,
+) -> list[UsageRow]:
+    """What the project's attempts used, per harness and model."""
+    await _project(session, project_id, user)
+    return await usage.usage_by_model(session, project_id, utcnow() - timedelta(days=days))
 
 
 # schedule

@@ -995,8 +995,8 @@ export const api = {
   cancelTask: (id: number) => request<Task>(`/tasks/${id}/cancel`, send('POST')),
   attempts: (taskId: number) => request<Attempt[]>(`/tasks/${taskId}/attempts`),
   attempt: (id: number) => request<AttemptDetail>(`/attempts/${id}`),
-  schedule: (projectId: number, hours: number) =>
-    request<ScheduledRun[]>(`/projects/${projectId}/schedule?hours=${hours}`),
+  schedule: (projectId: number, hours: number, boardId?: number) =>
+    request<ScheduledRun[]>(`/projects/${projectId}/schedule?hours=${hours}${boardId === undefined ? '' : `&board_id=${boardId}`}`),
 
   systemStatus: () => request<SystemStatus>('/system/status'),
   checkForUpdates: () => request<UpdateInfo>('/system/update-check', send('POST')),

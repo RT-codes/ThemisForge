@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Task } from './api.ts'
-import { applyView, emptyColumn, emptyView, filterCount, isDefaultView, parseStored, sortTasks, toggled } from './boardView.ts'
+import type { PropertyDef, Task } from './api.ts'
+import { applyView, emptyColumn, emptyView, filterChips, filterCount, isDefaultView, parseStored, removeFilterChip, sortTasks, toggled, type Filters } from './boardView.ts'
 
 let n = 0
 const task = (over: Partial<Task>): Task =>
@@ -96,4 +96,57 @@ test('what was remembered is read safely', () => {
   for (const junk of [null, '', 'not json', '{"board": 5, "columns": "x"}', '{"board":{"sort":"sideways"}}']) {
     assert.ok(isDefaultView(parseStored(junk).board), String(junk))
   }
+})
+
+const defs: PropertyDef[] = [{ key: 'priority', name: 'Priority', type: 'select', options: ['High', 'Low'] }]
+
+test('chips use the menu labels and show each selected value, including no value', () => {
+  const filters: Filters = { schedule: ['none', 'once', 'cron'], harness: ['', 'codex', 'workflow'], props: { priority: ['High', ''], unused: [] } }
+  assert.deepEqual(filterChips(filters, defs).map((c) => c.label), [
+    'Schedule: No schedule', 'Schedule: One-off', 'Schedule: Repeating',
+    'Runs with: Placeholder program', 'Runs with: Codex agent', 'Runs with: Workflow',
+    'Priority: High', 'Priority: No priority',
+  ])
+  assert.deepEqual(filterChips(emptyView().filters, defs), [])
+})
+
+test('saved filters stay readable and removable when properties or options disappear', () => {
+  const filters: Filters = { schedule: [], harness: [], props: { removed: ['Old option', ''], priority: ['Urgent'] } }
+  const chips = filterChips(filters, defs)
+  assert.deepEqual(chips.map((c) => c.label), ['removed: Old option', 'removed: No removed', 'Priority: Urgent'])
+  assert.deepEqual(removeFilterChip(filters, chips[0]).props, { removed: [''], priority: ['Urgent'] })
+})
+
+test('removing a chip preserves other values, search, order and column settings without mutation', () => {
+  const filters: Filters = { schedule: ['cron', 'once'], harness: ['codex', ''], props: { priority: ['High', 'Low'], owner: ['Dev'] } }
+  const before = structuredClone(filters)
+  const board = { search: 'report', sort: 'title' as const, filters }
+  const column = { ...emptyColumn(), filters: { ...emptyColumn().filters, schedule: ['once' as const] } }
+  const columnBefore = structuredClone(column)
+  for (const chip of filterChips(filters, defs)) {
+    const changed = { ...board, filters: removeFilterChip(board.filters, chip) }
+    assert.equal(changed.search, 'report')
+    assert.equal(changed.sort, 'title')
+    assert.deepEqual(filterChips(changed.filters, defs), filterChips(filters, defs).filter((c) => c.label !== chip.label))
+  }
+  assert.deepEqual(filters, before)
+  assert.deepEqual(column, columnBefore)
+})
+
+test('removing the last value clears that group and reveals matching tasks', () => {
+  const filters: Filters = { schedule: ['cron'], harness: ['codex'], props: { priority: ['High'] } }
+  const board = { ...emptyView(), search: 'report', sort: 'title' as const, filters }
+  const tasks = [
+    task({ title: 'Weekly report', schedule_kind: 'cron', harness: 'codex', properties: { priority: 'High' } }),
+    task({ title: 'Daily report', schedule_kind: 'cron', harness: 'codex', properties: { priority: 'Low' } }),
+    task({ title: 'Unrelated', schedule_kind: 'cron', harness: 'codex' }),
+  ]
+  assert.deepEqual(ids(applyView(tasks, board).shown), ['Weekly report'])
+  const changed = removeFilterChip(filters, filterChips(filters, defs)[2])
+  assert.deepEqual(changed.props, {})
+  assert.deepEqual(ids(applyView(tasks, { ...board, filters: changed }).shown), ['Daily report', 'Weekly report'])
+  let cleared = changed
+  for (const chip of filterChips(changed, defs)) cleared = removeFilterChip(cleared, chip)
+  assert.equal(filterCount(cleared), 0)
+  assert.deepEqual(filterChips(cleared, defs), [])
 })

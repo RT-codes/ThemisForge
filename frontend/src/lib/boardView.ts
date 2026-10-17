@@ -54,6 +54,38 @@ export function toggled<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
 }
 
+export type FilterChip = { label: string } & (
+  | { kind: 'schedule'; value: ScheduleKind }
+  | { kind: 'harness'; value: Harness }
+  | { kind: 'property'; key: string; value: string }
+)
+
+export function filterChips(filters: Filters, defs: PropertyDef[]): FilterChip[] {
+  return [
+    ...filters.schedule.map((value): FilterChip => ({
+      kind: 'schedule', value, label: `Schedule: ${SCHEDULE_CHOICES.find((c) => c.id === value)?.label ?? value}`,
+    })),
+    ...filters.harness.map((value): FilterChip => ({
+      kind: 'harness', value, label: `Runs with: ${HARNESS_CHOICES.find((c) => c.id === value)?.label ?? value}`,
+    })),
+    ...Object.entries(filters.props).flatMap(([key, values]) => {
+      // A saved filter can outlive its property definition; it must still be visible and removable.
+      const name = defs.find((d) => d.key === key)?.name ?? key
+      return values.map((value): FilterChip => ({
+        kind: 'property', key, value, label: `${name}: ${value === NO_VALUE ? `No ${name.toLowerCase()}` : value}`,
+      }))
+    }),
+  ]
+}
+
+export function removeFilterChip(filters: Filters, chip: FilterChip): Filters {
+  if (chip.kind === 'schedule') return { ...filters, schedule: filters.schedule.filter((v) => v !== chip.value) }
+  if (chip.kind === 'harness') return { ...filters, harness: filters.harness.filter((v) => v !== chip.value) }
+  const props = { ...filters.props, [chip.key]: (filters.props[chip.key] ?? []).filter((v) => v !== chip.value) }
+  if (!props[chip.key].length) delete props[chip.key]
+  return { ...filters, props }
+}
+
 function matches(task: Task, f: Filters): boolean {
   if (f.schedule.length && !f.schedule.includes(task.schedule_kind)) return false
   if (f.harness.length && !f.harness.includes(task.harness)) return false

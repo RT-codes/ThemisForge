@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException
 from mcp.server.mcpserver import MCPServer
@@ -60,6 +60,20 @@ class Caller:
     user_id: int  # the tools act as this user
     project_id: int | None  # the only project it reaches; None: all of the user's
     scope: str
+    name: str  # what the owner called the connection, so the history can say who really acted
+
+
+class UserVia:
+    """The user a tool acts as, with a name that says an agent did it: "Ada via Claude Code". The REST handlers write
+    `user.name` into the project history as the actor, so this is how an action taken through MCP is told apart from
+    one Ada took herself. Everything else (id, rights) is the user's own; nothing is changed on the user row."""
+
+    def __init__(self, user: User, connection: str) -> None:
+        self._user = user
+        self.name = f"{user.name} via {connection}"
+
+    def __getattr__(self, attribute: str) -> Any:
+        return getattr(self._user, attribute)
 
 
 # set while a request is handled, for the tools to read
@@ -109,7 +123,7 @@ class ControlPlane:
             if row.last_used_at is None or now - row.last_used_at > LAST_USED_EVERY:
                 row.last_used_at = now
                 await s.commit()
-            return Caller(row.id, row.user_id, row.project_id, row.scope)
+            return Caller(row.id, row.user_id, row.project_id, row.scope, row.name)
 
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         caller = await self.authenticate(bearer(scope))
@@ -136,7 +150,11 @@ class ControlPlane:
             user = await s.get(User, caller.user_id)
             if user is None:  # the user was removed while the token lived on
                 raise ToolError(NOT_FOUND)
-            yield s, user, caller
+            yield (
+                s,
+                cast(User, UserVia(user, caller.name)),
+                caller,
+            )  # stands in for the User the handlers expect
 
     @staticmethod
     def app() -> Any:

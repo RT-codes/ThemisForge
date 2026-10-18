@@ -88,7 +88,7 @@ On a connection for all your projects, a tool that is about a project needs its 
 
 These need a connection made with **Allow changes**. On any other connection they are refused with a message that says
 so, and nothing happens. They do what the same buttons in Themis do, with the same rules (a running task cannot be
-edited, a halted project does not start work), and show up in the history as your doing.
+edited, a halted project does not start work), and show up in the project history under your name and the connection's, such as "Ada via Claude Code".
 
 | Tool | What it does |
 | --- | --- |

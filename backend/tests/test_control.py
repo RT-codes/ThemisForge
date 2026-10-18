@@ -599,7 +599,11 @@ async def test_an_agent_with_permission_makes_runs_changes_and_moves_tasks(
     )
     assert moved["status"] == "backlog"
     assert "not running" in (await call(agent_client, secret, "cancel_task", task_id=made["id"]))["error"]
-    assert any(e["kind"] == "task_created" for e in await call(agent_client, secret, "get_history"))
+    # the history says an agent did it, so it is not taken for the person's own doing
+    history = await call(agent_client, secret, "get_history")
+    assert any(e["kind"] == "task_created" and e["actor"] == "Ada via Claude Code" for e in history)
+    web = (await client.get(f"/api/projects/{pid}/history")).json()
+    assert {e["actor"] for e in web if e["task_id"] == made["id"]} == {"Ada via Claude Code"}
 
 
 async def test_halting_holds_work_back_until_it_is_resumed_for_a_project_and_for_a_board(

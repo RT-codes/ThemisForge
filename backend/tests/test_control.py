@@ -12,9 +12,16 @@ from app.main import app
 from app.models import ControlToken
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
+from tests.test_approvals import gated, open_approvals, start
 from tests.test_harness import connect
 
 HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+
+# the tools that change things: only a token made with the "write" scope may use them
+ACTIONS = {
+    "create_task", "update_task", "move_task", "run_task", "cancel_task", "start_workflow_run",
+    "cancel_workflow_run", "decide_approval", "halt_project", "resume_project", "halt_board", "resume_board",
+}  # fmt: skip
 
 
 @pytest.fixture
@@ -91,9 +98,13 @@ async def test_a_token_gets_an_agent_in_until_it_is_deleted(client, agent_client
     token = await make_token(client, pid)
     secret = await secret_of(client, token)
 
-    names = {t["name"] for t in (await rpc(agent_client, secret, "tools/list")).json()["result"]["tools"]}
+    listed = (await rpc(agent_client, secret, "tools/list")).json()["result"]["tools"]
+    names = {t["name"] for t in listed}
     assert {"get_project", "list_tasks", "get_task", "get_attempt", "get_usage"} <= names
-    assert not {n for n in names if n.startswith(("create", "update", "delete", "run"))}  # v1 only looks
+    # every tool says whether it changes anything, so a client can wave the reading ones through
+    changing = {t["name"] for t in listed if not t["annotations"]["readOnlyHint"]}
+    assert changing == ACTIONS
+    assert not {n for n in names - ACTIONS if n.startswith(("create", "update", "delete", "run", "cancel"))}
 
     assert (await client.delete(f"/api/control/tokens/{token['id']}")).status_code == 204
     assert (await rpc(agent_client, secret, "tools/list")).status_code == 401
@@ -272,8 +283,8 @@ async def test_a_token_whose_owner_is_logged_out_still_works(client, agent_clien
 # ----- a connection for all of a user's projects -----
 
 
-async def make_account_token(client, name: str = "Claude Code") -> dict:
-    r = await client.post("/api/control/tokens", json={"name": name})
+async def make_account_token(client, name: str = "Claude Code", scope: str = "read") -> dict:
+    r = await client.post("/api/control/tokens", json={"name": name, "scope": scope})
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -519,3 +530,171 @@ def test_a_handler_that_needs_an_administrator_is_checked_by_hand_in_its_tool():
                 needing_admin.add(f"{module_name}.{function_name}")
     assert needing_admin == {"system.get_settings"}
     assert "require_admin(owner)" in source
+
+
+# ----- actions: they need a token that may change things -----
+
+
+async def test_a_token_that_only_reads_cannot_use_any_action_and_nothing_changes(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    task = await make_task(client, pid, title="Keep me", status="backlog")
+    board = (await call(agent_client, await secret_of(client, await make_token(client, pid)), "list_boards"))[
+        0
+    ]
+    secret = await secret_of(client, await make_token(client, pid))  # scope: read
+
+    arguments = {
+        "create_task": {"task": {"title": "New"}},
+        "update_task": {"task_id": task["id"], "changes": {"title": "Changed"}},
+        "move_task": {"task_id": task["id"], "board_id": board["boards"][0]["id"]},
+        "run_task": {"task_id": task["id"]},
+        "cancel_task": {"task_id": task["id"]},
+        "start_workflow_run": {"workflow_id": 1},
+        "cancel_workflow_run": {"run_id": 1},
+        "decide_approval": {"approval_id": 1, "approved": True},
+        "halt_project": {},
+        "resume_project": {},
+        "halt_board": {"board_id": board["boards"][0]["id"]},
+        "resume_board": {"board_id": board["boards"][0]["id"]},
+    }
+    assert set(arguments) == ACTIONS, "every action is tried here"
+    for name, args in arguments.items():
+        assert "can only read" in (await call(agent_client, secret, name, **args))["error"], name
+
+    assert [t["title"] for t in await call(agent_client, secret, "list_tasks")] == ["Keep me"]
+    assert (await call(agent_client, secret, "get_project_overview"))["halted"] is False
+
+
+async def test_an_agent_with_permission_makes_runs_changes_and_moves_tasks(
+    client, agent_client, scheduler, cells
+):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid, scope="write"))
+
+    made = await call(
+        agent_client, secret, "create_task", task={"title": "Write notes", "description": "Short"}
+    )
+    assert made["title"] == "Write notes" and made["status"] == "backlog" and made["project_id"] == pid
+    assert [t["id"] for t in (await client.get(f"/api/projects/{pid}/tasks")).json()] == [
+        made["id"]
+    ]  # for real
+
+    changed = await call(
+        agent_client, secret, "update_task", task_id=made["id"], changes={"title": "Write more"}
+    )
+    assert changed["title"] == "Write more" and changed["description"] == "Short"  # only what was given
+
+    ran = await call(agent_client, secret, "run_task", task_id=made["id"])
+    assert ran["status"] == "ready"
+    await scheduler.tick()
+    await drain(scheduler)
+    assert (await call(agent_client, secret, "get_task", task_id=made["id"]))["status"] in ("done", "review")
+    assert len(await call(agent_client, secret, "list_attempts", task_id=made["id"])) == 1
+
+    board = (await call(agent_client, secret, "list_boards"))[0]["boards"][0]
+    moved = await call(
+        agent_client, secret, "move_task", task_id=made["id"], board_id=board["id"], status="backlog"
+    )
+    assert moved["status"] == "backlog"
+    assert "not running" in (await call(agent_client, secret, "cancel_task", task_id=made["id"]))["error"]
+    assert any(e["kind"] == "task_created" for e in await call(agent_client, secret, "get_history"))
+
+
+async def test_halting_holds_work_back_until_it_is_resumed_for_a_project_and_for_a_board(
+    client, agent_client, scheduler, cells
+):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid, scope="write"))
+    task = await make_task(client, pid, title="Waits", status="backlog")
+    board_id = (await call(agent_client, secret, "list_boards"))[0]["boards"][0]["id"]
+
+    assert (await call(agent_client, secret, "halt_project"))["halted_at"] is not None
+    assert "halted" in (await call(agent_client, secret, "run_task", task_id=task["id"]))["error"]
+    assert (await call(agent_client, secret, "resume_project"))["halted_at"] is None
+
+    halted = await call(agent_client, secret, "halt_board", board_id=board_id, stop_running=False)
+    assert halted["halted_at"] is not None
+    assert "halted" in (await call(agent_client, secret, "run_task", task_id=task["id"]))["error"]
+    assert (await call(agent_client, secret, "resume_board", board_id=board_id))["halted_at"] is None
+    assert (await call(agent_client, secret, "run_task", task_id=task["id"]))["status"] == "ready"
+
+
+async def test_workflow_runs_are_started_and_cancelled_and_approvals_answered(client, agent_client, runner):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid, scope="write"))
+    run_id = await start(client, pid, *gated())  # parks at its approval gate
+    [approval] = await open_approvals(client)
+    assert approval["run_id"] == run_id
+
+    cancelled = await call(agent_client, secret, "cancel_workflow_run", run_id=run_id)
+    assert cancelled["status"] == "cancelled"
+    assert (
+        "no longer going"
+        in (await call(agent_client, secret, "decide_approval", approval_id=approval["id"], approved=True))[
+            "error"
+        ]
+    )
+
+    run_id = await start(client, pid, *gated("Ship it?"))
+    [approval] = [a for a in await open_approvals(client) if a["run_id"] == run_id]
+    answered = await call(
+        agent_client,
+        secret,
+        "decide_approval",
+        approval_id=approval["id"],
+        approved=True,
+        note="from an agent",
+    )
+    assert answered["id"] == run_id
+    assert (await call(agent_client, secret, "decide_approval", approval_id=approval["id"], approved=False))[
+        "error"
+    ]  # the first answer stands
+
+    flow = (await call(agent_client, secret, "list_workflows"))[0]["id"]
+    started = await call(agent_client, secret, "start_workflow_run", workflow_id=flow)
+    assert started["workflow_id"] == flow
+
+
+async def test_an_action_never_reaches_outside_its_project_and_a_connection_for_all_must_name_one(
+    client, agent_client, scheduler, cells, runner
+):
+    await register(client)
+    mine = (await make_project(client, "Mine"))["id"]
+    theirs = (await make_project(client, "Theirs"))["id"]
+    other = await make_task(client, theirs, title="Not for you", status="backlog")
+    other_board = (await client.get(f"/api/projects/{theirs}/workspaces")).json()[0]["boards"][0]["id"]
+    other_run = await start(client, theirs, *gated())
+    [other_approval] = await open_approvals(client)
+    secret = await secret_of(client, await make_token(client, mine, scope="write"))
+
+    missing = await call(agent_client, secret, "run_task", task_id=99999)
+    assert "error" in missing
+    for name, args in (
+        ("update_task", {"task_id": other["id"], "changes": {"title": "Mine now"}}),
+        ("move_task", {"task_id": other["id"], "board_id": other_board}),
+        ("run_task", {"task_id": other["id"]}),
+        ("cancel_task", {"task_id": other["id"]}),
+        ("cancel_workflow_run", {"run_id": other_run}),
+        ("decide_approval", {"approval_id": other_approval["id"], "approved": True}),
+        ("halt_board", {"board_id": other_board}),
+        ("resume_board", {"board_id": other_board}),
+        ("halt_project", {"project_id": theirs}),
+        ("create_task", {"project_id": theirs, "task": {"title": "Planted"}}),
+    ):
+        # the same answer as for an id that does not exist at all, so ids tell nothing about other projects
+        assert await call(agent_client, secret, name, **args) == missing, name
+    assert (await client.get(f"/api/tasks/{other['id']}")).json()["title"] == "Not for you"
+    assert (await client.get(f"/api/projects/{theirs}")).json()["halted_at"] is None
+    assert [t["title"] for t in (await client.get(f"/api/projects/{theirs}/tasks")).json()] == ["Not for you"]
+
+    everywhere = await secret_of(client, await make_account_token(client, scope="write"))
+    assert (
+        "project_id"
+        in (await call(agent_client, everywhere, "create_task", task={"title": "Where?"}))["error"]
+    )
+    made = await call(agent_client, everywhere, "create_task", project_id=theirs, task={"title": "Here"})
+    assert made["project_id"] == theirs

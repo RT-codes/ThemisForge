@@ -3,6 +3,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { api, ApiError, type ControlConnect, type ControlToken } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { relative } from '$lib/format'
 	import BotIcon from '@lucide/svelte/icons/bot'
@@ -13,8 +14,8 @@
 	import { onMount } from 'svelte'
 	import { slide } from 'svelte/transition'
 
-	// Agents outside Themis (Claude Code, another machine's agent) that may look through MCP: at this project, or without
-	// a project at all: all of the user's projects. A row is a key: copying its command is all it takes to connect, and it
+	// Agents outside Themis (Claude Code, another machine's agent) that may look through MCP (and, when allowed, act): at
+	// this project, or without a project at all: all of the user's projects. A row is a key: copying its command is all it takes to connect, and it
 	// can be copied again later.
 	let { projectId }: { projectId?: number } = $props()
 
@@ -23,6 +24,8 @@
 	let error = $state('')
 	let adding = $state(false)
 	let name = $state('Claude Code')
+	// off: the agent only looks. On: it may also make, run and cancel tasks, run workflows, answer approvals and halt work
+	let mayChange = $state(false)
 	let busy = $state(false)
 	// the connect details of the row that is open, and which copy button just worked
 	let openId = $state<number | null>(null)
@@ -47,10 +50,11 @@
 		e.preventDefault()
 		busy = true
 		try {
-			const body = { name: name.trim() }
+			const body = { name: name.trim(), scope: mayChange ? ('write' as const) : ('read' as const) }
 			const made = projectId === undefined ? await api.createAccountControlToken(body) : await api.createControlToken(projectId, body)
 			adding = false
 			name = 'Claude Code'
+			mayChange = false
 			await load()
 			await show(made)
 		} catch (err) {
@@ -104,9 +108,9 @@
 			<h3 class="text-base font-semibold tracking-tight">Connect an agent</h3>
 			<p class="text-sm text-muted-foreground">
 				{#if projectId === undefined}
-					Let Claude Code or another agent look at all of your projects through MCP{auth.user?.is_admin ? ', and at how Themis is set up' : ''}. They can only read for now.
+					Let Claude Code or another agent look at all of your projects through MCP{auth.user?.is_admin ? ', and at how Themis is set up' : ''}. They only read, unless you allow changes.
 				{:else}
-					Let Claude Code or another agent look at this project through MCP. They can only read for now.
+					Let Claude Code or another agent look at this project through MCP. They only read, unless you allow changes.
 				{/if}
 			</p>
 		</div>
@@ -121,6 +125,13 @@
 			<Input id="control-name" class="min-w-0 flex-1" bind:value={name} maxlength={60} placeholder="Claude Code" required />
 			<Button type="submit" size="sm" disabled={busy || !name.trim()}>Make the connection</Button>
 			<Button type="button" size="sm" variant="ghost" onclick={() => (adding = false)}>Cancel</Button>
+			<label class="flex basis-full items-start gap-2 text-sm">
+				<Checkbox class="mt-0.5" checked={mayChange} onCheckedChange={(on) => (mayChange = !!on)} />
+				<span>
+					Allow changes
+					<span class="block text-xs text-muted-foreground">It can then make, move, run and cancel tasks, run workflows, answer approvals, and halt or resume work. It never deletes or changes settings.</span>
+				</span>
+			</label>
 		</form>
 	{/if}
 

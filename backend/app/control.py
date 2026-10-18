@@ -8,8 +8,8 @@ being written twice. This module adds only who is asking and what they may reach
 - A request carries a control token (`Authorization: Bearer ...`, see ControlToken). A token belongs to a user and acts
   as them. It either names one project, which is all it can reach, or none, which means all of the user's projects and
   the global settings the user may see. An id outside that reach answers "not found", exactly like a missing one.
-- The tools only read for now. `scope` is already part of the token so that write tools can come without making old
-  tokens more powerful than they were when they were made.
+- A token's `scope` is "read" (the default) or "write". Tools that change things (`write_tool`) refuse a "read" token,
+  so tokens made before the action tools existed can still only look.
 - MCP is served stateless, one JSON answer per request: nothing is kept between calls, so a restart loses no session
   and there is nothing to expire.
 """
@@ -26,6 +26,7 @@ from fastapi import HTTPException
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ToolAnnotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.responses import JSONResponse
@@ -40,8 +41,13 @@ INSTRUCTIONS = (
     "Themis runs AI agents as tasks in throwaway containers, organised in projects. Start with get_project_overview "
     "(or list_projects first, on a connection for all projects) to see what is going on, then go down: list_boards "
     "and get_board for the work, get_task and get_attempt for how a run went, list_agents, list_workflows and the "
-    "other list tools for how the project is set up, list_files and read_file for its folders. Everything here only "
-    "reads."
+    "other list tools for how the project is set up, list_files and read_file for its folders. The tools that change "
+    "things (making, moving, running and cancelling tasks, running workflows, answering approvals, halting and "
+    "resuming) only work on a connection that was made with permission to change things."
+)
+WRITE_NEEDED = (
+    "This connection can only read. Make one that can change things (in Themis, under Connections, with 'Allow "
+    "changes') to use this tool."
 )
 LAST_USED_EVERY = timedelta(minutes=1)  # so a busy agent does not make a write of every read
 
@@ -137,19 +143,29 @@ class ControlPlane:
         """The app that is serving this request, for the few handlers that read its state (scheduler, preflight)."""
         return _app.get()
 
-    def tool(self, fn):
-        """Register a tool, with the failures of the REST handlers it calls turned into the tool's own errors."""
+    def tool(self, fn, *, writes: bool = False):
+        """Register a tool, with the failures of the REST handlers it calls turned into the tool's own errors.
+
+        A tool that `writes` changes things, so it only runs for a token made with the "write" scope. The check is made
+        here, once, rather than in each tool, so a new action cannot forget it. It is also announced to the agent
+        (read-only hint), which lets a client let the reading tools through without asking and ask about the others."""
 
         @functools.wraps(fn)
         async def run(*args, **kwargs):
+            if writes and _caller.get().scope != "write":
+                raise ToolError(WRITE_NEEDED)
             try:
                 return await fn(*args, **kwargs)
             except HTTPException as e:
                 # a missing id and one out of reach get the same answer, so ids tell nothing about what is beyond it
                 raise ToolError(NOT_FOUND if e.status_code == 404 else str(e.detail)) from None
 
-        self.server.tool()(run)
+        self.server.tool(annotations=ToolAnnotations(read_only_hint=not writes))(run)
         return fn
+
+    def write_tool(self, fn):
+        """Register a tool that changes things (see `tool`)."""
+        return self.tool(fn, writes=True)
 
 
 class ControlEndpoint:

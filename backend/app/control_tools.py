@@ -1,4 +1,4 @@
-"""The tools of the MCP control plane (see app/control.py): everything an outside agent can read.
+"""The tools of the MCP control plane (see app/control.py): what an outside agent can read, and the actions it may take.
 
 Each tool is a thin wrapper around the REST handler the web interface already uses, called as the token's user, so
 what an agent sees is exactly what that person sees, under the same rules. Two things are added here, for every tool:
@@ -13,7 +13,9 @@ A handler is called as a plain function, so the checks FastAPI would run for the
 in, whether they are an administrator) do not run. The user and the session are supplied here; a handler that needs
 more (an `AdminUser`) must have that check made by hand. tests/test_control.py fails when one is missed.
 
-Everything only reads. A write tool will be a different kind of tool, behind the token's `write` scope.
+Reading tools work for every token. The actions (`write_tool`) change things and so need a token made with the `write`
+scope; control.py refuses them for the others before they run. They are the day-to-day controls of a project (tasks,
+runs, workflows, approvals, halting) and nothing that destroys or reconfigures: no deleting, no settings, no files.
 """
 
 import asyncio
@@ -26,7 +28,7 @@ from pydantic import BaseModel, Field
 from . import overview
 from .app_settings import AppSettings
 from .deps import require_admin
-from .models import Board, Webhook
+from .models import Board, Webhook, WorkflowNodeRun, WorkflowRun
 from .routers import (
     agents,
     connections,
@@ -52,12 +54,15 @@ from .schemas import (
     AttemptOut,
     BoardOut,
     DeliveryOut,
+    MoveIn,
     NotificationOut,
     ProjectEventOut,
     ProjectOut,
     ProjectSummary,
     ScheduledRun,
+    TaskIn,
     TaskOut,
+    TaskPatch,
     UsageRow,
     WebhookOut,
     WorkspaceOut,
@@ -123,7 +128,12 @@ def account_only(caller: "Caller") -> None:
 
 def register(plane: "ControlPlane") -> None:
     """Add every tool to the plane's server."""
-    tool, acting = plane.tool, plane.acting
+    tool, write_tool, acting = plane.tool, plane.write_tool, plane.acting
+
+    def web_request() -> SimpleNamespace:
+        """The handlers of actions reach the scheduler and the workflow engine through `request.app.state`, so the app
+        stands in for the web request they expect (as it does for get_system_status)."""
+        return SimpleNamespace(app=plane.app())
 
     # projects
 
@@ -463,3 +473,138 @@ def register(plane: "ControlPlane") -> None:
         async with acting() as (s, owner, caller):
             account_only(caller)
             return await tools.available_keys(s, owner)
+
+    # actions: they change things, so they need a connection with permission to (see ControlPlane.write_tool)
+
+    @write_tool
+    async def create_task(task: TaskIn, project_id: ProjectId = None) -> TaskOut:
+        """Make a task. Without a board_id it goes on the project's first board; the default status is Backlog, where
+        nothing starts by itself, so give status 'ready' (or call run_task afterwards) to have it run."""
+        async with acting() as (s, owner, caller):
+            return await projects.create_task(project_of(caller, project_id), task, web_request(), s, owner)
+
+    @write_tool
+    async def update_task(task_id: int, changes: TaskPatch) -> TaskOut:
+        """Change a task: only the fields given in `changes` are touched. A running task cannot be changed; cancel it
+        first."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            return await projects.update_task(task_id, changes, web_request(), s, owner)
+
+    @write_tool
+    async def move_task(
+        task_id: int,
+        board_id: int,
+        status: Annotated[
+            str | None, Field(description="A status key of that board; left out: the same one, else Backlog")
+        ] = None,
+        position: float | None = None,
+    ) -> TaskOut:
+        """Send a task to a board of its project, and a status on it (moving it to 'ready' makes it run). The task is
+        the same one, with its history."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            move = MoveIn(board_id=board_id, status=status, position=position)
+            return await workspaces_router.move_task(task_id, move, web_request(), s, owner)
+
+    @write_tool
+    async def run_task(task_id: int) -> TaskOut:
+        """Run a task now instead of waiting for its schedule. It is queued as ready and starts when the resource
+        budget allows. Refused while the project or board is halted."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            return await projects.run_task_now(task_id, web_request(), s, owner)
+
+    @write_tool
+    async def cancel_task(task_id: int) -> TaskOut:
+        """Stop a task that is running now."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            return await projects.cancel_task(task_id, web_request(), s, owner)
+
+    @write_tool
+    async def start_workflow_run(workflow_id: int) -> RunDetail:
+        """Run a saved workflow now, from its Start nodes. get_workflow_run follows how far it gets."""
+        async with acting() as (s, owner, caller):
+            await workflow_in_reach(s, owner, caller, workflow_id)
+            return await workflows.start_run(workflow_id, web_request(), s, owner)
+
+    @write_tool
+    async def cancel_workflow_run(run_id: int) -> RunDetail:
+        """Stop a workflow run that is going."""
+        async with acting() as (s, owner, caller):
+            run = await workflows.get_run(run_id, s, owner)
+            pinned(caller, run.project_id)
+            return await workflows.cancel_run(run_id, web_request(), s, owner)
+
+    @write_tool
+    async def decide_approval(
+        approval_id: int,
+        approved: bool,
+        note: Annotated[str, Field(max_length=2000, description="Why, shown with the answer")] = "",
+    ) -> RunDetail:
+        """Approve or reject a workflow step that waits for a person (list_approvals has them). The first answer
+        stands and the run carries on, or the step fails, at once."""
+        async with acting() as (s, owner, caller):
+            node = await s.get(WorkflowNodeRun, approval_id)
+            run = await s.get(WorkflowRun, node.run_id) if node else None
+            if run is None:
+                raise ToolError(NOT_FOUND)
+            pinned(caller, run.project_id)
+            await workflows.decide_approval(
+                approval_id, workflows.DecisionIn(approved=approved, note=note), web_request(), s, owner
+            )
+            await s.commit()  # look again at what the engine wrote while carrying on
+            return await workflows.get_run(run.id, s, owner)
+
+    @write_tool
+    async def halt_project(
+        project_id: ProjectId = None,
+        stop_running: Annotated[
+            bool, Field(description="Also stop what is running now; false lets it finish")
+        ] = True,
+    ) -> ProjectOut:
+        """Hold back everything in a project until resume_project. By default what is running is stopped too."""
+        async with acting() as (s, owner, caller):
+            found = await projects.halt_project(
+                project_of(caller, project_id),
+                projects.HaltIn(stop_running=stop_running),
+                web_request(),
+                s,
+                owner,
+            )
+            return ProjectOut.model_validate(found)
+
+    @write_tool
+    async def resume_project(project_id: ProjectId = None) -> ProjectOut:
+        """Let a halted project start work again."""
+        async with acting() as (s, owner, caller):
+            found = await projects.resume_project(project_of(caller, project_id), web_request(), s, owner)
+            return ProjectOut.model_validate(found)
+
+    async def board_in_reach(s, caller, board_id: int) -> None:
+        board = await s.get(Board, board_id)
+        if board is None:
+            raise ToolError(NOT_FOUND)
+        pinned(caller, board.project_id)
+
+    @write_tool
+    async def halt_board(
+        board_id: int,
+        stop_running: Annotated[
+            bool, Field(description="Also stop what is running on it now; false lets it finish")
+        ] = True,
+    ) -> BoardOut:
+        """Hold back everything on one board until resume_board. By default what is running on it is stopped too."""
+        async with acting() as (s, owner, caller):
+            await board_in_reach(s, caller, board_id)
+            return await workspaces_router.halt_board(
+                board_id, projects.HaltIn(stop_running=stop_running), web_request(), s, owner
+            )
+
+    @write_tool
+    async def resume_board(board_id: int) -> BoardOut:
+        """Let a halted board start work again."""
+        async with acting() as (s, owner, caller):
+            await board_in_reach(s, caller, board_id)
+            return await workspaces_router.resume_board(board_id, web_request(), s, owner)

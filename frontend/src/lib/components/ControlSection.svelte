@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
-	import { api, ApiError, type ControlConnect, type ControlToken } from '$lib/api'
+	import { api, ApiError, type ControlConnect, type ControlScope, type ControlToken } from '$lib/api'
 	import { Button } from '$lib/components/ui/button/index.js'
-	import { Input } from '$lib/components/ui/input/index.js'
+		import { Input } from '$lib/components/ui/input/index.js'
 	import { relative } from '$lib/format'
 	import BotIcon from '@lucide/svelte/icons/bot'
 	import CheckIcon from '@lucide/svelte/icons/check'
@@ -13,8 +13,8 @@
 	import { onMount } from 'svelte'
 	import { slide } from 'svelte/transition'
 
-	// Agents outside Themis (Claude Code, another machine's agent) that may look through MCP: at this project, or without
-	// a project at all: all of the user's projects. A row is a key: copying its command is all it takes to connect, and it
+	// Agents outside Themis (Claude Code, another machine's agent) that may look through MCP (and, when allowed, act and set up): at
+	// this project, or without a project at all: all of the user's projects. A row is a key: copying its command is all it takes to connect, and it
 	// can be copied again later.
 	let { projectId }: { projectId?: number } = $props()
 
@@ -23,6 +23,13 @@
 	let error = $state('')
 	let adding = $state(false)
 	let name = $state('Claude Code')
+	let scope = $state<ControlScope>('read')
+	const scopes: { value: ControlScope; label: string; detail: string }[] = [
+		{ value: 'read', label: 'Only look', detail: 'It can read everything you can see here, and change nothing.' },
+		{ value: 'write', label: 'Look and run work', detail: 'It can also make, move, run and cancel tasks, run workflows, answer approvals, and halt or resume work.' },
+		{ value: 'manage', label: 'Also set things up', detail: 'It can also create and change agents, skills and workflows, and write files. That decides what runs do, so give it with care.' }
+	]
+	const scopeName = (s: ControlScope) => ({ read: 'Can read', write: 'Can read and run work', manage: 'Can read, run work and set up' })[s]
 	let busy = $state(false)
 	// the connect details of the row that is open, and which copy button just worked
 	let openId = $state<number | null>(null)
@@ -47,10 +54,11 @@
 		e.preventDefault()
 		busy = true
 		try {
-			const body = { name: name.trim() }
+			const body = { name: name.trim(), scope }
 			const made = projectId === undefined ? await api.createAccountControlToken(body) : await api.createControlToken(projectId, body)
 			adding = false
 			name = 'Claude Code'
+			scope = 'read'
 			await load()
 			await show(made)
 		} catch (err) {
@@ -104,9 +112,9 @@
 			<h3 class="text-base font-semibold tracking-tight">Connect an agent</h3>
 			<p class="text-sm text-muted-foreground">
 				{#if projectId === undefined}
-					Let Claude Code or another agent look at all of your projects through MCP{auth.user?.is_admin ? ', and at how Themis is set up' : ''}. They can only read for now.
+					Let Claude Code or another agent look at all of your projects through MCP{auth.user?.is_admin ? ', and at how Themis is set up' : ''}. They only look, unless you let them do more.
 				{:else}
-					Let Claude Code or another agent look at this project through MCP. They can only read for now.
+					Let Claude Code or another agent look at this project through MCP. They only look, unless you let them do more.
 				{/if}
 			</p>
 		</div>
@@ -121,6 +129,18 @@
 			<Input id="control-name" class="min-w-0 flex-1" bind:value={name} maxlength={60} placeholder="Claude Code" required />
 			<Button type="submit" size="sm" disabled={busy || !name.trim()}>Make the connection</Button>
 			<Button type="button" size="sm" variant="ghost" onclick={() => (adding = false)}>Cancel</Button>
+			<fieldset class="basis-full space-y-1.5">
+				<legend class="sr-only">What it may do</legend>
+				{#each scopes as s (s.value)}
+					<label class="flex items-start gap-2 text-sm">
+						<input type="radio" class="mt-1 accent-primary" name="control-scope" value={s.value} checked={scope === s.value} onchange={() => (scope = s.value)} />
+						<span>
+							{s.label}
+							<span class="block text-xs text-muted-foreground">{s.detail}</span>
+						</span>
+					</label>
+				{/each}
+			</fieldset>
 		</form>
 	{/if}
 
@@ -140,7 +160,7 @@
 						<span class="min-w-0 flex-1">
 							<span class="block truncate text-sm font-medium">{t.name}</span>
 							<span class="block truncate text-xs text-muted-foreground">
-								{t.scope === 'read' ? 'Can read' : 'Can read and change'}{t.project_id === null ? ' all projects' : ''} · {t.last_used_at ? `used ${relative(t.last_used_at)}` : 'not used yet'} · ends in {t.token_hint}
+								{scopeName(t.scope)}{t.project_id === null ? ' all projects' : ''} · {t.last_used_at ? `used ${relative(t.last_used_at)}` : 'not used yet'} · ends in {t.token_hint}
 							</span>
 						</span>
 						<Button size="sm" variant="outline" onclick={() => show(t)}>{openId === t.id ? 'Hide' : 'Connect'}</Button>

@@ -1,4 +1,4 @@
-"""The tools of the MCP control plane (see app/control.py): everything an outside agent can read.
+"""The tools of the MCP control plane (see app/control.py): what an outside agent can read, and the actions it may take.
 
 Each tool is a thin wrapper around the REST handler the web interface already uses, called as the token's user, so
 what an agent sees is exactly what that person sees, under the same rules. Two things are added here, for every tool:
@@ -13,7 +13,11 @@ A handler is called as a plain function, so the checks FastAPI would run for the
 in, whether they are an administrator) do not run. The user and the session are supplied here; a handler that needs
 more (an `AdminUser`) must have that check made by hand. tests/test_control.py fails when one is missed.
 
-Everything only reads. A write tool will be a different kind of tool, behind the token's `write` scope.
+Reading tools work for every token. The actions (`write_tool`) change things and so need a token made with the `write`
+scope; control.py refuses them for the others before they run. They are the day-to-day controls of a project (tasks,
+runs, workflows, approvals, halting). The setup tools (`manage_tool`) need the higher `manage` scope: agents, skills,
+workflows and files, which decide what a run does and so are a bigger gift than running it. Nothing here destroys or
+reconfigures the installation: no deleting, no settings, no keys, no tool servers.
 """
 
 import asyncio
@@ -26,7 +30,7 @@ from pydantic import BaseModel, Field
 from . import overview
 from .app_settings import AppSettings
 from .deps import require_admin
-from .models import Board, Webhook
+from .models import Board, Webhook, WorkflowNodeRun, WorkflowRun
 from .routers import (
     agents,
     connections,
@@ -40,24 +44,35 @@ from .routers import (
     workflows,
 )
 from .routers import workspaces as workspaces_router
-from .routers.agents import AgentOut, HarnessOut
+from .routers.agents import AgentIn, AgentOut, AgentPatch, HarnessOut
 from .routers.connections import BindingOut
-from .routers.skills import SkillDetail, SkillOut
+from .routers.skills import SkillDetail, SkillIn, SkillOut
 from .routers.system import SystemStatus
 from .routers.tools import KeyOut, McpOut
 from .routers.volumes import FileEntry, VolumeOut
-from .routers.workflows import ApprovalOut, RunDetail, RunSummary, WorkflowOut, WorkflowSummary
+from .routers.workflows import (
+    ApprovalOut,
+    RunDetail,
+    RunSummary,
+    WorkflowIn,
+    WorkflowOut,
+    WorkflowPatch,
+    WorkflowSummary,
+)
 from .schemas import (
     AttemptDetail,
     AttemptOut,
     BoardOut,
     DeliveryOut,
+    MoveIn,
     NotificationOut,
     ProjectEventOut,
     ProjectOut,
     ProjectSummary,
     ScheduledRun,
+    TaskIn,
     TaskOut,
+    TaskPatch,
     UsageRow,
     WebhookOut,
     WorkspaceOut,
@@ -123,7 +138,12 @@ def account_only(caller: "Caller") -> None:
 
 def register(plane: "ControlPlane") -> None:
     """Add every tool to the plane's server."""
-    tool, acting = plane.tool, plane.acting
+    tool, write_tool, manage_tool, acting = plane.tool, plane.write_tool, plane.manage_tool, plane.acting
+
+    def web_request() -> SimpleNamespace:
+        """The handlers of actions reach the scheduler and the workflow engine through `request.app.state`, so the app
+        stands in for the web request they expect (as it does for get_system_status)."""
+        return SimpleNamespace(app=plane.app())
 
     # projects
 
@@ -463,3 +483,224 @@ def register(plane: "ControlPlane") -> None:
         async with acting() as (s, owner, caller):
             account_only(caller)
             return await tools.available_keys(s, owner)
+
+    # actions: they change things, so they need a connection with permission to (see ControlPlane.write_tool)
+
+    @write_tool
+    async def create_task(task: TaskIn, project_id: ProjectId = None) -> TaskOut:
+        """Make a task. Without a board_id it goes on the project's first board; the default status is Backlog, where
+        nothing starts by itself, so give status 'ready' (or call run_task afterwards) to have it run."""
+        async with acting() as (s, owner, caller):
+            return await projects.create_task(project_of(caller, project_id), task, web_request(), s, owner)
+
+    @write_tool
+    async def update_task(task_id: int, changes: TaskPatch) -> TaskOut:
+        """Change a task: only the fields given in `changes` are touched. A running task cannot be changed; cancel it
+        first."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            return await projects.update_task(task_id, changes, web_request(), s, owner)
+
+    @write_tool
+    async def move_task(
+        task_id: int,
+        board_id: int,
+        status: Annotated[
+            str | None, Field(description="A status key of that board; left out: the same one, else Backlog")
+        ] = None,
+        position: float | None = None,
+    ) -> TaskOut:
+        """Send a task to a board of its project, and a status on it (moving it to 'ready' makes it run). The task is
+        the same one, with its history."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            move = MoveIn(board_id=board_id, status=status, position=position)
+            return await workspaces_router.move_task(task_id, move, web_request(), s, owner)
+
+    @write_tool
+    async def run_task(task_id: int) -> TaskOut:
+        """Run a task now instead of waiting for its schedule. It is queued as ready and starts when the resource
+        budget allows. Refused while the project or board is halted."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            return await projects.run_task_now(task_id, web_request(), s, owner)
+
+    @write_tool
+    async def cancel_task(task_id: int) -> TaskOut:
+        """Stop a task that is running now."""
+        async with acting() as (s, owner, caller):
+            await task_in_reach(s, owner, caller, task_id)
+            return await projects.cancel_task(task_id, web_request(), s, owner)
+
+    @write_tool
+    async def start_workflow_run(workflow_id: int) -> RunDetail:
+        """Run a saved workflow now, from its Start nodes. get_workflow_run follows how far it gets."""
+        async with acting() as (s, owner, caller):
+            await workflow_in_reach(s, owner, caller, workflow_id)
+            return await workflows.start_run(workflow_id, web_request(), s, owner)
+
+    @write_tool
+    async def cancel_workflow_run(run_id: int) -> RunDetail:
+        """Stop a workflow run that is going."""
+        async with acting() as (s, owner, caller):
+            run = await workflows.get_run(run_id, s, owner)
+            pinned(caller, run.project_id)
+            return await workflows.cancel_run(run_id, web_request(), s, owner)
+
+    @write_tool
+    async def decide_approval(
+        approval_id: int,
+        approved: bool,
+        note: Annotated[str, Field(max_length=2000, description="Why, shown with the answer")] = "",
+    ) -> RunDetail:
+        """Approve or reject a workflow step that waits for a person (list_approvals has them). The first answer
+        stands and the run carries on, or the step fails, at once."""
+        async with acting() as (s, owner, caller):
+            node = await s.get(WorkflowNodeRun, approval_id)
+            run = await s.get(WorkflowRun, node.run_id) if node else None
+            if run is None:
+                raise ToolError(NOT_FOUND)
+            pinned(caller, run.project_id)
+            await workflows.decide_approval(
+                approval_id, workflows.DecisionIn(approved=approved, note=note), web_request(), s, owner
+            )
+            await s.commit()  # look again at what the engine wrote while carrying on
+            return await workflows.get_run(run.id, s, owner)
+
+    @write_tool
+    async def halt_project(
+        project_id: ProjectId = None,
+        stop_running: Annotated[
+            bool, Field(description="Also stop what is running now; false lets it finish")
+        ] = True,
+    ) -> ProjectOut:
+        """Hold back everything in a project until resume_project. By default what is running is stopped too."""
+        async with acting() as (s, owner, caller):
+            found = await projects.halt_project(
+                project_of(caller, project_id),
+                projects.HaltIn(stop_running=stop_running),
+                web_request(),
+                s,
+                owner,
+            )
+            return ProjectOut.model_validate(found)
+
+    @write_tool
+    async def resume_project(project_id: ProjectId = None) -> ProjectOut:
+        """Let a halted project start work again."""
+        async with acting() as (s, owner, caller):
+            found = await projects.resume_project(project_of(caller, project_id), web_request(), s, owner)
+            return ProjectOut.model_validate(found)
+
+    async def board_in_reach(s, caller, board_id: int) -> None:
+        board = await s.get(Board, board_id)
+        if board is None:
+            raise ToolError(NOT_FOUND)
+        pinned(caller, board.project_id)
+
+    @write_tool
+    async def halt_board(
+        board_id: int,
+        stop_running: Annotated[
+            bool, Field(description="Also stop what is running on it now; false lets it finish")
+        ] = True,
+    ) -> BoardOut:
+        """Hold back everything on one board until resume_board. By default what is running on it is stopped too."""
+        async with acting() as (s, owner, caller):
+            await board_in_reach(s, caller, board_id)
+            return await workspaces_router.halt_board(
+                board_id, projects.HaltIn(stop_running=stop_running), web_request(), s, owner
+            )
+
+    @write_tool
+    async def resume_board(board_id: int) -> BoardOut:
+        """Let a halted board start work again."""
+        async with acting() as (s, owner, caller):
+            await board_in_reach(s, caller, board_id)
+            return await workspaces_router.resume_board(board_id, web_request(), s, owner)
+
+    # setup: what agents, workflows and files decide what a run does, so these need a connection that may manage
+
+    @manage_tool
+    async def create_agent(agent: AgentIn, project_id: ProjectId = None) -> AgentOut:
+        """Make an agent: a name, its instructions, and what it is given (skills, tool servers, folders to work in,
+        connections). Keys can only be given by an administrator. list_harnesses has the models; list_skills,
+        list_tool_servers and list_folders have the names and ids it can be given."""
+        async with acting() as (s, owner, caller):
+            made = await agents.create_agent(project_of(caller, project_id), agent, s, owner)
+            return AgentOut.model_validate(made)
+
+    @manage_tool
+    async def update_agent(agent_id: int, changes: AgentPatch) -> AgentOut:
+        """Change an agent: only the fields given in `changes` are touched. Lists (skills, tool servers, folders) are
+        replaced as a whole, so send the full list you want."""
+        async with acting() as (s, owner, caller):
+            found = await agents.get_agent(agent_id, s, owner)
+            pinned(caller, found.project_id)
+            return AgentOut.model_validate(await agents.update_agent(agent_id, changes, s, owner))
+
+    @manage_tool
+    async def save_skill(
+        name: str, content: Annotated[str, Field(max_length=400_000)], project_id: ProjectId = None
+    ) -> SkillOut:
+        """Make a skill, or replace its SKILL.md. `content` is the whole file, with the front matter (name and
+        description) that get_skill shows. Agents are given a skill by name, with create_agent or update_agent."""
+        async with acting() as (s, owner, caller):
+            return await skills.save_skill(
+                project_of(caller, project_id), name, SkillIn(content=content), s, owner
+            )
+
+    @manage_tool
+    async def create_workflow(workflow: WorkflowIn, project_id: ProjectId = None) -> WorkflowOut:
+        """Make a workflow. Without a graph it starts with just a Start node. A graph is nodes and the edges joining
+        them; get_workflow on an existing workflow shows the shape and what each kind of node takes in `config`."""
+        async with acting() as (s, owner, caller):
+            return await workflows.create_workflow(project_of(caller, project_id), workflow, s, owner)
+
+    @manage_tool
+    async def update_workflow(workflow_id: int, changes: WorkflowPatch) -> WorkflowOut:
+        """Change a workflow's name, description or graph. A graph replaces the whole graph, so start from get_workflow
+        and send it back with your changes."""
+        async with acting() as (s, owner, caller):
+            await workflow_in_reach(s, owner, caller, workflow_id)
+            return await workflows.update_workflow(workflow_id, changes, s, owner)
+
+    async def writable_folder(s, owner, caller, folder_id: int) -> None:
+        _, _, volume = await volumes.volume_root(s, folder_id, owner)
+        pinned(caller, volume.project_id)
+
+    @manage_tool
+    async def write_file(
+        folder_id: int,
+        path: str,
+        text: Annotated[str, Field(max_length=1_000_000)],
+        overwrite: Annotated[bool, Field(description="Replace the file when it already exists")] = False,
+    ) -> str:
+        """Save text as a file in a folder (list_folders has the ids). The folder must exist; make_folder makes one.
+        In the config folder, agent and tool files are checked first and refused with a reason when they could not
+        work. A folder a run is using, and a read-only one, cannot be written to."""
+        async with acting() as (s, owner, caller):
+            await writable_folder(s, owner, caller, folder_id)
+
+            async def body():
+                yield text.encode()
+
+            await volumes.save_file(web_request(), s, folder_id, owner, path, body(), overwrite)
+            return f"Saved {path}"
+
+    @manage_tool
+    async def make_folder(folder_id: int, path: str) -> str:
+        """Make a folder inside a folder, at a path whose parent exists."""
+        async with acting() as (s, owner, caller):
+            await writable_folder(s, owner, caller, folder_id)
+            await volumes.create_folder(folder_id, volumes.FolderIn(path=path), web_request(), s, owner)
+            return f"Made {path}"
+
+    @manage_tool
+    async def move_file(folder_id: int, source: str, destination: str) -> str:
+        """Rename or move a file or folder inside a folder. It fails rather than replace something that is there."""
+        async with acting() as (s, owner, caller):
+            await writable_folder(s, owner, caller, folder_id)
+            move = volumes.MoveIn(source=source, destination=destination)
+            await volumes.move_file(folder_id, move, web_request(), s, owner)
+            return f"Moved {source} to {destination}"

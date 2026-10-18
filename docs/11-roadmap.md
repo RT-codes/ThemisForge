@@ -53,8 +53,9 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Usage per run**: every run records the harness and model it used and the tokens it spent, the base for usage views and
   spending limits.
 - **Connect an agent (MCP)**: an outside agent such as Claude Code can look at one project, or at all of your projects and
-  the global settings, through MCP with a key made in Settings. Read only to start with: an overview, boards, tasks, runs,
-  how agents and workflows are set up, files and usage.
+  the global settings, through MCP with a key made in Settings. It can read an overview, boards, tasks, runs, how agents
+  and workflows are set up, files and usage; a key can also be allowed to run work (make, move, run and cancel tasks,
+  run workflows, answer approvals, halt or resume), and a stronger one to set things up (agents, skills, workflows, files).
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next

@@ -6,6 +6,7 @@ import hashlib
 import os
 import shutil
 import uuid
+from collections.abc import AsyncIterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -457,6 +458,21 @@ async def upload_file(
 
     `base` is the modified time the editor saw when it opened the file: if the file has changed since, the save is
     refused (412) instead of silently replacing someone else's version."""
+    await save_file(request, session, volume_id, user, path, request.stream(), overwrite, base)
+
+
+async def save_file(
+    request: Request,
+    session,
+    volume_id: int,
+    user,
+    path: str,
+    chunks: AsyncIterable[bytes],
+    overwrite: bool = False,
+    base: datetime | None = None,
+) -> None:
+    """Writes `chunks` as the file at `path` of a folder, with every rule of a save in the Files page. The web upload
+    streams its request body in; the MCP control plane gives the text an agent wrote."""
     root, _, _, volume = await _root(request, session, volume_id, user, write=True)
     target = _safe(root, path, follow_leaf=False)
     if target == root or target.is_dir():
@@ -474,7 +490,7 @@ async def upload_file(
     size = 0
     try:
         with partial.open("wb") as f:
-            async for chunk in request.stream():
+            async for chunk in chunks:
                 size += len(chunk)
                 if size > MAX_UPLOAD:
                     raise _bad(f"Files up to {MAX_UPLOAD // 2**20} MB can be uploaded")

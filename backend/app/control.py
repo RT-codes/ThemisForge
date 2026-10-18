@@ -8,8 +8,9 @@ being written twice. This module adds only who is asking and what they may reach
 - A request carries a control token (`Authorization: Bearer ...`, see ControlToken). A token belongs to a user and acts
   as them. It either names one project, which is all it can reach, or none, which means all of the user's projects and
   the global settings the user may see. An id outside that reach answers "not found", exactly like a missing one.
-- A token's `scope` is "read" (the default) or "write". Tools that change things (`write_tool`) refuse a "read" token,
-  so tokens made before the action tools existed can still only look.
+- A token's `scope` is "read" (the default), "write" or "manage", each including the one before. "write" runs the
+  project's work (tasks, runs, approvals, halting) with `write_tool`; "manage" also sets the project up (agents, skills,
+  workflows, files) with `manage_tool`. Tokens made before a level existed can still only do what they could then.
 - MCP is served stateless, one JSON answer per request: nothing is kept between calls, so a restart loses no session
   and there is nothing to expire.
 """
@@ -42,13 +43,16 @@ INSTRUCTIONS = (
     "(or list_projects first, on a connection for all projects) to see what is going on, then go down: list_boards "
     "and get_board for the work, get_task and get_attempt for how a run went, list_agents, list_workflows and the "
     "other list tools for how the project is set up, list_files and read_file for its folders. The tools that change "
-    "things (making, moving, running and cancelling tasks, running workflows, answering approvals, halting and "
-    "resuming) only work on a connection that was made with permission to change things."
+    "things only work on a connection made with permission: running work (tasks, workflows, approvals, halting) needs "
+    "'write', and setting up agents, skills, workflows and files needs 'manage'."
 )
-WRITE_NEEDED = (
-    "This connection can only read. Make one that can change things (in Themis, under Connections, with 'Allow "
-    "changes') to use this tool."
-)
+# What a token may do, from least to most. A tool names the level it needs and a token with that level or more passes.
+LEVELS = {"read": 0, "write": 1, "manage": 2}
+LEVEL_MISSING = {
+    "write": "This connection can only read. Make one that may run work (in Themis, under Connections) to use this tool.",
+    "manage": "This connection cannot set things up. Make one that may set up agents, workflows and files (in Themis, "
+    "under Connections) to use this tool.",
+}
 LAST_USED_EVERY = timedelta(minutes=1)  # so a busy agent does not make a write of every read
 
 
@@ -161,29 +165,34 @@ class ControlPlane:
         """The app that is serving this request, for the few handlers that read its state (scheduler, preflight)."""
         return _app.get()
 
-    def tool(self, fn, *, writes: bool = False):
+    def tool(self, fn, *, needs: str = "read"):
         """Register a tool, with the failures of the REST handlers it calls turned into the tool's own errors.
 
-        A tool that `writes` changes things, so it only runs for a token made with the "write" scope. The check is made
-        here, once, rather than in each tool, so a new action cannot forget it. It is also announced to the agent
-        (read-only hint), which lets a client let the reading tools through without asking and ask about the others."""
+        A tool that `needs` more than "read" changes things, so it only runs for a token of that level or above. The
+        check is made here, once, rather than in each tool, so a new action cannot forget it. The level is also
+        announced to the agent (read-only hint), which lets a client let the reading tools through without asking and
+        ask about the others."""
 
         @functools.wraps(fn)
         async def run(*args, **kwargs):
-            if writes and _caller.get().scope != "write":
-                raise ToolError(WRITE_NEEDED)
+            if LEVELS.get(_caller.get().scope, 0) < LEVELS[needs]:
+                raise ToolError(LEVEL_MISSING[needs])
             try:
                 return await fn(*args, **kwargs)
             except HTTPException as e:
                 # a missing id and one out of reach get the same answer, so ids tell nothing about what is beyond it
                 raise ToolError(NOT_FOUND if e.status_code == 404 else str(e.detail)) from None
 
-        self.server.tool(annotations=ToolAnnotations(read_only_hint=not writes))(run)
+        self.server.tool(annotations=ToolAnnotations(read_only_hint=needs == "read"))(run)
         return fn
 
     def write_tool(self, fn):
-        """Register a tool that changes things (see `tool`)."""
-        return self.tool(fn, writes=True)
+        """Register a tool that runs the project's work (see `tool`)."""
+        return self.tool(fn, needs="write")
+
+    def manage_tool(self, fn):
+        """Register a tool that sets the project up (see `tool`)."""
+        return self.tool(fn, needs="manage")
 
 
 class ControlEndpoint:

@@ -15,7 +15,9 @@ more (an `AdminUser`) must have that check made by hand. tests/test_control.py f
 
 Reading tools work for every token. The actions (`write_tool`) change things and so need a token made with the `write`
 scope; control.py refuses them for the others before they run. They are the day-to-day controls of a project (tasks,
-runs, workflows, approvals, halting) and nothing that destroys or reconfigures: no deleting, no settings, no files.
+runs, workflows, approvals, halting). The setup tools (`manage_tool`) need the higher `manage` scope: agents, skills,
+workflows and files, which decide what a run does and so are a bigger gift than running it. Nothing here destroys or
+reconfigures the installation: no deleting, no settings, no keys, no tool servers.
 """
 
 import asyncio
@@ -42,13 +44,21 @@ from .routers import (
     workflows,
 )
 from .routers import workspaces as workspaces_router
-from .routers.agents import AgentOut, HarnessOut
+from .routers.agents import AgentIn, AgentOut, AgentPatch, HarnessOut
 from .routers.connections import BindingOut
-from .routers.skills import SkillDetail, SkillOut
+from .routers.skills import SkillDetail, SkillIn, SkillOut
 from .routers.system import SystemStatus
 from .routers.tools import KeyOut, McpOut
 from .routers.volumes import FileEntry, VolumeOut
-from .routers.workflows import ApprovalOut, RunDetail, RunSummary, WorkflowOut, WorkflowSummary
+from .routers.workflows import (
+    ApprovalOut,
+    RunDetail,
+    RunSummary,
+    WorkflowIn,
+    WorkflowOut,
+    WorkflowPatch,
+    WorkflowSummary,
+)
 from .schemas import (
     AttemptDetail,
     AttemptOut,
@@ -128,7 +138,7 @@ def account_only(caller: "Caller") -> None:
 
 def register(plane: "ControlPlane") -> None:
     """Add every tool to the plane's server."""
-    tool, write_tool, acting = plane.tool, plane.write_tool, plane.acting
+    tool, write_tool, manage_tool, acting = plane.tool, plane.write_tool, plane.manage_tool, plane.acting
 
     def web_request() -> SimpleNamespace:
         """The handlers of actions reach the scheduler and the workflow engine through `request.app.state`, so the app
@@ -608,3 +618,89 @@ def register(plane: "ControlPlane") -> None:
         async with acting() as (s, owner, caller):
             await board_in_reach(s, caller, board_id)
             return await workspaces_router.resume_board(board_id, web_request(), s, owner)
+
+    # setup: what agents, workflows and files decide what a run does, so these need a connection that may manage
+
+    @manage_tool
+    async def create_agent(agent: AgentIn, project_id: ProjectId = None) -> AgentOut:
+        """Make an agent: a name, its instructions, and what it is given (skills, tool servers, folders to work in,
+        connections). Keys can only be given by an administrator. list_harnesses has the models; list_skills,
+        list_tool_servers and list_folders have the names and ids it can be given."""
+        async with acting() as (s, owner, caller):
+            made = await agents.create_agent(project_of(caller, project_id), agent, s, owner)
+            return AgentOut.model_validate(made)
+
+    @manage_tool
+    async def update_agent(agent_id: int, changes: AgentPatch) -> AgentOut:
+        """Change an agent: only the fields given in `changes` are touched. Lists (skills, tool servers, folders) are
+        replaced as a whole, so send the full list you want."""
+        async with acting() as (s, owner, caller):
+            found = await agents.get_agent(agent_id, s, owner)
+            pinned(caller, found.project_id)
+            return AgentOut.model_validate(await agents.update_agent(agent_id, changes, s, owner))
+
+    @manage_tool
+    async def save_skill(
+        name: str, content: Annotated[str, Field(max_length=400_000)], project_id: ProjectId = None
+    ) -> SkillOut:
+        """Make a skill, or replace its SKILL.md. `content` is the whole file, with the front matter (name and
+        description) that get_skill shows. Agents are given a skill by name, with create_agent or update_agent."""
+        async with acting() as (s, owner, caller):
+            return await skills.save_skill(
+                project_of(caller, project_id), name, SkillIn(content=content), s, owner
+            )
+
+    @manage_tool
+    async def create_workflow(workflow: WorkflowIn, project_id: ProjectId = None) -> WorkflowOut:
+        """Make a workflow. Without a graph it starts with just a Start node. A graph is nodes and the edges joining
+        them; get_workflow on an existing workflow shows the shape and what each kind of node takes in `config`."""
+        async with acting() as (s, owner, caller):
+            return await workflows.create_workflow(project_of(caller, project_id), workflow, s, owner)
+
+    @manage_tool
+    async def update_workflow(workflow_id: int, changes: WorkflowPatch) -> WorkflowOut:
+        """Change a workflow's name, description or graph. A graph replaces the whole graph, so start from get_workflow
+        and send it back with your changes."""
+        async with acting() as (s, owner, caller):
+            await workflow_in_reach(s, owner, caller, workflow_id)
+            return await workflows.update_workflow(workflow_id, changes, s, owner)
+
+    async def writable_folder(s, owner, caller, folder_id: int) -> None:
+        _, _, volume = await volumes.volume_root(s, folder_id, owner)
+        pinned(caller, volume.project_id)
+
+    @manage_tool
+    async def write_file(
+        folder_id: int,
+        path: str,
+        text: Annotated[str, Field(max_length=1_000_000)],
+        overwrite: Annotated[bool, Field(description="Replace the file when it already exists")] = False,
+    ) -> str:
+        """Save text as a file in a folder (list_folders has the ids). The folder must exist; make_folder makes one.
+        In the config folder, agent and tool files are checked first and refused with a reason when they could not
+        work. A folder a run is using, and a read-only one, cannot be written to."""
+        async with acting() as (s, owner, caller):
+            await writable_folder(s, owner, caller, folder_id)
+
+            async def body():
+                yield text.encode()
+
+            await volumes.save_file(web_request(), s, folder_id, owner, path, body(), overwrite)
+            return f"Saved {path}"
+
+    @manage_tool
+    async def make_folder(folder_id: int, path: str) -> str:
+        """Make a folder inside a folder, at a path whose parent exists."""
+        async with acting() as (s, owner, caller):
+            await writable_folder(s, owner, caller, folder_id)
+            await volumes.create_folder(folder_id, volumes.FolderIn(path=path), web_request(), s, owner)
+            return f"Made {path}"
+
+    @manage_tool
+    async def move_file(folder_id: int, source: str, destination: str) -> str:
+        """Rename or move a file or folder inside a folder. It fails rather than replace something that is there."""
+        async with acting() as (s, owner, caller):
+            await writable_folder(s, owner, caller, folder_id)
+            move = volumes.MoveIn(source=source, destination=destination)
+            await volumes.move_file(folder_id, move, web_request(), s, owner)
+            return f"Moved {source} to {destination}"

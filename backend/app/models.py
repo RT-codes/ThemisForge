@@ -523,7 +523,7 @@ class ControlToken(Base):
     """The key an outside agent (or, later, a run) holds to use Themis's MCP control plane (see app/control.py). It acts
     as its user. With a `project_id` it reaches that one project and nothing else; without one it reaches all of the
     user's projects and, for an administrator, the global settings. `scope` says what it may do: "read" looks, "write"
-    also changes things.
+    also runs the project's work, "manage" also sets it up (agents, workflows, files).
 
     Unlike a webhook address it can be shown again: the secret is kept encrypted besides its hash, so the settings can
     always give the owner the full connect command instead of making them mint a new token."""

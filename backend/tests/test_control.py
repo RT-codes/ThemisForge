@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
 from app.control import ControlPlane
+from app.control_tools import NOT_FOUND
 from app.crypto import encrypt
 from app.main import app
 from app.models import ControlToken
@@ -14,14 +15,21 @@ from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_approvals import gated, open_approvals, start
 from tests.test_harness import connect
+from tests.test_workflows import make_workflow as make_workflow_for
 
 HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
-# the tools that change things: only a token made with the "write" scope may use them
-ACTIONS = {
+# the tools that change things. A "write" token may use the first set, only a "manage" token the second as well
+WRITE_ACTIONS = {
     "create_task", "update_task", "move_task", "run_task", "cancel_task", "start_workflow_run",
     "cancel_workflow_run", "decide_approval", "halt_project", "resume_project", "halt_board", "resume_board",
 }  # fmt: skip
+MANAGE_ACTIONS = {
+    "create_agent", "update_agent", "save_skill", "create_workflow", "update_workflow", "write_file",
+    "make_folder", "move_file",
+}  # fmt: skip
+ACTIONS = WRITE_ACTIONS | MANAGE_ACTIONS
+SKILL = "---\nname: {name}\ndescription: Checks copy before it goes out\n---\nRead the copy twice.\n"
 
 
 @pytest.fixture
@@ -61,16 +69,16 @@ async def secret_of(client, token: dict) -> str:
     return (await client.get(f"/api/control/tokens/{token['id']}/connect")).json()["token"]
 
 
-async def rpc(agent, secret: str | None, method: str, params: dict | None = None):
+async def rpc(http, secret: str | None, method: str, params: dict | None = None):
     headers = dict(HEADERS, **({"Authorization": f"Bearer {secret}"} if secret is not None else {}))
-    return await agent.post(
+    return await http.post(
         "/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
     )
 
 
-async def call(agent, secret: str, tool: str, **arguments):
+async def call(http, secret: str, tool: str, **arguments):
     """A tool's answer: the data it returned, or {'error': message} when it failed."""
-    r = await rpc(agent, secret, "tools/call", {"name": tool, "arguments": arguments})
+    r = await rpc(http, secret, "tools/call", {"name": tool, "arguments": arguments})
     assert r.status_code == 200, r.text
     result = r.json()["result"]
     if result["isError"]:  # the SDK puts "Error executing tool NAME: " before what the tool said
@@ -558,9 +566,21 @@ async def test_a_token_that_only_reads_cannot_use_any_action_and_nothing_changes
         "halt_board": {"board_id": board["boards"][0]["id"]},
         "resume_board": {"board_id": board["boards"][0]["id"]},
     }
+    folder = (await call(agent_client, secret, "list_folders"))[0]["id"]
+    arguments |= {
+        "create_agent": {"agent": {"name": "Sneak"}},
+        "update_agent": {"agent_id": 1, "changes": {"role": "x"}},
+        "save_skill": {"name": "sneak", "content": SKILL.format(name="sneak")},
+        "create_workflow": {"workflow": {"name": "Sneak"}},
+        "update_workflow": {"workflow_id": 1, "changes": {"name": "x"}},
+        "write_file": {"folder_id": folder, "path": "sneak.txt", "text": "x"},
+        "make_folder": {"folder_id": folder, "path": "sneak"},
+        "move_file": {"folder_id": folder, "source": "a", "destination": "b"},
+    }
     assert set(arguments) == ACTIONS, "every action is tried here"
     for name, args in arguments.items():
-        assert "can only read" in (await call(agent_client, secret, name, **args))["error"], name
+        wanted = "can only read" if name in WRITE_ACTIONS else "cannot set things up"
+        assert wanted in (await call(agent_client, secret, name, **args))["error"], name
 
     assert [t["title"] for t in await call(agent_client, secret, "list_tasks")] == ["Keep me"]
     assert (await call(agent_client, secret, "get_project_overview"))["halted"] is False
@@ -702,3 +722,153 @@ async def test_an_action_never_reaches_outside_its_project_and_a_connection_for_
     )
     made = await call(agent_client, everywhere, "create_task", project_id=theirs, task={"title": "Here"})
     assert made["project_id"] == theirs
+
+
+# ----- setting a project up: agents, skills, workflows and files need a token that may manage -----
+
+
+async def test_a_token_that_may_run_work_still_cannot_set_the_project_up(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid, scope="write"))
+
+    refused = await call(agent_client, secret, "create_agent", agent={"name": "Sneak"})
+    assert "cannot set things up" in refused["error"]
+    assert await call(agent_client, secret, "list_agents") == []
+    assert (await call(agent_client, secret, "create_task", task={"title": "Fine"}))[
+        "title"
+    ] == "Fine"  # write works
+
+
+async def test_an_agent_that_may_manage_sets_up_skills_agents_and_workflows(client, agent_client, runner):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid, scope="manage"))
+
+    skill = await call(
+        agent_client, secret, "save_skill", name="copy-check", content=SKILL.format(name="copy-check")
+    )
+    assert skill["description"] == "Checks copy before it goes out"
+    assert (
+        "description"
+        in (await call(agent_client, secret, "save_skill", name="bad", content="no front matter"))["error"]
+    )
+
+    agent = await call(
+        agent_client,
+        secret,
+        "create_agent",
+        agent={"name": "Editor", "instructions": "Be brief.", "skills": ["copy-check"]},
+    )
+    assert agent["name"] == "Editor" and agent["skills"] == ["copy-check"] and agent["project_id"] == pid
+    assert "already" in (await call(agent_client, secret, "create_agent", agent={"name": "Editor"}))["error"]
+    assert (
+        "does not exist"
+        in (await call(agent_client, secret, "create_agent", agent={"name": "X", "skills": ["nope"]}))[
+            "error"
+        ]
+    )
+
+    changed = await call(
+        agent_client, secret, "update_agent", agent_id=agent["id"], changes={"role": "Copy editor"}
+    )
+    assert changed["role"] == "Copy editor" and changed["instructions"] == "Be brief."  # only what was given
+    assert (await client.get(f"/api/agents/{agent['id']}")).json()["role"] == "Copy editor"  # for real
+
+    flow = await call(agent_client, secret, "create_workflow", workflow={"name": "Daily"})
+    assert [n["kind"] for n in flow["graph"]["nodes"]] == ["start"]  # a new workflow can be tried at once
+    graph = flow["graph"] | {"nodes": flow["graph"]["nodes"] + [
+        {"id": "n2", "kind": "end", "label": "End", "config": {}, "position": {"x": 200, "y": 0}}
+    ], "edges": [{"id": "e1", "source": "n1", "target": "n2"}]}  # fmt: skip
+    saved = await call(
+        agent_client, secret, "update_workflow", workflow_id=flow["id"], changes={"graph": graph}
+    )
+    assert [n["id"] for n in saved["graph"]["nodes"]] == ["n1", "n2"] and saved["name"] == "Daily"
+    assert (await call(agent_client, secret, "start_workflow_run", workflow_id=flow["id"]))[
+        "workflow_id"
+    ] == flow["id"]
+
+
+async def test_files_are_written_made_and_moved_with_the_rules_of_the_files_page(client, agent_client):
+    await register(client)
+    pid = (await make_project(client))["id"]
+    secret = await secret_of(client, await make_token(client, pid, scope="manage"))
+    folders = {f["kind"]: f["id"] for f in await call(agent_client, secret, "list_folders")}
+    shared = folders["managed"]
+
+    await call(agent_client, secret, "make_folder", folder_id=shared, path="notes")
+    await call(agent_client, secret, "write_file", folder_id=shared, path="notes/a.md", text="first")
+    read = await call(agent_client, secret, "read_file", folder_id=shared, path="notes/a.md")
+    assert read["text"] == "first"
+    assert (
+        "already exists"
+        in (await call(agent_client, secret, "write_file", folder_id=shared, path="notes/a.md", text="x"))[
+            "error"
+        ]
+    )
+    await call(
+        agent_client, secret, "write_file", folder_id=shared, path="notes/a.md", text="second", overwrite=True
+    )
+    await call(
+        agent_client, secret, "move_file", folder_id=shared, source="notes/a.md", destination="notes/b.md"
+    )
+    assert (await call(agent_client, secret, "read_file", folder_id=shared, path="notes/b.md"))[
+        "text"
+    ] == "second"
+    assert (await call(agent_client, secret, "read_file", folder_id=shared, path="notes/a.md"))[
+        "error"
+    ] == NOT_FOUND
+
+    # a path cannot climb out of its folder, and nothing is written where there is no folder
+    assert "error" in await call(
+        agent_client, secret, "write_file", folder_id=shared, path="../out.txt", text="x"
+    )
+    assert "error" in await call(
+        agent_client, secret, "write_file", folder_id=shared, path="missing/a.md", text="x"
+    )
+
+    # the config folder holds agents as files: a file that could not work is refused, as in the Files page
+    agent = await call(agent_client, secret, "create_agent", agent={"name": "Filed"})
+    broken = await call(
+        agent_client,
+        secret,
+        "write_file",
+        folder_id=folders["config"],
+        path=agent["path"],
+        text="---\n",
+        overwrite=True,
+    )
+    assert "error" in broken
+    assert (await client.get(f"/api/agents/{agent['id']}")).json()[
+        "config_error"
+    ] == ""  # the agent is still fine
+
+
+async def test_setting_up_never_reaches_another_project_and_is_answered_like_a_missing_id(
+    client, agent_client
+):
+    await register(client)
+    mine = (await make_project(client, "Mine"))["id"]
+    theirs = (await make_project(client, "Theirs"))["id"]
+    other_agent = await make_agent(client, theirs, name="Theirs")
+    other_flow = await make_workflow_for(client, theirs)
+    other_folder = (await client.get(f"/api/projects/{theirs}/volumes")).json()[0]["id"]
+    secret = await secret_of(client, await make_token(client, mine, scope="manage"))
+
+    missing = await call(agent_client, secret, "update_agent", agent_id=99999, changes={"role": "x"})
+    assert "error" in missing
+    for name, args in (
+        ("update_agent", {"agent_id": other_agent["id"], "changes": {"role": "Mine now"}}),
+        ("update_workflow", {"workflow_id": other_flow, "changes": {"name": "Mine now"}}),
+        ("write_file", {"folder_id": other_folder, "path": "planted.txt", "text": "x"}),
+        ("make_folder", {"folder_id": other_folder, "path": "planted"}),
+        ("move_file", {"folder_id": other_folder, "source": "a", "destination": "b"}),
+        ("create_agent", {"project_id": theirs, "agent": {"name": "Planted"}}),
+        ("save_skill", {"project_id": theirs, "name": "planted", "content": SKILL.format(name="planted")}),
+        ("create_workflow", {"project_id": theirs, "workflow": {"name": "Planted"}}),
+    ):
+        # the same answer as for an id that does not exist at all, so ids tell nothing about other projects
+        assert await call(agent_client, secret, name, **args) == missing, name
+    assert (await client.get(f"/api/agents/{other_agent['id']}")).json()["role"] == other_agent["role"]
+    assert [a["name"] for a in (await client.get(f"/api/projects/{theirs}/agents")).json()] == ["Theirs"]
+    assert (await client.get(f"/api/projects/{theirs}/skills")).json() == []

@@ -773,7 +773,7 @@ class NotificationOptions(BaseModel):
 
 class ControlTokenIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    scope: Literal["read", "write"] = "read"
+    scope: Literal["read", "write", "manage"] = "read"  # each includes the one before (see app/control.py)
 
     @field_validator("name")
     @classmethod
@@ -789,7 +789,7 @@ class ControlTokenOut(BaseModel):
     id: int
     project_id: int | None  # None: reaches all of the owner's projects
     name: str
-    scope: Literal["read", "write"]
+    scope: Literal["read", "write", "manage"]
     token_hint: str  # the last characters, to tell tokens apart
     last_used_at: datetime | None
     created_at: datetime

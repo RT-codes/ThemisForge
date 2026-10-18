@@ -881,12 +881,15 @@ export interface WorkflowRunDetail {
 }
 
 /** a key an outside agent holds to use one project through MCP; the secret is only in ControlConnect */
+/** what a connection may do, each including the one before: look, run the project's work, set the project up */
+export type ControlScope = 'read' | 'write' | 'manage'
+
 export interface ControlToken {
   id: number
   /** the one project it reaches; null: all of the owner's projects */
   project_id: number | null
   name: string
-  scope: 'read' | 'write'
+  scope: ControlScope
   /** the last characters of the secret, to tell tokens apart */
   token_hint: string
   last_used_at: string | null
@@ -1108,11 +1111,11 @@ export const api = {
   /** sends the webhook a message of your own; it makes a real task */
   testWebhook: (id: number, body: { payload?: string; event?: string }) => request<DeliveryResult>(`/webhooks/${id}/test`, send('POST', body)),
   controlTokens: (projectId: number) => request<ControlToken[]>(`/projects/${projectId}/control/tokens`),
-  createControlToken: (projectId: number, body: { name: string; scope?: 'read' | 'write' }) =>
+  createControlToken: (projectId: number, body: { name: string; scope?: ControlScope }) =>
     request<ControlToken>(`/projects/${projectId}/control/tokens`, send('POST', body)),
   /** the keys that reach all of the user's projects (and, for an administrator, the global settings) */
   accountControlTokens: () => request<ControlToken[]>('/control/tokens'),
-  createAccountControlToken: (body: { name: string; scope?: 'read' | 'write' }) =>
+  createAccountControlToken: (body: { name: string; scope?: ControlScope }) =>
     request<ControlToken>('/control/tokens', send('POST', body)),
   /** the command and config that connect an agent; can be asked for again at any time */
   controlConnect: (id: number) => request<ControlConnect>(`/control/tokens/${id}/connect`),

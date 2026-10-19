@@ -2,6 +2,7 @@ import asyncio
 import os
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.app_settings import MountRoot
 from app.cells import CellSpec, DockerCellManager, Mount
@@ -116,6 +117,26 @@ async def test_every_project_has_a_shared_folder_that_stays(client):
     ]
     assert (await client.get(f"/api/projects/{pid}/volumes")).json()[0]["id"] == volumes[0]["id"]  # made once
     assert (await client.delete(f"/api/volumes/{volumes[0]['id']}")).status_code == 409
+
+
+async def test_a_rename_cut_off_while_it_commits_puts_the_files_back(client, monkeypatch):
+    # The directory moves first and the database follows. If the request is cancelled in between
+    # (a closed connection, a server stop), the database rolls back, so the files must go back too.
+    await register(client)
+    pid = (await make_project(client))["id"]
+    vol = (await client.post(f"/api/projects/{pid}/volumes", json={"name": "out"})).json()
+    folders = settings.data_dir / "projects" / str(pid) / "volumes"
+    (folders / "out" / "keep.txt").write_text("x")
+
+    async def cancelled(self):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(AsyncSession, "commit", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await client.patch(f"/api/volumes/{vol['id']}", json={"name": "renamed"})
+    monkeypatch.undo()
+
+    assert (folders / "out" / "keep.txt").read_text() == "x" and not (folders / "renamed").exists()
 
 
 async def test_managed_folders_are_made_for_you_and_names_are_checked(client):

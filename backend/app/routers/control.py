@@ -1,7 +1,10 @@
 import json
 import re
+from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +12,40 @@ from .. import security
 from ..crypto import decrypt, encrypt
 from ..deps import CurrentUser, SessionDep
 from ..models import ControlToken, Project
-from ..schemas import ControlConnect, ControlTokenIn, ControlTokenOut
+
+
+class ControlTokenIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    scope: Literal["read", "write", "manage"] = "read"  # each includes the one before (see app/control.py)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("A token needs a name")
+        return v.strip()
+
+
+class ControlTokenOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int | None  # None: reaches all of the owner's projects
+    name: str
+    scope: Literal["read", "write", "manage"]
+    token_hint: str  # the last characters, to tell tokens apart
+    last_used_at: datetime | None
+    created_at: datetime
+
+
+class ControlConnect(BaseModel):
+    """Everything an owner pastes into an agent to connect it, with the secret in it."""
+
+    url: str
+    token: str
+    claude_code: str  # the command that adds this project to Claude Code
+    config_json: str  # the same for clients that read an mcpServers file
+
 
 # The tokens an owner hands to outside agents so they can use a project through MCP (see app/control.py)
 router = APIRouter(tags=["control"])

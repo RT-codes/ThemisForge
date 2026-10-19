@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { AttemptFailure } from '$lib/api'
+	import type { AttemptFailure } from '$lib/api/tasks'
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
 
 	let { failure }: { failure: AttemptFailure } = $props()

@@ -1,5 +1,5 @@
 // The list of services a person can connect, as the Settings page shows it: searchable and grouped by kind.
-import type { ConnectionProvider } from './api'
+import type { ConnectionProvider } from './api/connections'
 
 export interface CatalogEntry {
   id: string

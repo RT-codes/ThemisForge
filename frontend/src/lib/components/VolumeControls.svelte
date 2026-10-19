@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Volume } from '$lib/api'
+	import type { Volume } from '$lib/api/volumes'
 	import * as Select from '$lib/components/ui/select/index.js'
 	import { Switch } from '$lib/components/ui/switch/index.js'
 	import { accessLabel } from '$lib/format'

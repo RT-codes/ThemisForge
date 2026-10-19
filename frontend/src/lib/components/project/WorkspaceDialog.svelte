@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Workspace } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Workspace } from '$lib/api/projects'
 	import IconField from '$lib/components/IconField.svelte'
 	import LayersIcon from '@lucide/svelte/icons/layers'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -39,7 +40,7 @@
 		saving = true
 		try {
 			const body = { name, purpose, description, icon }
-			onsaved(workspace ? await api.updateWorkspace(workspace.id, body) : await api.createWorkspace(projectId, body))
+			onsaved(workspace ? await projectsApi.updateWorkspace(workspace.id, body) : await projectsApi.createWorkspace(projectId, body))
 			open = false
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not save the workspace'

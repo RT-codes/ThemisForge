@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Skill } from '$lib/api'
+	import { agentsApi, type Skill } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
@@ -33,7 +34,7 @@
 
 	async function load() {
 		try {
-			skills = await api.skills(projectId)
+			skills = await agentsApi.skills(projectId)
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the skills'
@@ -59,7 +60,7 @@
 	async function edit(skill: Skill) {
 		formError = ''
 		try {
-			content = (await api.skill(projectId, skill.name)).content
+			content = (await agentsApi.skill(projectId, skill.name)).content
 			editing = skill.name
 			name = skill.name
 			open = true
@@ -78,7 +79,7 @@
 		}
 		saving = true
 		try {
-			await api.saveSkill(projectId, target, editing ? content : withName(content, target))
+			await agentsApi.saveSkill(projectId, target, editing ? content : withName(content, target))
 			open = false
 			await load()
 		} catch (err) {
@@ -93,7 +94,7 @@
 		confirmOpen = false
 		if (!target) return
 		try {
-			await api.deleteSkill(projectId, target.name)
+			await agentsApi.deleteSkill(projectId, target.name)
 			await load()
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not delete the skill'

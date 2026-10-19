@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type FileEntry } from '$lib/api'
+	import { volumesApi, type FileEntry } from '$lib/api/volumes'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { clampPan, scaleToSlider, sliderToScale, zoomAt, type Zoom } from '$lib/files'
 	import ZoomInIcon from '@lucide/svelte/icons/zoom-in'
@@ -72,7 +72,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<img
 		bind:this={picture}
-		src={api.fileUrl(volumeId, path, false, entry.modified)}
+		src={volumesApi.fileUrl(volumeId, path, false, entry.modified)}
 		alt={entry.name}
 		draggable="false"
 		class="border object-contain select-none {entry.name.toLowerCase().endsWith('.svg') ? 'h-full w-full' : 'max-h-full max-w-full'} {zoomed ? 'cursor-grab active:cursor-grabbing' : ''}"

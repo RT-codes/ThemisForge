@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type KeyInfo } from '$lib/api'
+	import { agentsApi, type KeyInfo } from '$lib/api/agents'
 	import RegistryAdd from '$lib/components/RegistryAdd.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { router } from '$lib/router.svelte'
@@ -16,7 +16,7 @@
 	async function browse() {
 		error = ''
 		try {
-			keys = await api.keys()
+			keys = await agentsApi.keys()
 			open = true
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the keys'

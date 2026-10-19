@@ -21,7 +21,7 @@
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
-	import { api } from '$lib/api'
+	import { projectsApi } from '$lib/api/projects'
 	import DynamicIcon from './DynamicIcon.svelte'
 	import EditPopover, { type Details } from './EditPopover.svelte'
 	import { workspaceOf } from '$lib/boards'
@@ -36,11 +36,11 @@
 	let createOpen = $state(false)
 
 	async function saveProject(id: number, d: Details) {
-		await api.updateProject(id, { name: d.name, purpose: d.purpose, description: d.description, icon: d.icon })
+		await projectsApi.updateProject(id, { name: d.name, purpose: d.purpose, description: d.description, icon: d.icon })
 		await projects.refresh()
 	}
 	async function saveWorkspace(projectId: number, id: number, d: Details) {
-		await api.updateWorkspace(id, { name: d.name, purpose: d.purpose, description: d.description, icon: d.icon })
+		await projectsApi.updateWorkspace(id, { name: d.name, purpose: d.purpose, description: d.description, icon: d.icon })
 		await structure.refresh(projectId)
 	}
 	// the workspace that is getting a new board (the plus beside it)

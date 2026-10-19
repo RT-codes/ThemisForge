@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type FileEntry, type FolderListing, type Volume } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { volumesApi, type FileEntry, type FolderListing, type Volume } from '$lib/api/volumes'
 	import FilePreview from '$lib/components/FilePreview.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -103,7 +104,7 @@
 	/** lists one folder again; true if what is on screen changed */
 	async function loadFolder(vid: number, dir: string): Promise<boolean> {
 		try {
-			const got = await api.listFiles(vid, dir, etags[dir] ?? '')
+			const got = await volumesApi.listFiles(vid, dir, etags[dir] ?? '')
 			if (vid !== volumeId || got === null) return false // another folder was chosen meanwhile, or no change
 			etags[dir] = got.etag
 			notePulses(dir, tree[dir], got.listing)
@@ -156,7 +157,7 @@
 		const onVisible = () => !document.hidden && watch()
 		document.addEventListener('visibilitychange', onVisible)
 
-		api
+		volumesApi
 			.volumes(id)
 			.then((v) => {
 				volumes = v
@@ -183,7 +184,7 @@
 
 	async function reloadVolumes() {
 		try {
-			volumes = await api.volumes(id, true)
+			volumes = await volumesApi.volumes(id, true)
 		} catch (e) {
 			error = message(e, 'Could not load the folders')
 		}
@@ -211,7 +212,7 @@
 		renaming = true
 		renameError = ''
 		try {
-			await api.updateVolume(volumeId, { name: newName })
+			await volumesApi.updateVolume(volumeId, { name: newName })
 			await Promise.all([reloadVolumes(), refresh()])
 		} catch (err) {
 			renameError = message(err, 'Could not rename the folder')
@@ -223,7 +224,7 @@
 	async function changeSettings(patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) {
 		if (volumeId === null) return
 		try {
-			await api.updateVolume(volumeId, patch)
+			await volumesApi.updateVolume(volumeId, patch)
 			error = ''
 		} catch (e) {
 			error = message(e, 'Could not change the folder')
@@ -409,7 +410,7 @@
 	async function saveDraft(force = false) {
 		const d = draft
 		if (!d || volumeId === null) return
-		await api.uploadFile(volumeId, d.path, new File([d.text], d.entry.name), true, force ? '' : d.entry.modified)
+		await volumesApi.uploadFile(volumeId, d.path, new File([d.text], d.entry.name), true, force ? '' : d.entry.modified)
 		draft = null
 		saves += 1
 		await refresh() // the size and time of the file changed
@@ -472,7 +473,7 @@
 		await act(async () => {
 			for (const file of files) {
 				try {
-					await api.uploadFile(vid, joinPath(dir, file.name), file)
+					await volumesApi.uploadFile(vid, joinPath(dir, file.name), file)
 				} catch (e) {
 					if (e instanceof ApiError && e.status === 409 && !e.message.includes('writing')) skipped.push(file.name)
 					else throw e
@@ -500,12 +501,12 @@
 		naming = null
 		await act(async () => {
 			if (target.kind === 'folder') {
-				await api.createFolder(vid, joinPath(dir, name))
+				await volumesApi.createFolder(vid, joinPath(dir, name))
 				if (dir !== '' && !expanded.includes(dir)) expanded = [...expanded, dir] // so the new folder is seen
 				return
 			}
 			const parent = target.path.split('/').slice(0, -1).join('/')
-			await api.moveFile(vid, target.path, joinPath(parent, name))
+			await volumesApi.moveFile(vid, target.path, joinPath(parent, name))
 			if (isInside(current, target.path)) current = ''
 		}, 'Could not save the change')
 	}
@@ -520,7 +521,7 @@
 		if (!target || volumeId === null) return
 		const vid = volumeId
 		await act(async () => {
-			await api.deleteFile(vid, target.path)
+			await volumesApi.deleteFile(vid, target.path)
 			if (isInside(current, target.path)) current = ''
 		}, 'Could not delete')
 	}
@@ -546,7 +547,7 @@
 				<span class="hidden w-28 text-end text-xs text-muted-foreground sm:block" title={dateTime(entry.modified)}>{relative(entry.modified)}</span>
 				<span class="flex shrink-0 items-center">
 					{#if !entry.is_dir}
-						<Button variant="ghost" size="icon-sm" aria-label="Download {entry.name}" class="text-muted-foreground" href={api.fileUrl(volumeId!, path, true)} download={entry.name}>
+						<Button variant="ghost" size="icon-sm" aria-label="Download {entry.name}" class="text-muted-foreground" href={volumesApi.fileUrl(volumeId!, path, true)} download={entry.name}>
 							<DownloadIcon />
 						</Button>
 					{/if}
@@ -758,7 +759,7 @@
 							<p class="truncate text-sm font-medium">{selected.name}</p>
 							<p class="truncate text-xs text-muted-foreground">{formatSize(selected.size)}, changed {relative(selected.modified)}</p>
 						</div>
-						<Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="Download {selected.name}" href={api.fileUrl(volumeId, selectedPath, true)} download={selected.name}><DownloadIcon /></Button>
+						<Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="Download {selected.name}" href={volumesApi.fileUrl(volumeId, selectedPath, true)} download={selected.name}><DownloadIcon /></Button>
 						<Button variant="ghost" size="icon-sm" class="text-muted-foreground transition-transform duration-200 hover:scale-110" aria-label="Enlarge the preview" title="Enlarge" onclick={() => (enlarged = true)}><Maximize2Icon /></Button>
 						<Button variant="ghost" size="icon-sm" class="text-muted-foreground" aria-label="Close the preview" onclick={close}><XIcon /></Button>
 					</div>

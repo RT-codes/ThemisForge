@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, type TaskStage, type WorkflowRunDetail } from '$lib/api'
+	import { agentsApi } from '$lib/api/agents'
+	import type { TaskStage } from '$lib/api/tasks'
+	import { workflowsApi, type WorkflowRunDetail } from '$lib/api/workflows'
 	import { duration } from '$lib/format'
 	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
 	import { STAGE_LABEL, STAGE_TONE } from '$lib/stageTrack'
@@ -32,7 +34,7 @@
 		if (!stepsOpen[i] || (steps[id] && steps[id] !== 'error')) return
 		steps[id] = 'loading'
 		try {
-			const [workflow, agents] = await Promise.all([api.workflow(id), api.agents(projectId)])
+			const [workflow, agents] = await Promise.all([workflowsApi.workflow(id), agentsApi.agents(projectId)])
 			steps[id] = agentSteps(workflow.graph, agents)
 		} catch {
 			steps[id] = 'error'

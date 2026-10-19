@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Task } from './api.ts'
+import type { Task } from './api/tasks.ts'
 import { applyView, emptyColumn, emptyView, filterCount, isDefaultView, parseStored, sortTasks, toggled } from './boardView.ts'
 
 let n = 0

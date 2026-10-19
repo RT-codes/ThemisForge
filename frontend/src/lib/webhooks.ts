@@ -1,6 +1,6 @@
 // Webhooks: pure helpers for the form and the log (the components do the loading).
 
-import type { DeliveryOutcome, WebhookRule } from './api'
+import type { DeliveryOutcome, WebhookRule } from './api/webhooks'
 
 /** A rule as the form edits it: the values are one line, separated by commas. */
 export interface RuleRow {

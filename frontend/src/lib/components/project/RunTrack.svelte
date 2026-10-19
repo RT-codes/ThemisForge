@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type WorkflowRunDetail } from '$lib/api'
+	import { workflowsApi, type WorkflowRunDetail } from '$lib/api/workflows'
 	import { stageTrack, type TrackNode, type TrackState } from '$lib/stageTrack'
 	import { cn } from '$lib/utils'
 	import BanIcon from '@lucide/svelte/icons/ban'
@@ -39,7 +39,7 @@
 
 	async function load(id: number) {
 		try {
-			const fresh = await api.workflowRun(id)
+			const fresh = await workflowsApi.workflowRun(id)
 			if (id === runId) detail = fresh // a slow answer for a run that is no longer the one shown is dropped
 		} catch {
 			// transient: the next poll retries

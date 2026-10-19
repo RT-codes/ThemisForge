@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PropertyDef, Task } from '$lib/api'
+	import type { PropertyDef, Task } from '$lib/api/tasks'
 	import { chipStyle } from '$lib/colors'
 	import { attemptLabel, dateTime, relative } from '$lib/format'
 	import { describeSchedule } from '$lib/recurrence'

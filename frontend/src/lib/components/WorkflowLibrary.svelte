@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type RunStatus, type WorkflowSummary } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { workflowsApi, type RunStatus, type WorkflowSummary } from '$lib/api/workflows'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { relative } from '$lib/format'
@@ -30,7 +31,7 @@
 
 	async function load() {
 		try {
-			flows = await api.workflows(projectId)
+			flows = await workflowsApi.workflows(projectId)
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the workflows'
@@ -56,7 +57,7 @@
 		confirmOpen = false // close at once: the dialog must never sit there while (or after) the delete happens
 		if (!target) return
 		try {
-			await api.deleteWorkflow(target.id)
+			await workflowsApi.deleteWorkflow(target.id)
 			await load()
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not delete the workflow'

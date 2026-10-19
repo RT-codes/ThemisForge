@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Approval } from './api'
+import type { Approval } from './api/workflows'
 import { announce, approvalHref, headline } from './approvals.ts'
 
 const approval = (id: number, extra: Partial<Approval> = {}): Approval => ({

@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { Agent, CellDefaults, HarnessInfo, KeyInfo, McpServer, Project, Skill, Volume } from '$lib/api'
+	import type { Agent, HarnessInfo, KeyInfo, Skill } from '$lib/api/agents'
+	import type { Project } from '$lib/api/projects'
+	import type { CellDefaults } from '$lib/api/settings'
+	import type { McpServer } from '$lib/api/tools'
+	import type { Volume } from '$lib/api/volumes'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import AgentConnections from '$lib/components/AgentConnections.svelte'
 	import { describeCell, effectiveCell } from '$lib/cell'

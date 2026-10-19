@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type FileEntry } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { volumesApi, type FileEntry } from '$lib/api/volumes'
 	import ImagePreview from '$lib/components/ImagePreview.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { isDirty, isMarkdown, parentPath, previewKind, resolveRelative, splitFrontmatter, type Draft } from '$lib/files'
@@ -62,7 +63,7 @@
 					untrusted: true,
 					image: (src) => {
 						const target = resolveRelative(parentPath(path), src)
-						return target === null ? null : api.fileUrl(volumeId, target)
+						return target === null ? null : volumesApi.fileUrl(volumeId, target)
 					},
 				}).html
 			: ''
@@ -79,7 +80,7 @@
 		void entry.modified
 		if (editing) return
 		let stale = false
-		api
+		volumesApi
 			.readFileText(volumeId, path)
 			.then((t) => !stale && (text = t))
 			.catch((e) => !stale && (error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not read the file'))
@@ -168,7 +169,7 @@
 	{:else if kind === null}
 		<div class="m-auto flex flex-col items-center gap-3 text-center">
 			<p class="text-sm text-muted-foreground">This kind of file cannot be shown here.</p>
-			<Button variant="outline" href={api.fileUrl(volumeId, path, true)} download={entry.name}><DownloadIcon /> Download</Button>
+			<Button variant="outline" href={volumesApi.fileUrl(volumeId, path, true)} download={entry.name}><DownloadIcon /> Download</Button>
 		</div>
 	{/if}
 

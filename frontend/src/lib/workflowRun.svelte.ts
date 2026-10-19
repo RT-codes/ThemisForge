@@ -1,4 +1,4 @@
-import { api, type WorkflowRunDetail } from './api'
+import { workflowsApi, type WorkflowRunDetail } from './api/workflows'
 
 // What the canvas shows while a test run plays: which nodes are done, which one is playing, which are still to come.
 //
@@ -60,7 +60,7 @@ export class RunView {
     while (token === this.#token) {
       let detail: WorkflowRunDetail | null = null
       try {
-        detail = await api.workflowRun(runId)
+        detail = await workflowsApi.workflowRun(runId)
       } catch {
         // transient: the next round asks again
       }

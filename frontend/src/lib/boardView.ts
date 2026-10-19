@@ -1,7 +1,7 @@
 // What the board shows: a search, filters and an order. One setting applies to the whole board, and every status
 // column can add its own on top (its own order, and filters that narrow it further).
 
-import type { Harness, PropertyDef, ScheduleKind, Task } from './api'
+import type { Harness, PropertyDef, ScheduleKind, Task } from './api/tasks'
 
 export type SortKey = 'manual' | 'newest' | 'oldest' | 'title' | 'next_run'
 

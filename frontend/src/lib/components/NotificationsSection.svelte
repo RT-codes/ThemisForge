@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type NotificationOptions, type NotificationTarget } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { notificationsApi, type NotificationOptions, type NotificationTarget } from '$lib/api/notifications'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
@@ -41,7 +42,7 @@
 
 	async function load() {
 		try {
-			;[targets, options] = await Promise.all([api.notifications(projectId), api.notificationOptions()])
+			;[targets, options] = await Promise.all([notificationsApi.notifications(projectId), notificationsApi.notificationOptions()])
 			error = ''
 		} catch (e) {
 			error = fail(e, 'Could not load the notifications')
@@ -71,9 +72,9 @@
 			if (editing) {
 				// the stored secret cannot be shown, so it is replaced only when something was typed
 				const typed = Object.values(config).some((v) => v.trim())
-				await api.updateNotification(editing.id, { name, events, ...(typed ? { config } : {}) })
+				await notificationsApi.updateNotification(editing.id, { name, events, ...(typed ? { config } : {}) })
 			} else {
-				await api.createNotification(projectId, { name, kind: kindKey, config, events })
+				await notificationsApi.createNotification(projectId, { name, kind: kindKey, config, events })
 			}
 			open = false
 			await load()
@@ -89,7 +90,7 @@
 		busy = true
 		tried = null
 		try {
-			tried = await api.testNotification(editing.id)
+			tried = await notificationsApi.testNotification(editing.id)
 			await load()
 		} catch (e) {
 			formError = fail(e, 'That did not work')
@@ -102,7 +103,7 @@
 		if (!editing) return
 		busy = true
 		try {
-			await api.deleteNotification(editing.id)
+			await notificationsApi.deleteNotification(editing.id)
 			open = false
 			await load()
 		} catch (e) {
@@ -115,7 +116,7 @@
 
 	async function toggle(target: NotificationTarget, enabled: boolean) {
 		try {
-			await api.updateNotification(target.id, { enabled })
+			await notificationsApi.updateNotification(target.id, { enabled })
 			await load()
 		} catch (e) {
 			error = fail(e, 'Could not change it')

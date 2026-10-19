@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type NodeRun, type NodeRunStatus, type RunStatus, type WorkflowRunDetail, type WorkflowRunSummary } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { workflowsApi, type NodeRun, type NodeRunStatus, type RunStatus, type WorkflowRunDetail, type WorkflowRunSummary } from '$lib/api/workflows'
 	import { approvals } from '$lib/approvals.svelte'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import ResultView from '$lib/components/ResultView.svelte'
@@ -57,7 +58,7 @@
 
 	async function loadList() {
 		try {
-			runs = await api.workflowRuns(workflowId)
+			runs = await workflowsApi.workflowRuns(workflowId)
 			if (selected === null && runs.length) selected = runs[0].id
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the runs'
@@ -69,7 +70,7 @@
 
 	async function loadDetail(id: number) {
 		try {
-			const fresh = await api.workflowRun(id)
+			const fresh = await workflowsApi.workflowRun(id)
 			if (selected !== id) return // the reader moved on while this was loading
 			detail = fresh
 			if (autoOpenedFor !== id) {
@@ -116,7 +117,7 @@
 		if (!detail) return
 		cancelling = true
 		try {
-			detail = await api.cancelWorkflowRun(detail.id)
+			detail = await workflowsApi.cancelWorkflowRun(detail.id)
 			await loadList()
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not cancel'

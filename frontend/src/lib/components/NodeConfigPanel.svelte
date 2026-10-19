@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { api, type Workspace, type Agent, type CellDefaults, type HarnessInfo, type ProfileOverrides, type Project, type Volume } from '$lib/api'
+	import { agentsApi, type Agent, type HarnessInfo } from '$lib/api/agents'
+	import { projectsApi, type Project, type Workspace } from '$lib/api/projects'
+	import { settingsApi, type CellDefaults, type ProfileOverrides } from '$lib/api/settings'
+	import { volumesApi, type Volume } from '$lib/api/volumes'
 	import { boardChoices, customStatusChoices, whereChoices } from '$lib/boards'
 	import { effectiveCell } from '$lib/cell'
 	import CellChoice from '$lib/components/CellChoice.svelte'
@@ -67,13 +70,13 @@
 	let boardsLoaded = $state(false)
 	onMount(async () => {
 		if (data.kind === 'trigger' || data.kind === 'task') {
-			api.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
+			projectsApi.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
 		}
-		if (data.kind === 'agent' || data.kind === 'volume') api.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
+		if (data.kind === 'agent' || data.kind === 'volume') volumesApi.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
 		if (data.kind !== 'agent') return
-		api.harnesses().then((h) => (harness = h.find((x) => x.id === 'codex') ?? null)).catch(() => {}) // without it the picker only knows the current model
+		agentsApi.harnesses().then((h) => (harness = h.find((x) => x.id === 'codex') ?? null)).catch(() => {}) // without it the picker only knows the current model
 		try {
-			;[agents, project, defaults] = await Promise.all([api.agents(projectId), api.project(projectId), api.systemStatus().then((s) => s.cell_defaults)])
+			;[agents, project, defaults] = await Promise.all([agentsApi.agents(projectId), projectsApi.project(projectId), settingsApi.systemStatus().then((s) => s.cell_defaults)])
 		} catch {
 			// the picker then only offers "no agent", and the cell is described without numbers
 		} finally {

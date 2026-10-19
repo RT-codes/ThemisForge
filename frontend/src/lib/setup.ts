@@ -1,7 +1,8 @@
 // What a project still needs before its agents can do their work, for the overview's "Needs setup" strip. It only
 // reads what the settings page already shows, so each issue links to the section that fixes it.
 
-import type { Agent, McpServer } from './api'
+import type { Agent } from './api/agents'
+import type { McpServer } from './api/tools'
 
 export interface SetupIssue {
   id: string

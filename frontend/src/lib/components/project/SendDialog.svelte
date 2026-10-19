@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type Task, type TaskStatus, type Workspace } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import type { Workspace } from '$lib/api/projects'
+	import { tasksApi, type Task, type TaskStatus } from '$lib/api/tasks'
 	import { columnsOf, destinationLabel } from '$lib/boards'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
@@ -50,8 +52,8 @@
 		busy = true
 		error = ''
 		try {
-			if (mode === 'move') await api.moveTask(task.id, { board_id: board.id, status: status as TaskStatus })
-			else await api.spawnTask(task.id, { board_id: board.id, title, description, status: status as TaskStatus })
+			if (mode === 'move') await tasksApi.moveTask(task.id, { board_id: board.id, status: status as TaskStatus })
+			else await tasksApi.spawnTask(task.id, { board_id: board.id, title, description, status: status as TaskStatus })
 			open = false
 			ondone()
 		} catch (err) {

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type KeyInfo, type McpServer } from '$lib/api'
+	import type { KeyInfo } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import { toolsApi, type McpServer } from '$lib/api/tools'
 	import { auth } from '$lib/auth.svelte'
 	import McpForm from '$lib/components/McpForm.svelte'
 	import RegistryAdd from '$lib/components/RegistryAdd.svelte'
@@ -69,7 +71,7 @@
 
 	async function reload() {
 		try {
-			servers = await api.mcpServers(projectId)
+			servers = await toolsApi.mcpServers(projectId)
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the tools'
 		}
@@ -101,7 +103,7 @@
 		testing = server.id
 		error = ''
 		try {
-			const result = await api.testMcpServer(server.id)
+			const result = await toolsApi.testMcpServer(server.id)
 			servers = servers.map((s) => (s.id === server.id ? { ...s, last_test: result } : s))
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not test the tool'
@@ -123,7 +125,7 @@
 		doomed = null
 		if (!target) return
 		try {
-			await api.deleteMcpServer(target.id)
+			await toolsApi.deleteMcpServer(target.id)
 			if (focus === target.id) focus = null
 			formDirty = false
 			onremoved(target.id)

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type AppSettings, type DockerStatus, type Resources, type Secret, type SystemStatus } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { settingsApi, type AppSettings, type DockerStatus, type Resources, type Secret, type SystemStatus } from '$lib/api/settings'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import ConnectionsSettings from '$lib/components/ConnectionsSettings.svelte'
@@ -65,7 +66,7 @@
 	async function checkDocker(host?: string) {
 		checking = true
 		try {
-			docker = await api.docker(host)
+			docker = await settingsApi.docker(host)
 		} catch (e) {
 			docker = {
 				ok: false,
@@ -86,7 +87,7 @@
 
 	async function loadResources() {
 		try {
-			resources = await api.resources()
+			resources = await settingsApi.resources()
 		} catch {
 			resources = null
 		}
@@ -94,10 +95,10 @@
 
 	async function load() {
 		try {
-			saved = await api.settings()
+			saved = await settingsApi.settings()
 			form = copy(saved)
-			secrets = await api.secrets()
-			system = await api.systemStatus()
+			secrets = await settingsApi.secrets()
+			system = await settingsApi.systemStatus()
 			await Promise.all([checkDocker(), loadResources()])
 		} catch (e) {
 			loadError = e instanceof ApiError && e.status === 403 ? 'Only administrators can change settings.' : (e as Error).message
@@ -113,7 +114,7 @@
 		saveError = ''
 		saving = true
 		try {
-			saved = await api.saveSettings(form)
+			saved = await settingsApi.saveSettings(form)
 			form = copy(saved)
 			justSaved = true
 			setTimeout(() => (justSaved = false), 2500)
@@ -130,17 +131,17 @@
 		e.preventDefault()
 		secretError = ''
 		try {
-			await api.createSecret(secretName, secretKind, secretValue)
+			await settingsApi.createSecret(secretName, secretKind, secretValue)
 			secretName = secretValue = ''
-			secrets = await api.secrets()
+			secrets = await settingsApi.secrets()
 		} catch (err) {
 			secretError = err instanceof Error ? err.message : 'Could not add the secret'
 		}
 	}
 
 	async function removeSecret(s: Secret) {
-		await api.deleteSecret(s.id)
-		secrets = await api.secrets()
+		await settingsApi.deleteSecret(s.id)
+		secrets = await settingsApi.secrets()
 	}
 
 	const gb = (mb: number | null) => (mb === null ? '' : `${(mb / 1024).toFixed(1)} GB`)
@@ -159,7 +160,7 @@
 	async function checkUpdatesNow() {
 		checkingUpdates = true
 		try {
-			const found = await api.checkForUpdates()
+			const found = await settingsApi.checkForUpdates()
 			if (system) system = { ...system, update: found }
 		} catch (e) {
 			if (system?.update) system = { ...system, update: { ...system.update, error: e instanceof Error ? e.message : 'Could not check for updates' } }

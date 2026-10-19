@@ -1,4 +1,4 @@
-import type { FileEntry } from './api'
+import type { FileEntry } from './api/volumes'
 
 // Pure helpers for the Files page. Paths are slash separated and relative to a folder's root; "" is the root.
 

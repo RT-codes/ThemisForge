@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type AccessRequest, type Invite, type InviteCreated } from '$lib/api'
+	import { authApi, type AccessRequest, type Invite, type InviteCreated } from '$lib/api/auth'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Card from '$lib/components/ui/card/index.js'
@@ -33,7 +33,7 @@
 
 	async function load() {
 		try {
-			;[requests, invites] = await Promise.all([api.accessRequests(), api.invites()])
+			;[requests, invites] = await Promise.all([authApi.accessRequests(), authApi.invites()])
 			system.refresh()
 			error = ''
 		} catch (e) {
@@ -71,7 +71,7 @@
 		e.preventDefault()
 		inviteError = ''
 		try {
-			showLink(await api.createInvite(inviteEmail))
+			showLink(await authApi.createInvite(inviteEmail))
 			inviteEmail = ''
 			await load()
 		} catch (err) {
@@ -80,7 +80,7 @@
 	}
 
 	async function revoke(i: Invite) {
-		await api.revokeInvite(i.id)
+		await authApi.revokeInvite(i.id)
 		await load()
 	}
 
@@ -126,8 +126,8 @@
 						</div>
 						<p class="mt-2 text-sm whitespace-pre-wrap">{r.reason}</p>
 						<div class="mt-3 flex gap-2">
-							<Button size="sm" disabled={busyId === r.id} onclick={() => act(r, () => api.approveRequest(r.id))}>Approve</Button>
-							<Button size="sm" variant="ghost" disabled={busyId === r.id} onclick={() => act(r, () => api.denyRequest(r.id))}>Deny</Button>
+							<Button size="sm" disabled={busyId === r.id} onclick={() => act(r, () => authApi.approveRequest(r.id))}>Approve</Button>
+							<Button size="sm" variant="ghost" disabled={busyId === r.id} onclick={() => act(r, () => authApi.denyRequest(r.id))}>Deny</Button>
 						</div>
 					</div>
 				{/each}

@@ -1,4 +1,4 @@
-import type { Approval } from './api'
+import type { Approval } from './api/workflows'
 
 /** Where an approval's run is shown: the workflow editor, with that run open. */
 export const approvalHref = (a: Pick<Approval, 'project_id' | 'workflow_id' | 'run_id'>): string =>

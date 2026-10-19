@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { PropertyDef, Task, TaskStatus } from '$lib/api'
+	import type { Board as BoardInfo } from '$lib/api/projects'
+	import type { PropertyDef, Task, TaskStatus } from '$lib/api/tasks'
 	import { applyView, type ColumnResult } from '$lib/boardView'
 	import type { BoardViewStore } from '$lib/boardView.svelte'
-	import type { Board as BoardInfo } from '$lib/api'
 	import { statusTone, type ColumnInfo } from '$lib/boards'
 	import StatusIcon from '$lib/components/StatusIcon.svelte'
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js'

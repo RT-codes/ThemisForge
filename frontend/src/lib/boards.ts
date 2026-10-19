@@ -1,6 +1,7 @@
 // Workspaces and boards: pure helpers for picking boards and describing their columns (the pages do the loading).
 
-import type { Board, BuiltinStatus, Task, TaskStatus, Workspace } from './api'
+import type { Board, Workspace } from './api/projects'
+import type { BuiltinStatus, Task, TaskStatus } from './api/tasks'
 
 /** The project's first board: first workspace, first board in it (the server sends both in display order). */
 export function defaultBoard(workspaces: Workspace[]): Board | null {

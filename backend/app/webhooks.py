@@ -142,10 +142,7 @@ def unmatched(rules: list[dict[str, Any]], message: Message) -> str:
 
 def title_of(webhook: Webhook, message: Message) -> str:
     """The template's, else the message's own "title", else the webhook's name. One line, as a title is."""
-    if webhook.title_template:
-        text = render(webhook.title_template, message)
-    else:
-        text = lookup(message, "title")
+    text = render(webhook.title_template, message) if webhook.title_template else lookup(message, "title")
     return " ".join(text.split())[:TITLE_MAX] or webhook.name
 
 

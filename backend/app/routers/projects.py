@@ -197,7 +197,7 @@ async def list_projects(session: SessionDep, user: CurrentUser) -> list[ProjectS
         .where(Task.status == TaskStatus.READY, Task.next_run_at.is_not(None), Task.internal.is_(False))
         .group_by(Task.project_id)
     )
-    nexts = {project_id: at for project_id, at in next_rows}
+    nexts = dict(next_rows.all())
     return [
         ProjectSummary(
             **ProjectOut.model_validate(p).model_dump(),

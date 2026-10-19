@@ -407,7 +407,8 @@ class _Walk:
     def _merge_ready(self, node_id: str, marks: dict[int, _Mark]) -> None:
         arrived = [m for m in marks.values() if m.state != "dead"]
         if not arrived:
-            return self.kill(node_id)
+            self.kill(node_id)
+            return
         inputs = []
         for i in self.into[node_id]:
             if i not in marks or marks[i].state == "dead":

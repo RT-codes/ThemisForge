@@ -55,7 +55,7 @@
 	})
 
 	function grab(e: PointerEvent) {
-		if (!zoomed) return
+		if (!zoomed || e.target !== picture) return // the zoom controls over the view are not part of the drag
 		panning = { x: e.clientX, y: e.clientY, from: zoom }
 		;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
 	}
@@ -66,10 +66,44 @@
 		zoom = { scale: zoom.scale, ...clampPan(panning.from.x + e.clientX - panning.x, panning.from.y + e.clientY - panning.y, zoom.scale, b, image) }
 	}
 	const fit = () => ((smooth = true), (zoom = FIT))
+
+	// The keyboard does what the pointer does: the arrows move a zoomed picture, + and - zoom, 0 fits. Only when the view
+	// itself has the focus: the slider and buttons keep their own keys.
+	const PAN_STEP = 48
+	function onkeydown(e: KeyboardEvent) {
+		if (e.target !== box) return
+		const arrows: Record<string, [number, number]> = { ArrowLeft: [PAN_STEP, 0], ArrowRight: [-PAN_STEP, 0], ArrowUp: [0, PAN_STEP], ArrowDown: [0, -PAN_STEP] }
+		if (e.key in arrows) {
+			if (!zoomed) return // not zoomed there is nothing to move, and the arrows still step through the pictures
+			const [dx, dy] = arrows[e.key]
+			const { box: b, image } = sizes()
+			smooth = true
+			zoom = { scale: zoom.scale, ...clampPan(zoom.x + dx, zoom.y + dy, zoom.scale, b, image) }
+			e.stopPropagation() // the Files page would also step to the previous or next picture
+		} else if (e.key === '+' || e.key === '=') zoomTo(zoom.scale * 1.5)
+		else if (e.key === '-') zoomTo(zoom.scale / 1.5)
+		else if (e.key === '0') fit()
+		else return
+		e.preventDefault()
+	}
 </script>
 
-<div bind:this={box} class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- A picture viewer is a custom widget with its own pointer and keyboard handling (see onkeydown), which ARIA calls
+     role="application". The lint rules only know ready-made controls, hence the suppression. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+<div
+	bind:this={box}
+	role="application"
+	aria-label="{entry.name}: drag to move, scroll or press + and - to zoom, 0 to fit"
+	tabindex="0"
+	class="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset"
+	onpointerdown={grab}
+	onpointermove={move}
+	onpointerup={() => (panning = null)}
+	onpointercancel={() => (panning = null)}
+	ondblclick={(e) => e.target === picture && fit()}
+	{onkeydown}
+>
 	<img
 		bind:this={picture}
 		src={volumesApi.fileUrl(volumeId, path, false, entry.modified)}
@@ -81,11 +115,6 @@
 		style:transition="opacity 300ms, transform {smooth ? '200ms' : '0ms'}"
 		{onload}
 		{onerror}
-		onpointerdown={grab}
-		onpointermove={move}
-		onpointerup={() => (panning = null)}
-		onpointercancel={() => (panning = null)}
-		ondblclick={fit}
 	/>
 	{#if !loading}
 		<!-- the zoom controls: a slider that follows the wheel, with the percentage as the way back to "fit" -->

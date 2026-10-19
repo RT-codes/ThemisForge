@@ -9,7 +9,7 @@
 	import { describeCell, effectiveCell } from '$lib/cell'
 	import { effortLabel, modelLabel } from '$lib/models'
 	import { relative } from '$lib/format'
-	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
+	import { copyButtons, renderMarkdown } from '$lib/markdown'
 	import { cn } from '$lib/utils'
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert'
 	import BotIcon from '@lucide/svelte/icons/bot'
@@ -91,8 +91,7 @@
 		<p class="text-xs text-muted-foreground">Always put in front of whatever task this agent is given.</p>
 		{#if instructions}
 			<!-- trusted: renderMarkdown ran in untrusted mode, so nothing in the text can be markup of its own -->
-			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-			<div class="docs-prose prose prose-sm prose-invert slim-scrollbar mt-2.5 max-h-96 max-w-none overflow-auto rounded-md border bg-background/40 p-3 text-sm" onclick={onCodeCopyClick}>
+			<div class="docs-prose prose prose-sm prose-invert slim-scrollbar mt-2.5 max-h-96 max-w-none overflow-auto rounded-md border bg-background/40 p-3 text-sm" use:copyButtons>
 				{@html instructions}
 			</div>
 		{:else}

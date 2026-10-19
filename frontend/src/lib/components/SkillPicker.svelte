@@ -198,8 +198,8 @@
 						<span class="block truncate text-xs text-muted-foreground">{skill.description || 'No description yet: open it to fix the file'}</span>
 					</span>
 				</button>
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-				<span class="flex cursor-default" onclick={(e) => e.stopPropagation()}><Switch checked={on} onCheckedChange={(v) => toggled(skill.name, v)} aria-label="Give the agent {skill.name}" /></span>
+				<!-- the row picks the skill when clicked: flipping the switch must not -->
+				<Switch checked={on} onCheckedChange={(v) => toggled(skill.name, v)} onclick={(e) => e.stopPropagation()} aria-label="Give the agent {skill.name}" />
 			</div>
 		{:else}
 			<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No skills yet. A skill is a short guide that agents read when a task calls for it.</p>

@@ -175,8 +175,8 @@
 						<span class="block truncate text-xs text-muted-foreground">{s.description || (s.kind === 'http' ? s.url : s.command)}</span>
 					</span>
 				</button>
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-				<span class="flex cursor-default" onclick={(e) => e.stopPropagation()}><Switch checked={on} onCheckedChange={(v) => toggled(s.id, v)} aria-label="Give the agent {s.name}" /></span>
+				<!-- the row picks the tool when clicked: flipping the switch must not -->
+				<Switch checked={on} onCheckedChange={(v) => toggled(s.id, v)} onclick={(e) => e.stopPropagation()} aria-label="Give the agent {s.name}" />
 			</div>
 		{:else}
 			<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No tools yet. A tool is an MCP server that gives agents more to work with, such as a file system or a search service.</p>

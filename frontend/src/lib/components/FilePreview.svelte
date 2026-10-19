@@ -4,7 +4,7 @@
 	import ImagePreview from '$lib/components/ImagePreview.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { isDirty, isMarkdown, parentPath, previewKind, resolveRelative, splitFrontmatter, type Draft } from '$lib/files'
-	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
+	import { copyButtons, renderMarkdown } from '$lib/markdown'
 	import DownloadIcon from '@lucide/svelte/icons/download'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import LockKeyholeIcon from '@lucide/svelte/icons/lock-keyhole'
@@ -158,8 +158,7 @@
 			></textarea>
 		{:else if markdown && !raw}
 			<!-- trusted: renderMarkdown ran in untrusted mode, so nothing in the file can be markup of its own -->
-			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-			<div class="docs-prose prose prose-invert slim-scrollbar max-w-none min-h-0 flex-1 overflow-auto rounded-md border bg-background/40 p-4 text-sm" onclick={onCodeCopyClick}>
+			<div class="docs-prose prose prose-invert slim-scrollbar max-w-none min-h-0 flex-1 overflow-auto rounded-md border bg-background/40 p-4 text-sm" use:copyButtons>
 				{#if parts.meta}<pre class="not-prose mb-4 overflow-auto rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground">{parts.meta}</pre>{/if}
 				{@html rich}
 			</div>

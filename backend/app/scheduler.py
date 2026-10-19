@@ -263,7 +263,7 @@ class Scheduler:
                 if self.mcp_logins and time.monotonic() - self._last_keep_alive >= KEEP_ALIVE_EVERY_SECONDS:
                     self._last_keep_alive = time.monotonic()
                     await self.mcp_logins.keep_alive()
-            except Exception:
+            except Exception:  # one bad pass must not end the loop: nothing else would ever start a task
                 log.exception("scheduler tick failed")
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), self.interval)

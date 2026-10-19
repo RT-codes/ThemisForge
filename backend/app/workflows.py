@@ -749,7 +749,7 @@ class WorkflowRunner:
         for run_id in parked:
             try:
                 await self._resume(run_id)
-            except Exception:
+            except Exception:  # one unreadable run must not keep the others parked: fail it and go on
                 log.exception("could not resume workflow run %s", run_id)
                 await self._finish(run_id, RunStatus.FAILED, "Themis could not pick this run up again")
 
@@ -850,6 +850,7 @@ class WorkflowRunner:
                             )
                         except LoopError:
                             log.warning("workflow %s not started by task %s: it would loop", wf.id, task_id)
+        # fire-and-forget, after the task's own commit: a failed trigger must not surface anywhere
         except Exception:
             log.exception("starting workflows for moved tasks failed")
 

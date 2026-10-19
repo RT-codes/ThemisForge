@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ZOOM_MAX, arrange, clampPan, clampScale, crumbs, emptyFileView, fileKind, formatSize, isMarkdown, isValidFolderName, isValidName, joinPath, parentPath, previewKind, resolveRelative, scaleToSlider, sliderToScale, splitFrontmatter, zoomAt } from './files.ts'
+import { PANE_MAX, PANE_MIN, ZOOM_MAX, arrange, changedPaths, clampPan, clampPane, clampScale, configLink, crumbs, emptyFileView, fileKind, flattenTree, formatSize, isInside, isMarkdown, isValidFolderName, isValidName, joinPath, parentPath, previewKind, resolveRelative, scaleToSlider, sliderToScale, splitFrontmatter, watchDelay, zoomAt } from './files.ts'
 
 test('paths join and split relative to the root', () => {
   assert.equal(joinPath('', 'a.txt'), 'a.txt')
@@ -117,4 +117,63 @@ test('the settings at the top of a markdown file are split from its text', () =>
   // not frontmatter: a rule in the middle, or no closing line
   assert.deepEqual(splitFrontmatter('text\n---\nmore\n---\n'), { meta: '', body: 'text\n---\nmore\n---\n' })
   assert.deepEqual(splitFrontmatter('---\nname: a'), { meta: '', body: '---\nname: a' })
+})
+
+// ----- what the page works out from the folders it has listed -----
+
+test('a path is inside a folder only at a folder boundary', () => {
+  assert.equal(isInside('docs', 'docs'), true)
+  assert.equal(isInside('docs/a.md', 'docs'), true)
+  assert.equal(isInside('docs2/a.md', 'docs'), false) // a longer name that merely starts the same
+  assert.equal(isInside('a.md', 'docs'), false)
+})
+
+test('only what is new or really changed pulses, and nothing does the first time a folder is listed', () => {
+  const before = { entries: [e('a.txt', 5, '2026-01-01T00:00:00Z'), e('b.txt', 5, '2026-01-01T00:00:00Z'), e('docs', 0, '2026-01-01T00:00:00Z', true)] }
+  const after = {
+    entries: [
+      e('a.txt', 5, '2026-01-01T00:00:00Z'), // untouched
+      e('b.txt', 9, '2026-01-01T00:00:00Z'), // grew
+      e('c.txt', 1, '2026-01-02T00:00:00Z'), // new
+      e('docs', 0, '2026-02-01T00:00:00Z', true), // a folder's own time moving is not a change
+    ],
+  }
+  assert.deepEqual(changedPaths('reports', before, after), ['reports/b.txt', 'reports/c.txt'])
+  assert.deepEqual(changedPaths('', before, after), ['b.txt', 'c.txt'])
+  assert.deepEqual(changedPaths('', undefined, after), [])
+})
+
+test('the files on screen are listed top to bottom with open folders walked in place', () => {
+  const tree = {
+    '': { entries: [e('z.txt'), e('docs', 0, '2026-01-01T00:00:00Z', true), e('src', 0, '2026-01-01T00:00:00Z', true)] },
+    docs: { entries: [e('b.md'), e('a.md')] },
+    src: { entries: [e('main.ts')] },
+  }
+  const names = (expanded: string[]) => flattenTree(tree, expanded, emptyFileView()).map((f) => f.path)
+  assert.deepEqual(names([]), ['z.txt']) // closed folders hold nothing visible
+  assert.deepEqual(names(['docs']), ['docs/a.md', 'docs/b.md', 'z.txt'])
+  assert.deepEqual(names(['docs', 'src']), ['docs/a.md', 'docs/b.md', 'src/main.ts', 'z.txt'])
+  assert.deepEqual(flattenTree({}, [], emptyFileView()), []) // nothing listed yet
+})
+
+test('a link into the config folder names the path to open', () => {
+  assert.deepEqual(configLink('config'), [])
+  assert.deepEqual(configLink('config/agents/scout/agent.md'), ['agents', 'scout', 'agent.md'])
+  assert.deepEqual(configLink('config//agents/'), ['agents'])
+  assert.equal(configLink(''), null)
+  assert.equal(configLink('configuration'), null) // only the folder of that exact name
+  assert.equal(configLink('docs/config'), null)
+})
+
+test('a folder is watched often while it is in use or changing, and rarely when quiet', () => {
+  assert.equal(watchDelay(true, 999_999), 1500) // a run is using it
+  assert.equal(watchDelay(false, 1000), 1500) // something changed a moment ago
+  assert.equal(watchDelay(false, 29_999), 1500)
+  assert.equal(watchDelay(false, 30_000), 5000) // quiet for a while
+})
+
+test('the divider keeps both panes usable', () => {
+  assert.equal(clampPane(10), PANE_MIN)
+  assert.equal(clampPane(90), PANE_MAX)
+  assert.equal(clampPane(45), 45)
 })

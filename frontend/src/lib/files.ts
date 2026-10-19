@@ -117,6 +117,56 @@ export function arrange<T extends Listed>(entries: T[], view: FileView): T[] {
   return [...folders, ...files]
 }
 
+/** whether `path` is the folder itself or something inside it */
+export const isInside = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`)
+
+/** The paths in a folder that are new or changed since it was last listed, so the tree can pulse them. A file counts as
+ * changed when its size or time moved; a folder only when it is new. Nothing is "new" the first time a folder is listed. */
+export function changedPaths<T extends Listed>(dir: string, before: { entries: T[] } | undefined, after: { entries: T[] }): string[] {
+  if (!before) return []
+  const old = new Map(before.entries.map((e) => [e.name, e]))
+  return after.entries
+    .filter((e) => {
+      const was = old.get(e.name)
+      return !was || (!e.is_dir && (was.size !== e.size || was.modified !== e.modified))
+    })
+    .map((e) => joinPath(dir, e.name))
+}
+
+/** The files on screen from top to bottom: open folders are walked in place, closed ones hold nothing visible. `tree` has
+ * the listing of every folder that was opened, by path. */
+export function flattenTree<T extends Listed>(
+  tree: Record<string, { entries: T[] }>,
+  expanded: string[],
+  view: FileView,
+  dir = '',
+): { path: string; entry: T }[] {
+  return arrange(tree[dir]?.entries ?? [], view).flatMap((entry) => {
+    const path = joinPath(dir, entry.name)
+    if (!entry.is_dir) return [{ path, entry }]
+    return expanded.includes(path) ? flattenTree(tree, expanded, view, path) : []
+  })
+}
+
+/** A link from the agent pages, `#config/agents/scout/agent.md`: the parts of the path inside the config folder
+ * (none for `#config`), or null when the hash is not such a link. */
+export function configLink(hash: string): string[] | null {
+  const m = hash.match(/^config(?:\/(.+))?$/)
+  return m ? (m[1] ?? '').split('/').filter(Boolean) : null
+}
+
+// How often the page asks a folder what is in it: often while a run is using it or something changed lately (files
+// appear as the agent works), rarely when everything is quiet. Each check is a conditional request, so quiet is nearly free.
+const ACTIVE_MS = 1500
+const QUIET_MS = 5000
+const RECENT_MS = 30_000
+export const watchDelay = (locked: boolean, sinceChangeMs: number) => (locked || sinceChangeMs < RECENT_MS ? ACTIVE_MS : QUIET_MS)
+
+// The divider between the tree and the preview: the share of the width the preview may take, in percent
+export const PANE_MIN = 25
+export const PANE_MAX = 75
+export const clampPane = (percent: number) => Math.min(PANE_MAX, Math.max(PANE_MIN, percent))
+
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   const units = ['KB', 'MB', 'GB', 'TB']

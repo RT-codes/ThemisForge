@@ -7,20 +7,27 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
-	import VolumeControls from '$lib/components/VolumeControls.svelte'
+	import FolderSettingsDialog from '$lib/components/FolderSettingsDialog.svelte'
 	import VolumeForm from '$lib/components/VolumeForm.svelte'
 	import {
 		FILE_SORTS,
 		FILE_TYPES,
+		PANE_MAX,
+		PANE_MIN,
 		arrange,
+		changedPaths,
+		clampPane,
+		configLink,
 		crumbs,
 		emptyFileView,
+		flattenTree,
 		formatSize,
 		isDefaultFileView,
 		isDirty,
-		isValidFolderName,
+		isInside,
 		isValidName,
 		joinPath,
+		watchDelay,
 		type Draft,
 		type FileSort,
 		type FileType,
@@ -80,7 +87,6 @@
 	const canChange = $derived(!!root?.writable && !locked)
 
 	const message = (e: unknown, fallback: string) => (e instanceof ApiError || e instanceof Error ? e.message : fallback)
-	const isInside = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`)
 
 	// The ETag of the listing held for each folder: asking again with it costs a bodyless 304 when nothing changed.
 	// Plain, not reactive: nothing on screen depends on it.
@@ -91,23 +97,13 @@
 	let pulses = $state<Record<string, number>>({}) // path -> times it changed
 	let previewPulses = $state(0)
 
-	function notePulses(dir: string, before: FolderListing | undefined, after: FolderListing) {
-		if (!before) return // the first time a folder is listed, everything in it is not "new"
-		const old = new Map(before.entries.map((e) => [e.name, e]))
-		for (const e of after.entries) {
-			const was = old.get(e.name)
-			const changed = !was || (!e.is_dir && (was.size !== e.size || was.modified !== e.modified))
-			if (changed) pulses[joinPath(dir, e.name)] = (pulses[joinPath(dir, e.name)] ?? 0) + 1
-		}
-	}
-
 	/** lists one folder again; true if what is on screen changed */
 	async function loadFolder(vid: number, dir: string): Promise<boolean> {
 		try {
 			const got = await volumesApi.listFiles(vid, dir, etags[dir] ?? '')
 			if (vid !== volumeId || got === null) return false // another folder was chosen meanwhile, or no change
 			etags[dir] = got.etag
-			notePulses(dir, tree[dir], got.listing)
+			for (const path of changedPaths(dir, tree[dir], got.listing)) pulses[path] = (pulses[path] ?? 0) + 1
 			tree[dir] = got.listing
 			if (dir === '') error = ''
 			return true
@@ -135,19 +131,15 @@
 		return changed.some(Boolean)
 	}
 
-	// Watching the open folders: often while a run is using them or something changed lately (files appear as the
-	// agent works), rarely when everything is quiet. Each check is a conditional request, so quiet is nearly free.
-	// (A file watcher would need the server to hold a watch per open folder, which host folders with huge trees make
-	// expensive, and would not see more than this does for the few folders that are open.)
-	const ACTIVE_MS = 1500
-	const QUIET_MS = 5000
-	const RECENT_MS = 30_000
+	// Watching the open folders: see watchDelay for how often. (A file watcher would need the server to hold a watch per
+	// open folder, which host folders with huge trees make expensive, and would not see more than this does for the few
+	// folders that are open.)
 	let lastChange = 0
 
 	onMount(() => {
 		let timer: ReturnType<typeof setTimeout> | undefined
 		let stopped = false
-		const delay = () => (locked || Date.now() - lastChange < RECENT_MS ? ACTIVE_MS : QUIET_MS)
+		const delay = () => watchDelay(locked, Date.now() - lastChange)
 		async function watch() {
 			clearTimeout(timer)
 			if (!document.hidden && !busyAction && volumeId !== null && (await refresh())) lastChange = Date.now()
@@ -196,29 +188,11 @@
 		open(volumes.find((x) => x.id === v.id) ?? v)
 	}
 
-	// the name field of the settings panel; it starts from the folder's current name each time the panel opens
-	let newName = $state('')
-	let renameError = $state('')
-	let renaming = $state(false)
-	$effect(() => {
-		if (configuring) untrack(() => ((newName = volume?.name ?? ''), (renameError = ''))) // only when it opens
-	})
-	const renamable = $derived(!!volume && !volume.is_default)
-	const nameChanged = $derived(!!volume && newName.trim().toLowerCase() !== volume.name)
-
-	async function rename(e: SubmitEvent) {
-		e.preventDefault()
-		if (volumeId === null || !isValidFolderName(newName)) return
-		renaming = true
-		renameError = ''
-		try {
-			await volumesApi.updateVolume(volumeId, { name: newName })
-			await Promise.all([reloadVolumes(), refresh()])
-		} catch (err) {
-			renameError = message(err, 'Could not rename the folder')
-		} finally {
-			renaming = false
-		}
+	// the dialog asks for a rename; what is on screen is refreshed once the server has it
+	async function renameFolder(name: string) {
+		if (volumeId === null) return
+		await volumesApi.updateVolume(volumeId, { name })
+		await Promise.all([reloadVolumes(), refresh()])
 	}
 
 	async function changeSettings(patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) {
@@ -239,12 +213,11 @@
 
 	// A link from the agent pages, /files#config/agents/scout/agent.md, opens that file in the config folder
 	async function openLinked() {
-		const m = router.hash.match(/^config(?:\/(.+))?$/)
+		const parts = configLink(router.hash)
 		const config = volumes.find((v) => v.kind === 'config')
-		if (!m || !config) return
+		if (!parts || !config) return
 		show(config)
 		await refresh()
-		const parts = (m[1] ?? '').split('/').filter(Boolean)
 		for (let i = 1; i <= parts.length; i++) {
 			const dir = parts.slice(0, i).join('/')
 			const entry = tree[parts.slice(0, i - 1).join('/')]?.entries.find((e) => e.name === parts[i - 1])
@@ -294,15 +267,6 @@
 	// the order and filters are one setting for the page; the gallery follows the same files that are on screen
 	let view = $state(emptyFileView())
 
-	/** the files on screen from top to bottom: open folders are walked in place, closed ones hold nothing visible */
-	function flatten(dir: string): { path: string; entry: FileEntry }[] {
-		return arrange(tree[dir]?.entries ?? [], view).flatMap((entry) => {
-			const path = joinPath(dir, entry.name)
-			if (!entry.is_dir) return [{ path, entry }]
-			return expanded.includes(path) ? flatten(path) : []
-		})
-	}
-
 	// ----- selection: the chosen file is previewed beside the tree, and can be enlarged into a gallery -----
 
 	// the unsaved edit of a text file, if any (see "editing a text file" below): the open file stays open while it exists
@@ -311,7 +275,7 @@
 	let selectedPath = $state('')
 	let enlarged = $state(false)
 	// found again by path after every refresh, so a file that was renamed, deleted or filtered out stops being selected
-	const files = $derived(flatten(''))
+	const files = $derived(flattenTree(tree, expanded, view))
 	const selectedIndex = $derived(files.findIndex((f) => f.path === selectedPath))
 	// a file being edited stays open even if the search or filter now hides its row: the edit must not vanish on its own
 	const selected = $derived(selectedIndex >= 0 ? files[selectedIndex].entry : dirty && draft ? draft.entry : null)
@@ -347,10 +311,7 @@
 
 	// ----- the divider between the tree and the preview: drag it, or use the arrow keys, to give one more room -----
 
-	const PANE_MIN = 25 // percent of the width the preview may take
-	const PANE_MAX = 75
 	const PANE_KEY = 'themis.files.pane'
-	const clampPane = (percent: number) => Math.min(PANE_MAX, Math.max(PANE_MIN, percent))
 
 	let split = $state<HTMLElement>()
 	let dragging = $state(false)
@@ -818,43 +779,7 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<Dialog.Root bind:open={configuring}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Settings of <span class="font-mono">{volume?.name}</span></Dialog.Title>
-			<Dialog.Description>
-				{#if volume?.kind === 'host'}{volume.host_path}{:else}Managed by Themis. Cells see it at <span class="font-mono">/workspace/{volume?.name}</span>.{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if volume}
-			{#if volume.problem}<p class="text-sm text-destructive" role="alert">{volume.problem}</p>{/if}
-			<form onsubmit={rename} class="grid gap-1.5">
-				<label for="folder-rename" class="text-sm">Name</label>
-				<div class="flex gap-2">
-					<Input id="folder-rename" bind:value={newName} maxlength={40} class="font-mono" disabled={!renamable || renaming} />
-					{#if renamable}
-						<Button type="submit" variant="outline" disabled={renaming || !nameChanged || !isValidFolderName(newName)}>Rename</Button>
-					{/if}
-				</div>
-				{#if renameError}
-					<p class="text-xs text-destructive" role="alert">{renameError}</p>
-				{:else if !renamable}
-					<p class="text-xs text-muted-foreground">The shared folder keeps its name: every cell expects it.</p>
-				{:else}
-					<p class="text-xs text-muted-foreground">
-						Cells will see it as <span class="font-mono">/workspace/{newName.trim().toLowerCase() || 'name'}</span>. Agents, workflows and runs keep the folder, but
-						instructions, skills or scripts that mention the old name have to be changed by hand.
-					</p>
-				{/if}
-			</form>
-			<div class="flex flex-wrap items-center gap-3">
-				<span class="text-sm">Cells may</span>
-				<VolumeControls {volume} onchange={changeSettings} />
-			</div>
-			<p class="text-xs text-muted-foreground">Removing a folder from the project is done in the project's Settings, under Shared folders. Its files are never deleted.</p>
-		{/if}
-	</Dialog.Content>
-</Dialog.Root>
+<FolderSettingsDialog bind:open={configuring} {volume} onrename={renameFolder} onchange={changeSettings} />
 
 <svelte:window {onkeydown} onbeforeunload={(e) => dirty && e.preventDefault()} />
 

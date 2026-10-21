@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { RunStatus } from '$lib/api'
+	import type { RunStatus } from '$lib/api/workflows'
 	import { STAGE_TONE } from '$lib/stageTrack'
 	import { cn } from '$lib/utils'
 	import BanIcon from '@lucide/svelte/icons/ban'

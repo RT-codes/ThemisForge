@@ -1,9 +1,22 @@
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.codex import save_auth
-from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
+from app.features.connections.codex import save_auth
+from app.features.workflows.runner import WorkflowRunner
+from app.persistence.models import (
+    Attempt,
+    AttemptStatus,
+    NodeStatus,
+    RunStatus,
+    Task,
+    TaskStatus,
+    Workflow,
+    WorkflowNodeRun,
+    WorkflowRun,
+    utcnow,
+)
 from tests.conftest import login, make_project, make_task, register
 from tests.test_harness import fake_auth
 
@@ -161,6 +174,135 @@ async def test_a_running_workflow_cannot_be_deleted(client, runner, cells, sched
     run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     assert (await client.delete(f"/api/workflows/{wid}")).status_code == 409
     await client.post(f"/api/workflow-runs/{run_id}/cancel")
+    assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
+
+
+async def test_cancelling_a_run_records_its_waiting_nodes_as_cancelled_not_failed(
+    client, runner, cells, scheduler, monkeypatch
+):
+    """A node waits for its task's attempt by polling it. Stopping the cell first would let the node see "cancelled"
+    and report a failure before the run's own cancel reached it; the run and its nodes are stopped first."""
+    _, pid = await setup(client)
+    cells.duration = 30
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="slow", status="ready")], [edge("s", "t")]
+    )
+    run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
+    async with asyncio.timeout(10):
+        while not scheduler.runs.live:
+            await asyncio.sleep(0.02)
+
+    stop_cell = scheduler.cancel
+
+    async def slow_stop(attempt_id: int) -> bool:
+        stopped = await stop_cell(attempt_id)
+        await asyncio.sleep(
+            0.3
+        )  # long enough for a poll to see the attempt cancelled, if the node still polls
+        return stopped
+
+    monkeypatch.setattr(scheduler, "cancel", slow_stop)
+    r = await client.post(f"/api/workflow-runs/{run_id}/cancel")
+    assert r.status_code == 200 and r.json()["status"] == RunStatus.CANCELLED
+    assert by_id(r.json())["t"]["status"] == NodeStatus.CANCELLED
+
+
+async def test_a_task_that_fails_between_two_reads_of_the_wait_still_reports_its_reason(
+    client, scheduler, maker, monkeypatch
+):
+    """The scheduler fails a task (its attempt and its status together) at the moment the waiting node is between its
+    two reads. The node must report the attempt's reason, not that the task "was moved to failed"."""
+    _, pid = await setup(client)
+    task_id = (await make_task(client, pid, status="backlog"))["id"]
+    runner = WorkflowRunner(
+        maker, lambda: scheduler
+    )  # no pump: nothing but the wait itself may read these rows
+    fired = False
+
+    async def scheduler_fails_it() -> None:
+        async with maker() as s:
+            s.add(
+                Attempt(
+                    task_id=task_id,
+                    status=AttemptStatus.FAILED,
+                    finished_at=utcnow(),
+                    failure={
+                        "source": "themis",
+                        "reason": "Folder 3 no longer exists.",
+                        "action": "",
+                        "tail": "",
+                    },
+                )
+            )
+            (await s.get_one(Task, task_id)).status = TaskStatus.FAILED
+            await s.commit()
+
+    async def after_first_read() -> None:
+        nonlocal fired
+        if not fired:
+            fired = True
+            await scheduler_fails_it()
+
+    real_scalar, real_get = AsyncSession.scalar, AsyncSession.get
+
+    async def scalar(self, statement, *args, **kwargs):
+        result = await real_scalar(self, statement, *args, **kwargs)
+        if "FROM attempts" in str(statement):
+            await after_first_read()
+        return result
+
+    async def get(self, entity, *args, **kwargs):
+        result = await real_get(self, entity, *args, **kwargs)
+        if entity is Task:
+            await after_first_read()
+        return result
+
+    monkeypatch.setattr(AsyncSession, "scalar", scalar)
+    monkeypatch.setattr(AsyncSession, "get", get)
+    try:
+        outcome = await asyncio.wait_for(runner.nodes._wait_for_task(0, task_id, 0), 10)
+    finally:
+        await runner.shutdown()
+    assert outcome.status == NodeStatus.FAILED and outcome.error == "Folder 3 no longer exists."
+
+
+async def test_a_run_cut_off_while_its_node_creates_a_task_still_ends_cancelled(client, runner, maker):
+    """The cut lands while the INSERT of the node's task is executing (its worker thread finishes it anyway, but nobody
+    reads the result). SQLite then keeps its write lock until that abandoned statement is gone: the cancelled node, and
+    then the run, must not wait for a lock their own aborted work holds, or the run stays "running" for good."""
+    _, pid = await setup(client)
+    wid = await make_workflow(client, pid)
+    await save(
+        client, wid, [node("s", "start"), node("t", "task", title="cut", status="ready")], [edge("s", "t")]
+    )
+    engine = maker.kw["bind"].sync_engine
+    cut = []
+
+    def cut_off(_conn, _cursor, statement, _params, _context, _many) -> None:
+        task = asyncio.current_task()
+        if (
+            statement.startswith("INSERT INTO tasks")
+            and task.get_coro().__name__ == "_execute_node"
+            and not cut
+        ):
+            cut.append(statement)
+            task.cancel()  # at its next await: the one that runs this statement
+
+    event.listen(engine, "before_cursor_execute", cut_off)
+    try:
+        run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
+        # The bug left the run "running" for good, so any generous wait still catches it. Not a tight one: a slow
+        # Windows runner needs more than 3 s for a healthy run.
+        async with asyncio.timeout(30):
+            while (await client.get(f"/api/workflow-runs/{run_id}")).json()["status"] == RunStatus.RUNNING:
+                await asyncio.sleep(0.02)
+    finally:
+        event.remove(engine, "before_cursor_execute", cut_off)
+    assert cut
+    detail = (await client.get(f"/api/workflow-runs/{run_id}")).json()
+    assert detail["status"] == RunStatus.CANCELLED
+    assert by_id(detail)["t"]["status"] == NodeStatus.CANCELLED
     assert (await client.delete(f"/api/workflows/{wid}")).status_code == 204
 
 
@@ -405,13 +547,13 @@ async def test_cancel_stops_the_run_and_its_cell(client, runner, cells, schedule
     )
     run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     async with asyncio.timeout(10):
-        while not scheduler._live:
+        while not scheduler.runs.live:
             await asyncio.sleep(0.02)
     r = await client.post(f"/api/workflow-runs/{run_id}/cancel")
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
     assert by_id(r.json())["t"]["status"] == "cancelled"
     assert (await client.post(f"/api/workflow-runs/{run_id}/cancel")).status_code == 409
-    assert not scheduler._live
+    assert not scheduler.runs.live
 
 
 async def test_a_restart_closes_dangling_runs(client, runner, maker):

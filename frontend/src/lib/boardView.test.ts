@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { PropertyDef, Task } from './api.ts'
+import type { PropertyDef, Task } from './api/tasks.ts'
 import { applyView, emptyColumn, emptyView, filterChips, filterCount, isDefaultView, parseStored, removeFilterChip, sortTasks, toggled, type Filters } from './boardView.ts'
 
 let n = 0

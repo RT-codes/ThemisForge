@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from app.codex import CodexLogins
 from app.config import settings
+from app.features.connections.codex import CodexLogins
 from app.main import app
 from tests.conftest import register
 

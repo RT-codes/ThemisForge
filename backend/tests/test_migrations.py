@@ -5,9 +5,9 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine
 
-from app import models  # noqa: F401
-from app.db import Base
-from app.migrate import upgrade_database
+from app.persistence import models  # noqa: F401
+from app.persistence.db import Base
+from app.persistence.migrate import upgrade_database
 
 
 async def test_migrations_match_the_models(tmp_path):
@@ -47,7 +47,7 @@ async def test_existing_unversioned_database_is_adopted(tmp_path):
 def _alembic(url: str, action: str, revision: str) -> None:
     from alembic import command
 
-    from app.migrate import _config
+    from app.persistence.migrate import _config
 
     getattr(command, action)(_config(url), revision)
 
@@ -129,7 +129,7 @@ async def test_a_new_database_needs_no_backup(tmp_path):
 
 
 async def test_only_the_latest_backups_are_kept(tmp_path):
-    from app.migrate import KEEP_BACKUPS
+    from app.persistence.migrate import KEEP_BACKUPS
 
     folder = tmp_path / "backups"
     folder.mkdir()
@@ -185,7 +185,7 @@ async def test_a_database_from_a_newer_version_is_refused_not_touched(tmp_path):
     """After a rollback (or by mistake) an older Themis may meet a database that a newer one migrated."""
     import pytest
 
-    from app.migrate import DatabaseTooNewError, is_unknown_revision
+    from app.persistence.migrate import DatabaseTooNewError, is_unknown_revision
 
     path = tmp_path / "newer.db"
     url = f"sqlite+aiosqlite:///{path}"
@@ -207,8 +207,8 @@ async def test_a_database_from_a_newer_version_is_refused_not_touched(tmp_path):
 
 
 def test_the_doctor_calls_a_newer_database_a_failure(tmp_path, monkeypatch):
-    from app import preflight
     from app.config import settings
+    from app.features.system import preflight
 
     path = tmp_path / "newer.db"
     asyncio.run(upgrade_database(f"sqlite+aiosqlite:///{path}"))

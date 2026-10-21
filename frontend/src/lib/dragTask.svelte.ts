@@ -1,4 +1,4 @@
-import type { Task } from './api'
+import type { Task } from './api/tasks'
 
 /** The card being dragged. It lives outside any one board so that a card picked up on one board can be dropped on
  *  another board of the same page; each board only needs to ask what is being dragged. */

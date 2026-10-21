@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Task } from './api.ts'
+import type { Task } from './api/tasks.ts'
 import { attentionTasks } from './attention.ts'
 
 const task = (id: number, overrides: Partial<Task> = {}): Task => ({

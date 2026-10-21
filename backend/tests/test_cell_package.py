@@ -1,8 +1,10 @@
 """The Themis package: the rules in every prompt and the themis-cell skill in every cell, readable and editable in
 Settings, empty text meaning the built-in one."""
 
-from app.cell_package import DEFAULT_RULES, DEFAULT_SKILL, SKILLS_MOUNT_AT, skills_root
-from app.cells import CellSpec, DockerCellManager, prepare_dirs
+from app.execution.cell_package import DEFAULT_RULES, DEFAULT_SKILL, SKILLS_MOUNT_AT, skills_root
+from app.execution.cells.contract import CellSpec
+from app.execution.cells.docker import DockerCellManager
+from app.execution.cells.files import prepare_dirs
 from tests.conftest import drain, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect

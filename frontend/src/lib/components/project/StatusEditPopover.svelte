@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Board } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Board } from '$lib/api/projects'
 	import { customId, type ColumnInfo } from '$lib/boards'
 	import ColorPicker from '$lib/components/ColorPicker.svelte'
 	import IconField from '$lib/components/IconField.svelte'
@@ -52,7 +53,7 @@
 		saving = true
 		error = ''
 		try {
-			onchange(await api.updateStatus(boardId, id, { name: name.trim(), icon, color: color ?? null, description }))
+			onchange(await projectsApi.updateStatus(boardId, id, { name: name.trim(), icon, color: color ?? null, description }))
 			open = false
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not save'

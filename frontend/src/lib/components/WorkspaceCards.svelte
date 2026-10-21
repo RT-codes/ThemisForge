@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Task, Workspace } from '$lib/api'
+	import type { Workspace } from '$lib/api/projects'
+	import type { Task } from '$lib/api/tasks'
 	import { statusLabel, statusTone, taskTotal, workspaceTasks } from '$lib/boards'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
 	import IconTile from '$lib/components/IconTile.svelte'
@@ -18,7 +19,7 @@
 	{#each workspaces as w (w.id)}
 		{@const shown = workspaceTasks(w, tasks ?? [], VISIBLE)}
 		<section class="overflow-hidden glow-card rounded-xl border bg-card">
-			<SectionBanner art="workspace" tone="sky">
+			<SectionBanner tone="sky">
 				<a href="/projects/{projectId}/workspaces/{w.id}" class="group flex min-w-0 items-center gap-3">
 					<IconTile tone="sky"><DynamicIcon name={w.icon} fallback={LayersIcon} /></IconTile>
 					<span class="min-w-0">

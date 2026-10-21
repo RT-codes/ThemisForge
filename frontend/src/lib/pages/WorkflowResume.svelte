@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api'
+	import { workflowsApi } from '$lib/api/workflows'
 	import { router } from '$lib/router.svelte'
 	import { onMount } from 'svelte'
 
@@ -9,7 +9,7 @@
 	onMount(async () => {
 		let target = `/projects/${projectId}/workflows/new`
 		try {
-			const latest = (await api.workflows(projectId)).toSorted((a, b) => b.updated_at.localeCompare(a.updated_at) || b.id - a.id)[0]
+			const latest = (await workflowsApi.workflows(projectId)).toSorted((a, b) => b.updated_at.localeCompare(a.updated_at) || b.id - a.id)[0]
 			if (latest) target = `/projects/${projectId}/workflows/${latest.id}`
 		} catch {
 			// the list could not be read: a blank workflow is still a way in

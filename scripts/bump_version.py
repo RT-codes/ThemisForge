@@ -40,7 +40,10 @@ def main(argv: list[str]) -> None:
         rf'\1"version": "{version}"',
         count=2,
     )
-    print(f"Version is now {version}. Next: (cd backend && uv lock), commit, then tag v{version}.")
+    print(
+        f"Version is now {version}. Next: (cd backend && uv lock), write release-notes/{version}.md "
+        f"(it becomes the release's description), commit, then tag v{version}."
+    )
 
 
 if __name__ == "__main__":

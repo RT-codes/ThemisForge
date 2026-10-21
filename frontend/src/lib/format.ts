@@ -1,4 +1,4 @@
-import type { AttemptStatus } from './api'
+import type { AttemptStatus } from './api/tasks'
 
 export const attemptLabel: Record<AttemptStatus, string> = {
   running: 'Running',

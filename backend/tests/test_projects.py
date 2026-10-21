@@ -157,7 +157,7 @@ async def test_upcoming_runs_expands_recurring_tasks(client):
 async def test_upcoming_runs_can_be_scoped_to_a_board(client):
     from datetime import timedelta
 
-    from app.models import utcnow
+    from app.persistence.models import utcnow
 
     await register(client)
     pid = (await make_project(client))["id"]
@@ -202,7 +202,7 @@ async def test_upcoming_runs_can_be_scoped_to_a_board(client):
 async def test_board_schedule_is_filtered_before_the_occurrence_limit(client):
     from datetime import timedelta
 
-    from app.models import utcnow
+    from app.persistence.models import utcnow
 
     await register(client)
     pid = (await make_project(client))["id"]

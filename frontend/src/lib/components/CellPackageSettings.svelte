@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type CellPackage, type CellPackageDefaults } from '$lib/api'
+	import { settingsApi, type CellPackage, type CellPackageDefaults } from '$lib/api/settings'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -20,7 +20,7 @@
 
 	onMount(async () => {
 		try {
-			defaults = await api.cellPackageDefaults()
+			defaults = await settingsApi.cellPackageDefaults()
 		} catch (e) {
 			loadError = e instanceof Error ? e.message : 'Could not load the built-in text'
 		}
@@ -43,7 +43,7 @@
 
 <div class="grid gap-6">
 	<p class="text-xs text-muted-foreground">
-		Themis adds this to every Codex run, on top of the agent's own instructions. It is why a run that cannot do its job stops and
+		Themis adds this to every agent run, on top of the agent's own instructions. It is why a run that cannot do its job stops and
 		says why on the ticket, instead of inventing its own way around it. Everything here applies to all agents; leave a text as it is
 		to keep the built-in one, which improves with new versions.
 	</p>

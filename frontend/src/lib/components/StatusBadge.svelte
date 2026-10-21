@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Board, BuiltinStatus } from '$lib/api'
+	import type { Board } from '$lib/api/projects'
+	import type { BuiltinStatus } from '$lib/api/tasks'
 	import { statusLabel } from '$lib/boards'
 	import { chipStyle } from '$lib/colors'
 	import StatusIcon from './StatusIcon.svelte'

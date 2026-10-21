@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { api, type Agent, type CellDefaults, type HarnessInfo, type KeyInfo, type McpServer, type Project, type Skill, type Volume } from '$lib/api'
+	import { agentsApi, type Agent, type HarnessInfo, type KeyInfo, type Skill } from '$lib/api/agents'
+	import { projectsApi, type Project } from '$lib/api/projects'
+	import { settingsApi, type CellDefaults } from '$lib/api/settings'
+	import { toolsApi, type McpServer } from '$lib/api/tools'
+	import { volumesApi, type Volume } from '$lib/api/volumes'
 	import AgentDetail from '$lib/components/AgentDetail.svelte'
 	import * as Tabs from '$lib/components/ui/tabs/index.js'
 	import type { AgentCounts, AgentTab } from '$lib/agentTabs'
@@ -68,14 +72,14 @@
 	async function load() {
 		try {
 			;[agents, harnesses, project, defaults, skills, servers, keys, volumes] = await Promise.all([
-				api.agents(projectId),
-				api.harnesses(),
-				api.project(projectId),
-				api.systemStatus().then((s) => s.cell_defaults),
-				api.skills(projectId),
-				api.mcpServers(projectId),
-				api.keys(),
-				api.volumes(projectId),
+				agentsApi.agents(projectId),
+				agentsApi.harnesses(),
+				projectsApi.project(projectId),
+				settingsApi.systemStatus().then((s) => s.cell_defaults),
+				agentsApi.skills(projectId),
+				toolsApi.mcpServers(projectId),
+				agentsApi.keys(),
+				volumesApi.volumes(projectId),
 			])
 			loadError = ''
 		} catch (e) {
@@ -173,7 +177,7 @@
 						<BotIcon class="mx-auto size-8 text-muted-foreground" />
 						<p class="mt-3 text-sm font-medium">No agents in this project yet</p>
 						<p class="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-							An agent has a name, a role, instructions and a harness such as Codex. Tasks and workflows pick one to do the work. Press <span class="font-medium text-foreground">New agent</span> to make the first one.
+							An agent has a name, a role, instructions and a harness (Codex or Claude Code). Tasks and workflows pick one to do the work. Press <span class="font-medium text-foreground">New agent</span> to make the first one.
 						</p>
 					</div>
 				{:else if !current}

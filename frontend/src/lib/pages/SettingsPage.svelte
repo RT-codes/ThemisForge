@@ -1,8 +1,11 @@
 <script lang="ts">
-	import { api, ApiError, type AppSettings, type DockerStatus, type Resources, type Secret, type SystemStatus } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { settingsApi, type AppSettings, type DockerStatus, type Resources, type SystemStatus } from '$lib/api/settings'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import ConnectionsSettings from '$lib/components/ConnectionsSettings.svelte'
+	import ControlSection from '$lib/components/ControlSection.svelte'
+	import KeysSettings from '$lib/components/KeysSettings.svelte'
 	import CellPackageSettings from '$lib/components/CellPackageSettings.svelte'
 	import McpAuthSettings from '$lib/components/McpAuthSettings.svelte'
 	import RegistrySettings from '$lib/components/RegistrySettings.svelte'
@@ -13,14 +16,13 @@
 	import { Switch } from '$lib/components/ui/switch/index.js'
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js'
 	import { cellsThatFit } from '$lib/budget'
-	import { dateTime } from '$lib/format'
+	import { copySettings, gb, summarizeAgent, summarizeCell, summarizeClaude, summarizeDocker, summarizePackage, summarizeResources, summarizeRoots, summarizeUpdate, withMountRoot } from '$lib/settingsView'
 	import { cn } from '$lib/utils'
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
 	import InfoIcon from '@lucide/svelte/icons/info'
 	import FolderIcon from '@lucide/svelte/icons/folder'
-	import KeyRoundIcon from '@lucide/svelte/icons/key-round'
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
 	import { onMount } from 'svelte'
@@ -31,18 +33,11 @@
 	let resources = $state<Resources | null>(null)
 	let system = $state<SystemStatus | null>(null)
 	let checking = $state(false)
-	let secrets = $state<Secret[]>([])
 	let loadError = $state('')
 	let saveError = $state('')
 	let saving = $state(false)
 	let justSaved = $state(false)
 
-	let secretName = $state('')
-	let secretKind = $state('anthropic')
-	let secretValue = $state('')
-	let secretError = $state('')
-
-	const kinds = ['anthropic', 'openai', 'google', 'github', 'custom']
 	const zones = (() => {
 		try {
 			return Intl.supportedValuesOf('timeZone')
@@ -51,20 +46,12 @@
 		}
 	})()
 	const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
-	// the budget is a nested object, so a plain spread would share it between the form and the saved copy
-	const copy = (s: AppSettings): AppSettings => ({
-		...s,
-		budget: { ...s.budget },
-		mcp_auth: { ...s.mcp_auth },
-		cell_package: { ...s.cell_package, retry_waits: [...s.cell_package.retry_waits] },
-		mount_roots: s.mount_roots.map((r) => ({ ...r })),
-	})
 	const dirty = $derived(JSON.stringify(form) !== JSON.stringify(saved))
 
 	async function checkDocker(host?: string) {
 		checking = true
 		try {
-			docker = await api.docker(host)
+			docker = await settingsApi.docker(host)
 		} catch (e) {
 			docker = {
 				ok: false,
@@ -85,7 +72,7 @@
 
 	async function loadResources() {
 		try {
-			resources = await api.resources()
+			resources = await settingsApi.resources()
 		} catch {
 			resources = null
 		}
@@ -93,10 +80,9 @@
 
 	async function load() {
 		try {
-			saved = await api.settings()
-			form = copy(saved)
-			secrets = await api.secrets()
-			system = await api.systemStatus()
+			saved = await settingsApi.settings()
+			form = copySettings(saved)
+			system = await settingsApi.systemStatus()
 			await Promise.all([checkDocker(), loadResources()])
 		} catch (e) {
 			loadError = e instanceof ApiError && e.status === 403 ? 'Only administrators can change settings.' : (e as Error).message
@@ -112,8 +98,8 @@
 		saveError = ''
 		saving = true
 		try {
-			saved = await api.saveSettings(form)
-			form = copy(saved)
+			saved = await settingsApi.saveSettings(form)
+			form = copySettings(saved)
 			justSaved = true
 			setTimeout(() => (justSaved = false), 2500)
 			checkDocker()
@@ -125,25 +111,6 @@
 		}
 	}
 
-	async function addSecret(e: SubmitEvent) {
-		e.preventDefault()
-		secretError = ''
-		try {
-			await api.createSecret(secretName, secretKind, secretValue)
-			secretName = secretValue = ''
-			secrets = await api.secrets()
-		} catch (err) {
-			secretError = err instanceof Error ? err.message : 'Could not add the secret'
-		}
-	}
-
-	async function removeSecret(s: Secret) {
-		await api.deleteSecret(s.id)
-		secrets = await api.secrets()
-	}
-
-	const gb = (mb: number | null) => (mb === null ? '' : `${(mb / 1024).toFixed(1)} GB`)
-
 	import NumberField from '$lib/components/NumberField.svelte'
 	import { relative } from '$lib/format'
 	import ArrowUpCircleIcon from '@lucide/svelte/icons/circle-arrow-up'
@@ -151,14 +118,12 @@
 	import { fly } from 'svelte/transition'
 
 	const update = $derived(system?.update ?? null)
-	const updateSummary = $derived(
-		update ? (update.available ? `${update.latest} available` : update.error ? 'Could not check' : update.enabled ? `Up to date, ${update.current}` : 'Checking is off') : ''
-	)
+	const updateSummary = $derived(summarizeUpdate(update))
 	let checkingUpdates = $state(false)
 	async function checkUpdatesNow() {
 		checkingUpdates = true
 		try {
-			const found = await api.checkForUpdates()
+			const found = await settingsApi.checkForUpdates()
 			if (system) system = { ...system, update: found }
 		} catch (e) {
 			if (system?.update) system = { ...system, update: { ...system.update, error: e instanceof Error ? e.message : 'Could not check for updates' } }
@@ -167,35 +132,30 @@
 		}
 	}
 
-	const dockerSummary = $derived(docker ? (docker.ok ? `Connected, Docker ${docker.version}` : docker.version ? 'Needs attention' : 'Not reachable') : 'Checking...')
-	const cellSummary = $derived(form ? `${form.cell_image} · ${form.cell_cpus} CPU · ${form.cell_memory_mb} MB` : '')
+	const dockerSummary = $derived(summarizeDocker(docker))
+	const cellSummary = $derived(form ? summarizeCell(form) : '')
 	const host = $derived(resources?.ok ? resources : null)
 	const fits = $derived(form ? cellsThatFit(form.budget, { cpus: form.cell_cpus, memory_mb: form.cell_memory_mb }) : 0)
 	const cpuOver = $derived(!!form && !!host && form.budget.cpus > (host.host_cpus ?? Infinity))
 	const memoryOver = $derived(!!form && !!host && form.budget.memory_mb > (host.host_memory_mb ?? Infinity))
 	const overCommitted = $derived(cpuOver || memoryOver)
 	const diskUsed = $derived(resources && resources.disk_total_mb ? (1 - resources.disk_free_mb / resources.disk_total_mb) * 100 : 0)
-	const resourceSummary = $derived(
-		form ? `${form.budget.cpus} CPU · ${gb(form.budget.memory_mb)} · fits ${fits} ${fits === 1 ? 'cell' : 'cells'}` : ''
-	)
+	const resourceSummary = $derived(form ? summarizeResources(form.budget, fits) : '')
 	let newRoot = $state('')
-	const rootSummary = $derived(form ? (form.mount_roots.length ? `${form.mount_roots.length} approved` : 'None approved') : '')
+	const rootSummary = $derived(form ? summarizeRoots(form.mount_roots) : '')
 	function addRoot() {
-		const path = newRoot.trim().replace(/\/+$/, '')
-		if (!path || !form || form.mount_roots.some((r) => r.path === path)) return void (newRoot = '')
-		form.mount_roots = [...form.mount_roots, { path, allow_write: false }]
+		if (form) {
+			const next = withMountRoot(form.mount_roots, newRoot)
+			if (next !== form.mount_roots) form.mount_roots = next
+		}
 		newRoot = ''
 	}
-	const packageSummary = $derived(
-		form
-			? `Rules ${form.cell_package.rules_enabled ? 'on' : 'off'} · skill ${form.cell_package.skill_enabled ? 'on' : 'off'} · ${form.cell_package.retry_waits.length} retr${form.cell_package.retry_waits.length === 1 ? 'y' : 'ies'}`
-			: ''
-	)
-	const agentSummary = $derived(form ? `${form.codex_model} · ${form.codex_reasoning_effort} effort` : '')
-	const keySummary = $derived(`${secrets.length} ${secrets.length === 1 ? 'key' : 'keys'}`)
+	const packageSummary = $derived(form ? summarizePackage(form.cell_package) : '')
+	const agentSummary = $derived(form ? summarizeAgent(form) : '')
+	const claudeSummary = $derived(form ? summarizeClaude(form) : '')
 
 	function discard() {
-		if (saved) form = copy(saved)
+		if (saved) form = copySettings(saved)
 		saveError = ''
 	}
 </script>
@@ -257,40 +217,9 @@
 		<SettingsSection id="tool-sign-ins" title="Tool sign ins" description="Your sign ins to tool servers that ask for one, such as Notion. The tools of your projects use them.">
 			{#if form}<McpAuthSettings bind:policy={form.mcp_auth} />{:else}<McpAuthSettings />{/if}
 		</SettingsSection>
+		<ControlSection />
 		{#if auth.user?.is_admin}
-		<SettingsSection id="keys" title="Keys" description="Credentials for model providers and tools. They are encrypted and never shown again." summary={keySummary}>
-			{#if secrets.length}
-			<ul class="divide-y rounded-lg border">
-				{#each secrets as s (s.id)}
-					<li class="flex items-center gap-3 px-3 py-2.5">
-						<KeyRoundIcon class="size-4 shrink-0 text-muted-foreground" />
-						<div class="min-w-0">
-							<p class="truncate text-sm font-medium">{s.name}</p>
-							<p class="text-xs text-muted-foreground">{s.kind} · <span class="font-mono">{s.hint}</span> · added {dateTime(s.created_at)}</p>
-						</div>
-						<Button type="button" variant="ghost" size="icon" class="ms-auto" aria-label={`Delete ${s.name}`} onclick={() => removeSecret(s)}>
-							<Trash2Icon />
-						</Button>
-					</li>
-				{/each}
-			</ul>
-		{:else}
-			<p class="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">No keys yet.</p>
-		{/if}
-
-		<form onsubmit={addSecret} class="grid gap-3 sm:grid-cols-[1fr_9rem]">
-			<Input bind:value={secretName} placeholder="Name, e.g. Anthropic (work)" required aria-label="Secret name" />
-			<Select.Root type="single" bind:value={secretKind}>
-				<Select.Trigger class="w-full capitalize">{secretKind}</Select.Trigger>
-				<Select.Content>
-					{#each kinds as k (k)}<Select.Item value={k} label={k} class="capitalize">{k}</Select.Item>{/each}
-				</Select.Content>
-			</Select.Root>
-			<Input type="password" autocomplete="off" bind:value={secretValue} placeholder="Key or token" required class="font-mono sm:col-span-2" aria-label="Secret value" />
-			{#if secretError}<p class="text-sm text-destructive sm:col-span-2" role="alert">{secretError}</p>{/if}
-			<Button type="submit" variant="secondary" class="justify-self-start sm:col-span-2">Add key</Button>
-		</form>
-		</SettingsSection>
+		<KeysSettings />
 		<SettingsSection id="tool-registry" title="Tool registry" description="Find tools for agents in the official MCP registry and add them to a project.">
 			<RegistrySettings />
 		</SettingsSection>
@@ -535,10 +464,44 @@
 									</Select.Content>
 								</Select.Root>
 							</div>
+							<div class="grid gap-2">
+								<Label for="codex-parallel">Runs at the same time</Label>
+								<NumberField id="codex-parallel" bind:value={form.codex_max_parallel} unit="runs" min={1} max={16} />
+								<p class="text-xs text-muted-foreground">
+									Codex runs of one person that may use their ChatGPT login together (parallel workflow branches, several tasks). They all
+									draw on the same plan's usage limits, so more runs use it up faster. 1 makes them take turns.
+								</p>
+							</div>
 						</div>
 					</SettingsSection>
 
-					<SettingsSection id="package" title="Cell package" description="What Themis adds to every Codex run: its rules, the themis-cell skill and retries." summary={packageSummary}>
+					<SettingsSection id="claude-agents" title="Claude Code agents" description="The image and model tasks use when they run with a Claude Code agent." summary={claudeSummary}>
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid gap-2 sm:col-span-2">
+								<Label for="claude-image">Image</Label>
+								<Input id="claude-image" bind:value={form.claude_image} class="font-mono" required />
+								<p class="text-xs text-muted-foreground">Build the default with <code>./themis build-images</code>.</p>
+							</div>
+							<div class="grid gap-2">
+								<Label for="claude-model">Model</Label>
+								<Input id="claude-model" bind:value={form.claude_model} class="font-mono" required />
+							</div>
+							<div class="grid gap-2">
+								<Label for="claude-effort">Reasoning effort</Label>
+								<Select.Root type="single" bind:value={form.claude_reasoning_effort}>
+									<Select.Trigger id="claude-effort" class="w-full capitalize">{form.claude_reasoning_effort}</Select.Trigger>
+									<Select.Content>
+										{#each ['low', 'medium', 'high'] as e (e)}<Select.Item value={e} label={e} class="capitalize">{e}</Select.Item>{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<p class="text-xs text-muted-foreground sm:col-span-2">
+								Connect your Claude subscription or an API key under Connections. Claude Code runs draw on that account's usage limits.
+							</p>
+						</div>
+					</SettingsSection>
+
+					<SettingsSection id="package" title="Cell package" description="What Themis adds to every agent run: its rules, the themis-cell skill and retries." summary={packageSummary}>
 						<CellPackageSettings bind:pkg={form.cell_package} />
 					</SettingsSection>
 

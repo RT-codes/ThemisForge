@@ -1,10 +1,15 @@
 <script lang="ts">
-	import type { Agent, CellDefaults, HarnessInfo, KeyInfo, McpServer, Project, Skill, Volume } from '$lib/api'
+	import type { Agent, HarnessInfo, KeyInfo, Skill } from '$lib/api/agents'
+	import type { Project } from '$lib/api/projects'
+	import type { CellDefaults } from '$lib/api/settings'
+	import type { McpServer } from '$lib/api/tools'
+	import type { Volume } from '$lib/api/volumes'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import AgentConnections from '$lib/components/AgentConnections.svelte'
 	import { describeCell, effectiveCell } from '$lib/cell'
+	import { effortLabel, modelLabel } from '$lib/models'
 	import { relative } from '$lib/format'
-	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
+	import { copyButtons, renderMarkdown } from '$lib/markdown'
 	import { cn } from '$lib/utils'
 	import AlertTriangleIcon from '@lucide/svelte/icons/triangle-alert'
 	import BotIcon from '@lucide/svelte/icons/bot'
@@ -41,7 +46,6 @@
 	} = $props()
 
 	const harness = $derived(harnesses.find((h) => h.id === agent.harness))
-	const efforts = { '': 'Default effort', low: 'Low effort', medium: 'Medium effort', high: 'High effort' } as const
 	const mySkills = $derived(agent.skills.map((name) => ({ name, skill: skills.find((s) => s.name === name) })))
 	const myServers = $derived(agent.mcp_servers.map((id) => servers.find((s) => s.id === id)).filter((s): s is McpServer => !!s))
 	const myKeys = $derived(agent.secrets.map((id) => keys.find((k) => k.id === id)).filter((k): k is KeyInfo => !!k))
@@ -62,8 +66,8 @@
 				<p class="text-sm text-muted-foreground">{agent.role || 'No role yet'}</p>
 				<div class="mt-2 flex flex-wrap gap-1.5 text-xs">
 					<span class="rounded-md bg-muted px-1.5 py-0.5">{harness?.label ?? agent.harness}</span>
-					<span class="rounded-md bg-muted px-1.5 py-0.5 font-mono">{agent.model || 'Default model'}</span>
-					<span class="rounded-md bg-muted px-1.5 py-0.5">{efforts[agent.reasoning_effort]}</span>
+					<span class="rounded-md bg-muted px-1.5 py-0.5">{agent.model ? modelLabel(harness?.models ?? [], agent.model) : 'Default model'}</span>
+					<span class="rounded-md bg-muted px-1.5 py-0.5">{agent.reasoning_effort ? `${effortLabel(agent.reasoning_effort)} effort` : 'Default effort'}</span>
 				</div>
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
@@ -87,8 +91,7 @@
 		<p class="text-xs text-muted-foreground">Always put in front of whatever task this agent is given.</p>
 		{#if instructions}
 			<!-- trusted: renderMarkdown ran in untrusted mode, so nothing in the text can be markup of its own -->
-			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-			<div class="docs-prose prose prose-sm prose-invert slim-scrollbar mt-2.5 max-h-96 max-w-none overflow-auto rounded-md border bg-background/40 p-3 text-sm" onclick={onCodeCopyClick}>
+			<div class="docs-prose prose prose-sm prose-invert slim-scrollbar mt-2.5 max-h-96 max-w-none overflow-auto rounded-md border bg-background/40 p-3 text-sm" use:copyButtons>
 				{@html instructions}
 			</div>
 		{:else}

@@ -91,7 +91,7 @@ jobs:
           case "$version" in *-*) ;; *) tags="$tags,${IMAGE,,}:latest" ;; esac
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
       # amd64 for most computers and servers, arm64 for Apple silicon, Windows on ARM and Raspberry Pi
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: docker/cell
           build-args: AGENT=${{ matrix.agent }}

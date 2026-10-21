@@ -34,7 +34,7 @@ DEFAULT_RULES = (
     "`Reason: <what is missing, one sentence>` and `Fix: <what the person should change>`, and stop."
 )
 
-# Describes the image in docker/cell-codex, so change them together (a test checks the browser path).
+# Describes the image in docker/cell, so change them together (a test checks the browser path).
 DEFAULT_SKILL = """\
 ---
 name: themis-cell
@@ -98,6 +98,12 @@ def skills_root() -> Path:
     """The host folder that is mounted at SKILLS_MOUNT_AT. One for the installation, not one per run: it holds nothing
     that differs between runs, and it lives outside every run's /cell so no agent can write to it."""
     return settings.data_dir / "cell-package" / "skills"
+
+
+def write_skill(text: str, folder: Path) -> None:
+    """Put the skill in `folder` (the run's own skills folder, see CellSpec.skills_bundle)."""
+    (folder / SKILL_NAME).mkdir(parents=True, exist_ok=True)
+    (folder / SKILL_NAME / "SKILL.md").write_text(text, encoding="utf-8", newline="\n")
 
 
 def stage_skill(text: str) -> None:

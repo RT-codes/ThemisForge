@@ -14,7 +14,7 @@ from .. import skills as skill_store
 from ..app_settings import load_settings
 from ..connections import providers
 from ..deps import CurrentUser, SessionDep
-from ..harness import CATALOG, Effort, clean_model_name
+from ..harness import CATALOG, AgentHarness, Effort, clean_model_name, defaults_for
 from ..models import Agent, McpServer, Project, Secret, Task, TaskStatus, Volume
 from ..profiles import ProfileOverrides
 from ..toolcheck import image_for, missing_commands
@@ -29,7 +29,7 @@ class AgentIn(BaseModel):
     role: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=2000)
     instructions: str = Field(default="", max_length=20_000)
-    harness: Literal["codex"] = "codex"
+    harness: AgentHarness = "codex"
     model: str = Field(default="", max_length=100)  # empty: the model in Settings
     reasoning_effort: Effort | Literal[""] = ""  # empty: the effort in Settings
     cell_profile: ProfileOverrides | None = None
@@ -66,7 +66,7 @@ class AgentPatch(BaseModel):
     role: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     instructions: str | None = Field(default=None, max_length=20_000)
-    harness: Literal["codex"] | None = None
+    harness: AgentHarness | None = None
     model: str | None = Field(default=None, max_length=100)
     reasoning_effort: Effort | Literal[""] | None = None
     cell_profile: ProfileOverrides | None = None  # sent as null: back to the project's cell
@@ -107,7 +107,7 @@ class AgentOut(BaseModel):
 
 
 class CheckIn(BaseModel):
-    harness: Literal["codex"] = "codex"
+    harness: AgentHarness = "codex"
     cell_profile: ProfileOverrides | None = None
     mcp_servers: list[int] = Field(default_factory=list, max_length=50)
 
@@ -226,8 +226,8 @@ async def list_harnesses(session: SessionDep, _: CurrentUser) -> list[HarnessOut
     return [
         HarnessOut(
             **asdict(h),
-            default_model=cfg.codex_model if h.id == "codex" else "",
-            default_effort=cfg.codex_reasoning_effort if h.id == "codex" else "",
+            default_model=defaults_for(h.id, cfg)[1],
+            default_effort=defaults_for(h.id, cfg)[2],
         )
         for h in CATALOG
     ]

@@ -94,7 +94,7 @@ async def use_github(client, pid: int, conn_id: int, repo: str = "") -> dict:
 async def test_the_list_offers_github_and_a_sign_in_only_once_the_app_id_is_set(client, maker, github):
     await register(client)
     body = (await client.get("/api/connections")).json()
-    (gh,) = body["providers"]
+    gh = next(p for p in body["providers"] if p["id"] == "github")
     assert (gh["id"], gh["category"], gh["name"]) == ("github", "service", "GitHub")
     methods = {m["id"]: m for m in gh["methods"]}
     assert methods["token"]["available"] and not methods["oauth"]["available"]
@@ -102,8 +102,8 @@ async def test_the_list_offers_github_and_a_sign_in_only_once_the_app_id_is_set(
     assert gh["config_fields"][0]["key"] == "repo"
     async with maker() as s:
         await save_settings(s, AppSettings(github_client_id="Iv1.abc123"))
-    methods = {m["id"]: m for m in (await client.get("/api/connections")).json()["providers"][0]["methods"]}
-    assert methods["oauth"]["available"]
+    providers = {p["id"]: p for p in (await client.get("/api/connections")).json()["providers"]}
+    assert {m["id"]: m for m in providers["github"]["methods"]}["oauth"]["available"]
 
 
 # ----- connecting with a token -----

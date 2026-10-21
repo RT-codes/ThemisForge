@@ -37,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import skills as skill_store
 from .connections import providers as connection_providers
-from .harness import Effort, clean_model_name
+from .harness import AgentHarness, Effort, clean_model_name
 from .mcp import NAME, McpIn
 from .models import Agent, McpServer, Project, Secret, User, Volume
 from .profiles import ProfileOverrides
@@ -161,7 +161,7 @@ class AgentFile(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     role: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=2000)
-    harness: Literal["codex"] = "codex"
+    harness: AgentHarness = "codex"
     model: str = Field(default="", max_length=100)
     reasoning_effort: Effort | Literal[""] = ""
     cell: ProfileOverrides | None = None

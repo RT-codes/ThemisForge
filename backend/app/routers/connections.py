@@ -49,6 +49,7 @@ class ProviderOut(BaseModel):
     description: str
     icon: str
     token_help: str
+    harness: str  # the harness this is the login of: used by all its agents, not chosen per project or agent
     methods: list[MethodOut]
     config_fields: list[FieldOut]
 
@@ -160,6 +161,7 @@ async def list_connections(session: SessionDep, user: CurrentUser) -> Connection
                 description=p.description,
                 icon=p.icon,
                 token_help=p.token_help,
+                harness=p.harness,
                 methods=[
                     MethodOut(id="token", available=True, reason=""),
                     *(
@@ -278,6 +280,11 @@ async def use_connection(
     (for GitHub, the repository) are checked with the service before they are saved."""
     await _project(session, project_id, user)
     provider = _provider(provider_id)
+    if provider.harness:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"{provider.name} is the login of its agents: connect it in Settings, no project needs to choose it",
+        )
     conn = await _own(session, body.connection_id, user)
     if conn.provider != provider.id:
         raise HTTPException(

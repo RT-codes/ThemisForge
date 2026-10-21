@@ -61,6 +61,7 @@ from .models import (
 )
 from .notifications import notify
 from .profiles import ProfileOverrides
+from .skills import MOUNTPOINT_DIRS
 from .volumes import MountRef
 from .workflow_graph import (
     MOUNT,
@@ -90,12 +91,12 @@ def _slug(text: str, fallback: str) -> str:
 
 def _copy_folder(source: Path, target: Path, only: tuple[str, ...] = ()) -> None:
     """Copy a working folder (or the paths of it that match `only`) to a new place. Blocking: call it from a thread.
-    `.agents` is left out: it is only the mountpoint of the agent's skills."""
+    `.agents` and `.claude` are left out: they are only the mountpoint of the agent's skills."""
     target.mkdir(parents=True, exist_ok=True)
     patterns = [p + "/**" if not any(c in p for c in "*?[") and (source / p).is_dir() else p for p in only]
     for base, dirs, files in os.walk(source):
         rel_base = Path(base).relative_to(source)
-        dirs[:] = [d for d in dirs if not (rel_base == Path(".") and d == ".agents")]
+        dirs[:] = [d for d in dirs if not (rel_base == Path(".") and d in MOUNTPOINT_DIRS)]
         if not patterns:
             (target / rel_base).mkdir(parents=True, exist_ok=True)
         for name in files:

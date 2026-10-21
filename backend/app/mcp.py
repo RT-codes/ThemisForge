@@ -1,4 +1,5 @@
-"""Tool servers (MCP) for an agent: the settings Codex reads from $CODEX_HOME/config.toml.
+"""Tool servers (MCP) for an agent: the settings Codex reads from $CODEX_HOME/config.toml, or Claude Code from its
+--mcp-config file.
 
 The file is built for each run and goes into the cell as an in-memory file next to the Codex login, because it may
 hold the values of keys. Codex reads it, starts every stdio server it lists and offers the tools to the agent
@@ -13,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .harness import CODEX_HOME
+from .harness import CLAUDE_MCP, CODEX_HOME
 from .keys import ENV_NAME
 from .mcp_auth import SCHEMES
 
@@ -141,6 +142,35 @@ def config_toml(servers: list[McpSpec], values: dict[int, str], env_names: dict[
                 out += [f"{k} = {_str(v)}" for k, v in env.items()]
         out.append("")
     return "\n".join(out)
+
+
+def config_json(servers: list[McpSpec], values: dict[int, str], env_names: dict[int, str]) -> str:
+    """Claude Code's config for these servers (its --mcp-config file). Same inputs as config_toml. A bearer token is not
+    written into the file: Claude Code expands ${VAR} in a header, and the cell exports the variable from its key
+    file, so the token is only ever where the key's secret file already is."""
+    out: dict[str, dict] = {}
+    for s in servers:
+        if s.kind == "http":
+            entry: dict = {"type": "http", "url": s.url}
+            token_env = env_names[s.bearer_secret_id] if s.bearer_secret_id is not None else s.login_env
+            if token_env:
+                entry["headers"] = {"Authorization": f"Bearer ${{{token_env}}}"}
+        else:
+            entry = {
+                "type": "stdio",
+                "command": s.command,
+                "args": list(s.args),
+                "env": {**s.env, **{k: values[i] for k, i in s.secret_env.items()}},
+            }
+        out[s.name] = entry
+    return json.dumps({"mcpServers": out}, indent=2)
+
+
+def config_file(harness: str, servers: list[McpSpec], values: dict[int, str], env_names: dict[int, str]):
+    """Where the cell finds the tool servers of a harness, and what is in that file: (path, text)."""
+    if harness == "claude":
+        return CLAUDE_MCP, config_json(servers, values, env_names)
+    return CONFIG_PATH, config_toml(servers, values, env_names)
 
 
 # ----- trying a connection -----

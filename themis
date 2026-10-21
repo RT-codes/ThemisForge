@@ -65,7 +65,8 @@ case "${1:-}" in
   start)
     (cd "$ROOT/backend" && uv sync --quiet)
     build_frontend
-    start_one backend backend uv run uvicorn app.main:app --reload --port 8000
+    # An unfinished client request must not hold a reload worker open indefinitely.
+    start_one backend backend uv run uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 5
     start_one frontend frontend npm run dev -- --port 5173 --strictPort
     echo
     echo "Open http://localhost:5173 (live reload) or http://localhost:8000 (the fresh build)"

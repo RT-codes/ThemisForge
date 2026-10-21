@@ -52,7 +52,7 @@
 		dirty = paneDirty
 	})
 
-	// the Themis package every Codex agent gets: shown first, locked, so what the agent is given can be read here. It is
+	// the Themis package every agent gets: shown first, locked, so what the agent is given can be read here. It is
 	// changed in Settings (administrators), never per agent.
 	const BUILTIN = '@themis-cell' // a skill name cannot hold "@", so it never clashes with a project skill
 	let pkg = $state<CellPackageInUse | null>(null)
@@ -176,7 +176,7 @@
 					</span>
 					<span class="min-w-0 flex-1">
 						<span class="block truncate font-mono text-sm font-medium">{pkg.skill_name}</span>
-						<span class="block truncate text-xs text-muted-foreground">{pkg.skill_enabled ? 'Built in, every Codex agent has it' : 'Built in, switched off in Settings'}</span>
+						<span class="block truncate text-xs text-muted-foreground">{pkg.skill_enabled ? 'Built in, every agent has it' : 'Built in, switched off in Settings'}</span>
 					</span>
 				</button>
 			</div>
@@ -230,7 +230,7 @@
 				<div class="min-w-0 flex-1">
 					<p class="truncate font-mono text-sm font-medium">{pkg.skill_name}</p>
 					<p class="text-xs text-muted-foreground">
-						Built in and locked here: every Codex agent gets it, so it is the same for all of them.
+						Built in and locked here: every agent gets it, so it is the same for all of them.
 						{#if auth.user?.is_admin}
 							Edit or switch it off under <a class="text-primary hover:underline" href="/settings#package">Settings, Cell package</a>.
 						{:else}

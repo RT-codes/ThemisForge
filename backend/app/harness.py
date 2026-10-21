@@ -19,7 +19,11 @@ from .app_settings import AppSettings
 from .cells import SECRETS_DIR
 from .keys import ENV_NAME, key_path
 
-HARNESSES = ("", "codex")  # "" = the placeholder program
+HARNESSES = ("", "codex", "claude")  # "" = the placeholder program
+AGENT_HARNESSES = ("codex", "claude")
+AgentHarness = Literal[
+    "codex", "claude"
+]  # the same list, for schemas  # the ones that run an AI agent (so get keys, tools and a login)
 
 # Every reasoning effort a Codex model can have, weakest first. A model supports some of them (CodexModel.efforts).
 Effort = Literal["low", "medium", "high", "xhigh", "max", "ultra"]
@@ -63,12 +67,21 @@ CODEX_MODELS = (
     ModelInfo("gpt-5.6-luna", "GPT-5.6 Luna", _BASE, "medium"),
 )
 
+# The Claude models Claude Code can run. Like the list above, a model that is not here still works when typed into an
+# agent file or Settings.
+CLAUDE_MODELS = (
+    ModelInfo("claude-fable-5-1", "Fable 5.1", _BASE, "high"),
+    ModelInfo("claude-opus-5-5", "Opus 5.5", _BASE, "high"),
+    ModelInfo("claude-sonnet-5-5", "Sonnet 5.5", _BASE, "medium"),
+    ModelInfo("claude-haiku-5-5", "Haiku 5.5", ("low", "medium", "high"), "medium"),
+)
+
 
 def effort_for(model: str, effort: str) -> str:
     """The effort a run really gets. The model, the effort or both can come from different layers (a workflow step
     overriding the model of an agent that asks for `ultra`), so an effort the model does not accept falls back to the
     model's own default instead of failing the run. A model that is not in the list is trusted as it is."""
-    known = next((m for m in CODEX_MODELS if m.id == model), None)
+    known = next((m for m in (*CODEX_MODELS, *CLAUDE_MODELS) if m.id == model), None)
     return known.default_effort if known and effort not in known.efforts else effort
 
 
@@ -82,7 +95,23 @@ CATALOG = (
         supports_keys=True,
         models=CODEX_MODELS,
     ),
+    HarnessInfo(
+        "claude",
+        "Claude Code",
+        "Anthropic's Claude Code CLI, signed in with your Claude subscription (Settings, Claude).",
+        supports_skills=True,
+        supports_mcp=True,
+        supports_keys=True,
+        models=CLAUDE_MODELS,
+    ),
 )
+
+
+def defaults_for(harness: str, cfg: AppSettings) -> tuple[str, str, str]:
+    """The (image, model, effort) Settings give a harness when an agent does not choose its own."""
+    if harness == "claude":
+        return cfg.claude_image, cfg.claude_model, cfg.claude_reasoning_effort
+    return cfg.codex_image, cfg.codex_model, cfg.codex_reasoning_effort
 
 
 def clean_model_name(v: str) -> str:
@@ -118,6 +147,45 @@ codex exec -m {shlex.quote(model)} {policy}-c model_reasoning_effort={shlex.quot
 """
 
 
+CLAUDE_MCP = (
+    f"{SECRETS_DIR}/claude-mcp.json"  # written by the scheduler when the agent has tool servers (app/mcp.py)
+)
+
+# Claude Code has no flag for "write the final answer to a file", so the cell does it: the stream is kept, and its
+# last `result` event holds the answer. The program's exit code is 1 when that event says the run failed, so a run that
+# Claude Code ended with an error is a failed run even when the CLI itself exited 0.
+_CLAUDE_RESULT = (
+    'let r;for(const l of require("fs").readFileSync("/tmp/claude-stream.jsonl","utf8").split("\\n"))'
+    '{try{const e=JSON.parse(l);if(e.type==="result")r=e}catch{}}'
+    'if(r&&typeof r.result==="string"&&r.result)require("fs").writeFileSync("/cell/result.md",r.result);'
+    "process.exit(!r||r.is_error?1:0)"
+)
+
+
+def claude_script(model: str, effort: str, key_envs: Sequence[str] = ()) -> str:
+    """The shell script of a Claude Code cell. Claude Code reads the prompt from stdin, runs without its permission
+    prompts (the cell is the sandbox, and it refuses to do so as root, which cells never are) and prints one JSON event
+    per line. The login is the variable exported from the key file the connection provides (app/claude.py)."""
+    for env in key_envs:
+        if not ENV_NAME.match(env):
+            raise ValueError(f"Not a valid variable name: {env}")
+    exports = "".join(f'export {env}="$(cat {key_path(env)})"\n' for env in key_envs)
+    # no updater, no telemetry: a cell has no use for either, and both would only add noise or delay to a run
+    return f"""\
+export DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+{exports}echo "[claude] model {shlex.quote(model)}, effort {shlex.quote(effort)}"
+cd /workspace
+mcp=; [ -f {CLAUDE_MCP} ] && mcp="--strict-mcp-config --mcp-config {CLAUDE_MCP}"
+{{ claude -p --model {shlex.quote(model)} --effort {shlex.quote(effort)} --output-format stream-json --verbose \\
+  --dangerously-skip-permissions --no-session-persistence $mcp < /cell/prompt.md; echo $? > /tmp/claude-status; }} \\
+  | tee /tmp/claude-stream.jsonl
+node -e {shlex.quote(_CLAUDE_RESULT)}; found=$?
+code=$(cat /tmp/claude-status 2>/dev/null || echo 1)
+[ "$code" -ne 0 ] && exit "$code"
+exit "$found"
+"""
+
+
 @dataclass(frozen=True)
 class TokenUsage:
     """The tokens a run spent, as the harness reports them. Cached input is part of the input and reasoning part of
@@ -142,7 +210,6 @@ class HarnessPlan:
     image: str
     script: str
     writeback: tuple[str, ...] = ()
-    uses_codex: bool = False
     # what the run is recorded under (see Attempt.model and Attempt.billing): the model after the defaults were filled
     # in, and how the harness is paid for
     model: str = ""
@@ -155,14 +222,24 @@ def plan_for(
     """None means the placeholder program, which needs nothing special. An agent may choose its own model and
     reasoning effort (empty means the ones in Settings) and be given keys, available as these variables."""
     if harness == "codex":
-        model = model or cfg.codex_model
+        image, default_model, default_effort = defaults_for(harness, cfg)
+        model = model or default_model
         return HarnessPlan(
-            image=cfg.codex_image,
-            script=codex_script(model, effort_for(model, effort or cfg.codex_reasoning_effort), key_envs),
+            image=image,
+            script=codex_script(model, effort_for(model, effort or default_effort), key_envs),
             writeback=(CODEX_AUTH,),
-            uses_codex=True,
             model=model,
             billing="subscription",  # Codex runs on the user's ChatGPT login, never on an API key
+        )
+    if harness == "claude":
+        image, default_model, default_effort = defaults_for(harness, cfg)
+        model = model or default_model
+        return HarnessPlan(
+            image=image,
+            script=claude_script(model, effort_for(model, effort or default_effort), key_envs),
+            model=model,
+            # a subscription token bills the plan; an API key bills per token. The login says which (see the scheduler)
+            billing="subscription",
         )
     return None
 
@@ -357,15 +434,24 @@ _CODEX_LOGIN_REJECTED = (
 )
 
 
-class CodexRenderer:
-    """Turns `codex exec --json` events into a readable log, line by line. Unknown events are kept, shortened."""
+class HarnessRenderer:
+    """Turns a harness's JSON event stream into a readable log, line by line. What the events look like is the
+    subclass's business (`_line`); what a run reports afterwards (usage, the error that ended it, whether that error
+    is worth a retry or means the login was refused) is the same for every harness, because the scheduler only
+    reads these."""
+
+    name = ""  # how the harness is called in messages ("Codex")
+    transient_markers: tuple[
+        str, ...
+    ] = ()  # messages that mean the provider could not serve the run right now
+    login_markers: tuple[str, ...] = ()  # messages that mean the harness's login was refused
 
     def __init__(self) -> None:
         self._buf = ""
         self._emitted = False
-        # What the run spent, once Codex has reported it (None until then: a run that crashed or was cancelled before
-        # finishing its turn reports nothing). Codex reports the total of the thread so far, so a later report
-        # replaces an earlier one instead of adding to it.
+        # What the run spent, once the harness has reported it (None until then: a run that crashed or was cancelled
+        # before finishing its turn reports nothing). A later report replaces an earlier one: harnesses report the
+        # total so far, not a step.
         self.usage: TokenUsage | None = None
         self.error = ""  # the message of the last error event: why the run ended, when it did not end well
 
@@ -373,13 +459,13 @@ class CodexRenderer:
     def transient_error(self) -> str:
         """The error that ended this run when it is one worth starting the run again for, else ''."""
         lowered = self.error.lower()
-        return self.error if any(marker in lowered for marker in _CODEX_TRANSIENT) else ""
+        return self.error if any(marker in lowered for marker in self.transient_markers) else ""
 
     @property
     def login_rejected(self) -> bool:
-        """The run ended because Codex's login was refused: nothing the agent did, and not worth a plain retry."""
+        """The run ended because the harness's login was refused: nothing the agent did, and not worth a plain retry."""
         lowered = self.error.lower()
-        return any(marker in lowered for marker in _CODEX_LOGIN_REJECTED)
+        return any(marker in lowered for marker in self.login_markers)
 
     def feed(self, text: str) -> str:
         self._buf += text
@@ -389,6 +475,17 @@ class CodexRenderer:
     def flush(self) -> str:
         rest, self._buf = self._buf, ""
         return self._line(rest) if rest else ""
+
+    def _line(self, line: str) -> str:
+        raise NotImplementedError
+
+
+class CodexRenderer(HarnessRenderer):
+    """Turns `codex exec --json` events into a readable log. Unknown events are kept, shortened."""
+
+    name = "Codex"
+    transient_markers = _CODEX_TRANSIENT
+    login_markers = _CODEX_LOGIN_REJECTED
 
     def _line(self, line: str) -> str:
         line = line.rstrip("\r")
@@ -452,6 +549,137 @@ class CodexRenderer:
         return f"[codex] {kind}\n" if kind else ""
 
 
+# What Claude Code says when the provider could not serve the run right now (an overloaded API is the usual one)
+_CLAUDE_TRANSIENT = (
+    "overloaded",
+    "api error: 5",
+    "internal server error",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "temporarily unavailable",
+    "request timed out",
+    "econnreset",
+    "socket hang up",
+)
+# ... and when the login it was given is not accepted
+_CLAUDE_LOGIN_REJECTED = (
+    "failed to authenticate",  # what the CLI prints for a rejected token (seen against the real CLI: HTTP 401)
+    "api error: 401",
+    "invalid api key",
+    "please run /login",
+    "oauth token has expired",
+    "invalid bearer token",
+    "invalid authentication credentials",
+    "authentication_error",
+)
+
+
+class ClaudeRenderer(HarnessRenderer):
+    """Turns `claude -p --output-format stream-json` events into the same kind of log Codex runs have: what the agent
+    said and thought, each command or tool call, what it printed, and a closing line with the tokens spent."""
+
+    name = "Claude Code"
+    transient_markers = _CLAUDE_TRANSIENT
+    login_markers = _CLAUDE_LOGIN_REJECTED
+
+    def _line(self, line: str) -> str:
+        line = line.rstrip("\r")
+        if not line.strip():
+            return ""
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return line + "\n"  # a warning or anything else that is not an event
+        if not isinstance(event, dict):
+            return line + "\n"
+        text = self._event(event)
+        # blocks (what the agent said, thought, ran, and the summary) are set apart by a blank line
+        starts_block = bool(text) and text.startswith(("$ ", "[tool] ", "[thinking]", "[claude] done"))
+        starts_block = starts_block or self._says(event)
+        if text and starts_block and self._emitted:
+            text = "\n" + text
+        self._emitted = self._emitted or bool(text)
+        return text
+
+    @staticmethod
+    def _blocks(event: dict) -> list[dict]:
+        content = (event.get("message") or {}).get("content")
+        return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+
+    def _says(self, event: dict) -> bool:
+        return event.get("type") == "assistant" and any(b.get("type") == "text" for b in self._blocks(event))
+
+    def _event(self, e: dict) -> str:
+        kind = e.get("type", "")
+        if kind == "system":
+            if e.get("subtype") == "init":
+                return f"[claude] session {e.get('session_id', '')}, model {e.get('model', '')}\n"
+            if (
+                e.get("subtype") == "api_retry"
+            ):  # the CLI's own retries; without this a long wait looks like a hang
+                return (
+                    f"[claude] retrying ({e.get('attempt')} of {e.get('max_retries')}): "
+                    f"{e.get('error', 'API error')}\n"
+                )
+            return ""  # hooks and the like: nothing a reader needs
+        if kind == "assistant":
+            return "".join(self._assistant_block(b) for b in self._blocks(e))
+        if kind == "user":
+            return "".join(self._tool_result(b) for b in self._blocks(e) if b.get("type") == "tool_result")
+        if kind == "result":
+            return self._result(e)
+        return f"[claude] {kind}\n" if kind else ""
+
+    @staticmethod
+    def _assistant_block(block: dict) -> str:
+        kind = block.get("type")
+        if kind == "text":
+            return str(block.get("text", "")).rstrip() + "\n"
+        if kind == "thinking":
+            text = str(block.get("thinking", "")).strip()
+            return f"[thinking] {text}\n" if text else ""
+        if kind == "tool_use":
+            args = block.get("input") if isinstance(block.get("input"), dict) else {}
+            if block.get("name") == "Bash" and args.get("command"):
+                return f"$ {args['command']}\n"
+            # the one argument that says what the tool works on, else the whole input, kept short
+            detail = next(
+                (str(args[k]) for k in ("file_path", "path", "pattern", "url", "query") if args.get(k)),
+                json.dumps(args, ensure_ascii=False) if args else "",
+            )
+            return f"[tool] {block.get('name', '')} {trim_output(detail)}".rstrip() + "\n"
+        return ""
+
+    @staticmethod
+    def _tool_result(block: dict) -> str:
+        content = block.get("content")
+        if isinstance(content, list):  # a list of {"type": "text", "text": ...} parts
+            content = "\n".join(str(p.get("text", "")) for p in content if isinstance(p, dict))
+        out = trim_output(str(content or "").rstrip())
+        tail = "[error]" if block.get("is_error") else ""
+        return "".join(f"{s}\n" for s in (out, tail) if s)
+
+    def _result(self, e: dict) -> str:
+        u = e.get("usage") or {}
+        if isinstance(u, dict) and u:
+            cached = int(u.get("cache_read_input_tokens") or 0)
+            # Claude reports fresh and cached input apart; TokenUsage counts the cached part inside the input
+            fresh = int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0)
+            self.usage = TokenUsage(
+                input_tokens=fresh + cached,
+                cached_input_tokens=cached,
+                output_tokens=int(u.get("output_tokens") or 0),
+            )
+        if e.get("is_error") or str(e.get("subtype", "")).startswith("error"):
+            detail = str(e.get("result") or e.get("subtype") or "")
+            self.error = detail
+            return f"[claude] error: {detail}\n"
+        tokens_in = self.usage.input_tokens if self.usage else 0
+        tokens_out = self.usage.output_tokens if self.usage else 0
+        return f"[claude] done - {tokens_in} tokens in, {tokens_out} out\n"
+
+
 def _shell(command: str) -> str:
     """Codex wraps commands as `/bin/bash -lc "..."`; show the part a person wrote."""
     for prefix in ("/bin/bash -lc ", "bash -lc ", "/bin/sh -c ", "sh -c "):
@@ -465,5 +693,5 @@ def _shell(command: str) -> str:
     return command
 
 
-def renderer_for(harness: str) -> CodexRenderer | None:
-    return CodexRenderer() if harness == "codex" else None
+def renderer_for(harness: str) -> HarnessRenderer | None:
+    return {"codex": CodexRenderer, "claude": ClaudeRenderer}.get(harness, lambda: None)()

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import boards, security, webhooks
 from ..deps import CurrentUser, SessionDep
+from ..harness import AgentHarness
 from ..models import Project, TaskStatus, Webhook, WebhookDelivery
 from ..schemas import MAX_STAGES
 
@@ -40,7 +41,7 @@ class WebhookFields(BaseModel):
     title_template: str = Field(default="", max_length=200)
     description_template: str = Field(default="", max_length=20_000)
     rules: list[WebhookRule] = Field(default_factory=list, max_length=10)
-    harness: Literal["", "codex", "workflow"] = ""
+    harness: Literal["", AgentHarness, "workflow"] = ""
     agent_id: int | None = None
     workflow_ids: list[int] = Field(default_factory=list, max_length=MAX_STAGES)
     properties: dict[str, Any] = Field(default_factory=dict)
@@ -75,7 +76,7 @@ class WebhookPatch(BaseModel):
     title_template: str | None = Field(default=None, max_length=200)
     description_template: str | None = Field(default=None, max_length=20_000)
     rules: list[WebhookRule] | None = Field(default=None, max_length=10)
-    harness: Literal["", "codex", "workflow"] | None = None
+    harness: Literal["", AgentHarness, "workflow"] | None = None
     agent_id: int | None = None
     workflow_ids: list[int] | None = Field(default=None, max_length=MAX_STAGES)
     properties: dict[str, Any] | None = None

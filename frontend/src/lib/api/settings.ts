@@ -60,6 +60,9 @@ export interface AppSettings {
   codex_model: string
   codex_reasoning_effort: 'low' | 'medium' | 'high'
   codex_max_parallel: number // Codex runs of one person that may use their login at the same time
+  claude_image: string
+  claude_model: string
+  claude_reasoning_effort: 'low' | 'medium' | 'high'
   cell_package: CellPackage
   github_client_id: string // the OAuth App that "Sign in with GitHub" uses, empty until an administrator adds it
   mcp_auth: McpAuthPolicy

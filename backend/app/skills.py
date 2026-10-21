@@ -3,8 +3,8 @@
 A skill lives at data/projects/<project id>/config/skills/<name>/SKILL.md (in the project's config folder, which the
 Files page shows). The folder may also hold scripts or reference files
 (put there on disk); the app edits SKILL.md and carries the rest along. Each run copies the agent's skills into a
-folder of their own that is mounted read only at /workspace/.agents/skills, where Codex looks for them, so an agent
-only sees the skills it was given and cannot change them.
+folder of their own that is mounted read only where the harness looks for them (/workspace/.agents/skills for Codex,
+/workspace/.claude/skills for Claude Code), so an agent only sees the skills it was given and cannot change them.
 """
 
 import re
@@ -17,9 +17,15 @@ from .config import settings
 SKILL_FILE = "SKILL.md"
 MAX_SKILL_BYTES = 100_000
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-MOUNT_AT = (
-    "/workspace/.agents/skills"  # one of the places Codex looks for skills (checked against the real CLI)
-)
+# Where each harness looks for the skills of a project (checked against the real CLIs). The first folder of each is
+# only a mountpoint in the working folder, so it is left out of what a run is said to have changed.
+MOUNT_AT = {"codex": "/workspace/.agents/skills", "claude": "/workspace/.claude/skills"}
+MOUNTPOINT_DIRS = frozenset(path.split("/")[2] for path in MOUNT_AT.values())
+
+
+def mount_at(harness: str) -> str:
+    """Where a run of this harness finds its skills (a run without a known harness gets Codex's place)."""
+    return MOUNT_AT.get(harness, MOUNT_AT["codex"])
 
 
 class SkillError(Exception):

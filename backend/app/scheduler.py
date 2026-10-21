@@ -7,7 +7,7 @@ import os
 import shutil
 import time
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 
 from sqlalchemy import or_, select
@@ -33,11 +33,12 @@ from .config import settings
 from .connections import ConnectionProblem, RunConnection, plan_for_run, secret_values
 from .crypto import decrypt
 from .harness import (
+    AGENT_HARNESSES,
     CODEX_AUTH,
     RETRY_NOTE,
-    CodexRenderer,
     EarlierStep,
     HarnessPlan,
+    HarnessRenderer,
     TokenUsage,
     agent_preamble,
     build_prompt,
@@ -48,13 +49,26 @@ from .harness import (
     workdir_note,
 )
 from .keys import Redactor, key_path, unique_env_names
-from .mcp import CONFIG_PATH, McpSpec, config_toml, login_env_name
+from .mcp import McpSpec, config_file, login_env_name
 from .mcp_auth import ACTIVE, login_for
-from .models import Agent, Attempt, AttemptStatus, Board, McpServer, Project, Secret, Task, TaskStatus, utcnow
+from .models import (
+    Agent,
+    Attempt,
+    AttemptStatus,
+    Board,
+    Connection,
+    McpServer,
+    Project,
+    Secret,
+    Task,
+    TaskStatus,
+    utcnow,
+)
 from .notifications import notify
 from .profiles import Profile, resolve_profile
 from .project_config import sync_project
 from .scheduling import finish_task
+from .skills import MOUNTPOINT_DIRS
 from .skills import missing as missing_skills
 from .volumes import MountError, plan_mounts
 
@@ -122,27 +136,27 @@ def _themis_failure(reason: str, action: str = "") -> dict:
     return {"source": "themis", "reason": reason, "action": action}
 
 
-def _run_failure(renderer: CodexRenderer | None, exit_code: int, retries: int) -> dict:
+def _run_failure(renderer: HarnessRenderer | None, exit_code: int, retries: int) -> dict:
     """Why a run that ended with a failing exit code failed, from what the harness's own output said."""
     error = renderer.error if renderer is not None else ""
     if renderer is None or not error:
         return _themis_failure(_EXIT_UNKNOWN.format(code=exit_code))
     if renderer.login_rejected:
         return _themis_failure(
-            f"Codex refused the saved login ({error})",
-            "Connect Codex again in Settings. Until then runs that use Codex will fail the same way.",
+            f"{renderer.name} refused the saved login ({error})",
+            f"Connect {renderer.name} again in Settings. Until then runs that use {renderer.name} will fail the same way.",
         )
     if renderer.transient_error:
         return _themis_failure(
             f"The model provider could not serve this run ({error})"
             + (f", also after {retries} more {'try' if retries == 1 else 'tries'}." if retries else "."),
-            "Try again later, or choose another model for the agent (its Model field, or Settings, Codex agents).",
+            "Try again later, or choose another model for the agent (its Model field, or the harness's defaults in Settings).",
         )
     return _themis_failure(f"The agent stopped with an error: {error}")
 
 
 def _judge(
-    res: CellResult, renderer: CodexRenderer | None, retries: int, redact: Redactor
+    res: CellResult, renderer: HarnessRenderer | None, retries: int, redact: Redactor
 ) -> tuple[AttemptStatus, dict | None]:
     """How a run that finished ended, and why when it failed. An agent that stopped and said why (see parse_blocked)
     decides the outcome by what it wrote, whatever the exit code of the program was."""
@@ -478,7 +492,7 @@ class Scheduler:
     ) -> _Plan:
         harness = agent.harness if agent else task.harness
         skills, mcp, keys, error = await Scheduler._capabilities(s, project, agent)
-        used = await plan_for_run(s, project.id, agent)
+        used = await plan_for_run(s, project.id, agent, project.owner_id, harness)
         error = error or used.error
         secret_envs = {env for c in used.connections for env in c.env_names} | {
             spec.login_env for spec in mcp if spec.login_env
@@ -497,6 +511,8 @@ class Scheduler:
             effort=extra.get("effort") or (agent.reasoning_effort if agent else ""),
             key_envs=sorted(secret_envs | set(keys.values())),
         )
+        if hp is not None and harness == "claude":
+            hp = await Scheduler._claude_billing(s, hp, used.connections)
         profile = resolve_profile(
             cfg,
             hp.image if hp else cfg.cell_image,
@@ -534,6 +550,13 @@ class Scheduler:
         return plan
 
     @staticmethod
+    async def _claude_billing(s: AsyncSession, hp: HarnessPlan, used: list[RunConnection]) -> HarnessPlan:
+        """A Claude run is billed to the plan or to an API key, depending on which login it signs in with."""
+        login = next((c for c in used if c.provider == "claude"), None)
+        conn = await s.get(Connection, login.connection_id) if login else None
+        return replace(hp, billing="api") if conn is not None and conn.settings.get("kind") == "api" else hp
+
+    @staticmethod
     async def _continued_workdir(
         s: AsyncSession, project_id: int, wanted: int, mounts: list[Mount]
     ) -> tuple[int | None, str]:
@@ -559,7 +582,7 @@ class Scheduler:
                 "The working folder of the earlier steps of this job is gone (working folders are removed after a "
                 "retention period), so /workspace starts empty."
             )
-        skip = {m.name for m in mounts} | {".agents"}
+        skip = {m.name for m in mounts} | MOUNTPOINT_DIRS
 
         def top_level() -> list[str]:
             names = sorted(n for n in os.listdir(folder) if n not in skip)
@@ -745,16 +768,18 @@ class Scheduler:
         self, attempt_id: int, spec: CellSpec, tz: str, retry_waits: tuple[int, ...] = ()
     ) -> None:
         """Run the cell and record how it ended. When the model provider could not serve a run for a moment (the
-        harness says so, see CodexRenderer.transient_error) the run starts again in the same attempt after each of
+        harness says so, see HarnessRenderer.transient_error) the run starts again in the same attempt after each of
         `retry_waits`: whether an error is such a moment is the harness's call, how patient to be is the setting."""
         buf = _LogBuffer(self.maker, attempt_id)
         outcome, exit_code, result = AttemptStatus.FAILED, None, ""
         failure: dict | None = None  # why it failed, once it has (see Attempt.failure)
         before: dict[str, tuple[int, int]] | None = None  # the working folder as the cell found it
-        renderers: list[CodexRenderer] = []  # one per run of this attempt: each remembers what its run spent
+        renderers: list[
+            HarnessRenderer
+        ] = []  # one per run of this attempt: each remembers what its run spent
         try:
             async with AsyncExitStack() as stack:
-                lease, redact = await self._codex_login(stack, spec, buf)
+                lease, redact = await self._harness_login(stack, spec, buf)
                 if spec.harness != "workflow":
                     before = await asyncio.to_thread(snapshot_workdir, spec)
                 res, renderer, retries = await self._run_cell(
@@ -779,32 +804,38 @@ class Scheduler:
             attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes, failure, usage
         )
 
-    async def _codex_login(
+    async def _harness_login(
         self, stack: AsyncExitStack, spec: CellSpec, buf: _LogBuffer
     ) -> tuple[CodexLease | None, Redactor]:
-        """For a Codex run: wait for a turn on the user's login, hold it for the run (`stack` lets it go), and put the
-        login and every secret the run needs (keys, tool sign ins, connections) in the cell's secret files. Returns
-        the lease, and a Redactor that hides those values in everything that is stored. Other harnesses need neither."""
+        """Put everything an agent run needs in the cell's secret files (keys, tool sign ins, connections, the
+        harness's own login) and return a Redactor that hides those values in everything that is stored. Codex's login
+        rotates, so a Codex run also waits for a turn on the user's login and holds it for the run (`stack` lets it
+        go); that lease is returned. Other harnesses have a login that does not rotate: it is only a secret file."""
         redact = Redactor([])
-        if spec.harness != "codex":
+        if spec.harness not in AGENT_HARNESSES:
             return None, redact
-        async with self.maker() as session:
-            parallel = (await load_settings(session)).codex_max_parallel
-        if lease_is_busy(spec.owner_id, parallel):
-            await buf.write(
-                "[Waiting for the user's other Codex runs: they share one login, "
-                f"at most {parallel} at a time]\n"
+        lease = None
+        if spec.harness == "codex":
+            async with self.maker() as session:
+                parallel = (await load_settings(session)).codex_max_parallel
+            if lease_is_busy(spec.owner_id, parallel):
+                await buf.write(
+                    "[Waiting for the user's other Codex runs: they share one login, "
+                    f"at most {parallel} at a time]\n"
+                )
+            lease = await stack.enter_async_context(
+                lease_codex(
+                    self.maker, spec.owner_id, max_parallel=parallel, run_seconds=spec.timeout_seconds
+                )
             )
-        lease = await stack.enter_async_context(
-            lease_codex(self.maker, spec.owner_id, max_parallel=parallel, run_seconds=spec.timeout_seconds)
-        )
-        spec.secret_files[CODEX_AUTH] = lease.auth_json
+            spec.secret_files[CODEX_AUTH] = lease.auth_json
         if spec.keys or spec.mcp or spec.connections:
             values = await self._key_values(spec)
             for key_id, env in spec.keys.items():
                 spec.secret_files[key_path(env)] = values[key_id]
             if spec.mcp:
-                spec.secret_files[CONFIG_PATH] = config_toml(spec.mcp, values, spec.keys)
+                path, text = config_file(spec.harness, spec.mcp, values, spec.keys)
+                spec.secret_files[path] = text
             # connections hand over their secrets the same way a key does: a file, exported as a variable
             from_connections = await secret_values(self.maker, spec.connections)
             for env, value in from_connections.items():
@@ -824,8 +855,8 @@ class Scheduler:
         redact: Redactor,
         lease: CodexLease | None,
         retry_waits: tuple[int, ...],
-        renderers: list[CodexRenderer],
-    ) -> tuple[CellResult, CodexRenderer | None, int]:
+        renderers: list[HarnessRenderer],
+    ) -> tuple[CellResult, HarnessRenderer | None, int]:
         """Run the cell (or play the workflow) and, when that is the right call, run it again in the same attempt:
         once with a newer login when another run refreshed it first, and after each of `retry_waits` when the provider
         could not serve it. Every run's renderer is added to `renderers` as it starts, so what each spent is counted

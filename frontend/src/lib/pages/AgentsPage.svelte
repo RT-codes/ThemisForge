@@ -177,7 +177,7 @@
 						<BotIcon class="mx-auto size-8 text-muted-foreground" />
 						<p class="mt-3 text-sm font-medium">No agents in this project yet</p>
 						<p class="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-							An agent has a name, a role, instructions and a harness such as Codex. Tasks and workflows pick one to do the work. Press <span class="font-medium text-foreground">New agent</span> to make the first one.
+							An agent has a name, a role, instructions and a harness (Codex or Claude Code). Tasks and workflows pick one to do the work. Press <span class="font-medium text-foreground">New agent</span> to make the first one.
 						</p>
 					</div>
 				{:else if !current}

@@ -52,7 +52,7 @@ async def stored_auth(maker, user_id: int) -> dict:
 def test_plan_for_codex_and_placeholder():
     cfg = AppSettings(codex_image="my/codex:1")
     plan = plan_for("codex", cfg)
-    assert plan and plan.image == "my/codex:1" and plan.uses_codex and plan.writeback == (CODEX_AUTH,)
+    assert plan and plan.image == "my/codex:1" and plan.writeback == (CODEX_AUTH,)
     assert "codex exec" in plan.script and "--json" in plan.script and "dangerously-bypass" in plan.script
     assert "show_raw_agent_reasoning=true" in plan.script
     assert plan_for("", cfg) is None

@@ -118,6 +118,16 @@ class CellSpec:
     package_skill: str = ""
 
     @property
+    def skills_bundle(self) -> bool:
+        """Claude Code has no place for skills of the whole installation, so there the themis-cell skill goes in the
+        same read only folder as the agent's own skills. Codex gets it from a folder of its own (cell_package)."""
+        return self.harness == "claude"
+
+    @property
+    def mounts_skills(self) -> bool:
+        return bool(self.skills) or (self.skills_bundle and bool(self.package_skill))
+
+    @property
     def workspace_dir(self) -> Path:
         return workdir_path(self.project_id, self.workdir_id or self.attempt_id)
 
@@ -153,13 +163,16 @@ def prepare_dirs(spec: CellSpec) -> None:
     # must not be mistaken for what this one says.
     for stale in ("result.md", "blocked.md"):
         (spec.cell_dir / stale).unlink(missing_ok=True)
-    if spec.package_skill:
+    if spec.package_skill and not spec.skills_bundle:
         package.stage_skill(spec.package_skill)
-    if spec.skills:
+    if spec.mounts_skills:
         skill_store.stage(spec.project_id, spec.skills, spec.skills_dir)
-        (spec.workspace_dir / ".agents" / "skills").mkdir(
+        if spec.skills_bundle:
+            package.write_skill(spec.package_skill, spec.skills_dir)
+        # the mountpoint, made as us
+        (spec.workspace_dir / skill_store.mount_at(spec.harness).removeprefix("/workspace/")).mkdir(
             parents=True, exist_ok=True
-        )  # the mountpoint, made as us
+        )
     for mount in spec.mounts:
         mount.source.mkdir(parents=True, exist_ok=True)
         # made here, as us: if Docker had to create the mountpoint it would belong to root
@@ -182,7 +195,7 @@ def prepare_dirs(spec: CellSpec) -> None:
 
 
 # What a cell is not blamed for: mountpoints of shared folders and skills, and trees nobody wants listed
-_UNTRACKED_DIRS = {".agents", ".git", "node_modules"}
+_UNTRACKED_DIRS = {*skill_store.MOUNTPOINT_DIRS, ".git", "node_modules"}
 _MAX_TRACKED = 20_000  # a runaway tree must not make the start or end of a cell slow
 _MAX_REPORTED = 100  # per kind, what is kept of a run's changes
 
@@ -317,7 +330,8 @@ class FakeCellManager:
         # and what a task's agent writes to /cell/blocked.md
         self.capacity_errors: dict[str, int] = {}
         self.blocked: dict[str, str] = {}
-        # for tests: the usage a task's runs report, as Codex's turn.completed event does, task title -> tokens
+        # for tests: the usage a task's runs report, as Codex's turn.completed event does (Claude Code's result event
+        # for its runs), task title -> tokens
         self.usage: dict[str, dict[str, int]] = {}
         self._runs: dict[str, int] = {}
 
@@ -333,13 +347,28 @@ class FakeCellManager:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
         self._runs[spec.title] = self._runs.get(spec.title, 0) + 1
+        # the events a harness prints are its own (Codex's turn.completed and error, Claude Code's result)
+        claude = spec.harness == "claude"
         if spec.title in self.usage:
-            await on_log(json.dumps({"type": "turn.completed", "usage": self.usage[spec.title]}) + "\n")
+            usage = self.usage[spec.title]
+            event = (
+                {"type": "result", "is_error": False, "result": "", "usage": usage}
+                if claude
+                else {
+                    "type": "turn.completed",
+                    "usage": usage,
+                }
+            )
+            await on_log(json.dumps(event) + "\n")
         if self._runs[spec.title] <= self.capacity_errors.get(spec.title, 0):
-            event = {
-                "type": "error",
-                "message": "Selected model is at capacity. Please try a different model.",
-            }
+            event = (
+                {"type": "result", "is_error": True, "result": "API Error: 529 overloaded_error"}
+                if claude
+                else {
+                    "type": "error",
+                    "message": "Selected model is at capacity. Please try a different model.",
+                }
+            )
             await on_log(json.dumps(event) + "\n")
             return CellResult(exit_code=1)
         if "fail" in spec.title.lower():
@@ -406,8 +435,8 @@ class DockerCellManager:
             *extra,
             *mount_arg(spec.workspace_dir, "/workspace"),
             *[a for m in spec.mounts for a in mount_arg(m.source, f"/workspace/{m.name}", read_only=m.read_only)],
-            *(mount_arg(spec.skills_dir, skill_store.MOUNT_AT, read_only=True) if spec.skills else []),
-            *(mount_arg(package.skills_root(), package.SKILLS_MOUNT_AT, read_only=True) if spec.package_skill else []),
+            *(mount_arg(spec.skills_dir, skill_store.mount_at(spec.harness), read_only=True) if spec.mounts_skills else []),
+            *(mount_arg(package.skills_root(), package.SKILLS_MOUNT_AT, read_only=True) if spec.package_skill and not spec.skills_bundle else []),
             *mount_arg(spec.cell_dir, "/cell"),
             "-e", f"THEMIS_TASK_ID={spec.task_id}",
             "-e", f"THEMIS_TASK_TITLE={spec.title}",

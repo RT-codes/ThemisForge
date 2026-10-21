@@ -7,7 +7,7 @@ summary: Connect services like GitHub once, choose one per project, and give it 
 # Connections
 
 A **connection** is your sign in to an outside service, kept once in Themis so agents can work with that service for you.
-GitHub is the first one. Codex (your ChatGPT sign in, see [Connecting Codex](/docs/codex)) is listed beside it, and more
+GitHub is the first one. Codex (your ChatGPT sign in, see [Connecting Codex](/docs/codex)) is listed beside it, with [Claude Code](/docs/claude-code) (a subscription token or API key), and more
 services follow the same steps.
 
 Three steps take a connection from you to an agent:

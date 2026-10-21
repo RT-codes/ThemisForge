@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from .app_settings import AppSettings, load_settings
 from .config import DEFAULT_SECRET_KEY, settings
 from .docker_check import DockerStatus, check_docker, docker_env, run_command
-from .harness import plan_for
+from .harness import AGENT_HARNESSES, defaults_for
 from .migrate import _config, is_unknown_revision, too_new_message
 
 log = logging.getLogger(__name__)
@@ -159,17 +159,20 @@ def docker_check_result(docker: DockerStatus) -> Check:
 
 
 async def check_cell_image(cfg: AppSettings) -> Check:
-    """Is the image agents run in on the machine Docker runs on? A missing one is only a warning: Docker pulls an image
-    that lives in a registry by itself the first time it is needed."""
-    hp = plan_for("codex", cfg)
-    image = hp.image if hp else cfg.cell_image
-    code, _, _ = await run_command(["docker", "image", "inspect", image], docker_env(cfg.docker_host), 20)
-    if code == 0:
-        return Check("cell_image", OK, f"Cell image {image} is present")
+    """Are the images agents run in (one per harness) on the machine Docker runs on? A missing one is only a warning:
+    Docker pulls an image that lives in a registry by itself the first time it is needed."""
+    images = sorted({defaults_for(h, cfg)[0] for h in AGENT_HARNESSES})
+    missing = []
+    for image in images:
+        code, _, _ = await run_command(["docker", "image", "inspect", image], docker_env(cfg.docker_host), 20)
+        if code != 0:
+            missing.append(image)
+    if not missing:
+        return Check("cell_image", OK, f"Cell image {', '.join(images)} is present")
     return Check(
         "cell_image",
         WARN,
-        f"Cell image {image} is not on this machine yet",
+        f"Cell image {', '.join(missing)} is not on this machine yet",
         "Agents need it. Build it with ./themis build-images, or pick another image in Settings.",
     )
 

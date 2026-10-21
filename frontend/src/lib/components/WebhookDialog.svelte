@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { harnessLabel } from '$lib/boardView'
 	import { agentsApi, type Agent } from '$lib/api/agents'
 	import { ApiError } from '$lib/api/core'
 	import type { Workspace } from '$lib/api/projects'
@@ -77,7 +78,7 @@
 	const harness = $derived<Harness>(runWith.startsWith('agent:') ? 'codex' : (runWith as Harness))
 	const agentId = $derived(runWith.startsWith('agent:') ? Number(runWith.slice(6)) : null)
 	const runLabel = $derived(
-		agentId !== null ? (agents.find((a) => a.id === agentId)?.name ?? 'An agent that was deleted') : ({ '': 'Placeholder program', codex: 'Codex agent', workflow: 'Workflow' } as Record<Harness, string>)[harness],
+		agentId !== null ? (agents.find((a) => a.id === agentId)?.name ?? 'An agent that was deleted') : harnessLabel(harness),
 	)
 	const workflowName = (id: string) => workflows.find((w) => String(w.id) === id)?.name ?? (id ? 'Workflow' : 'Choose a workflow')
 
@@ -322,6 +323,7 @@
 								<Select.Content>
 									<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
 									<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+									<Select.Item value="claude" label="Claude Code agent">Claude Code agent</Select.Item>
 									<Select.Item value="workflow" label="Workflow">Workflow</Select.Item>
 									{#each agents as a (a.id)}<Select.Item value={`agent:${a.id}`} label={a.name}>{a.name}</Select.Item>{/each}
 								</Select.Content>

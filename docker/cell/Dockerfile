@@ -1,17 +1,24 @@
-# The cell image for Codex agents: Codex CLI plus the basics a coding agent expects.
-# Build it with: ./themis build-images
+# The cell image for agents: one agent CLI plus the basics a coding agent expects. The same file builds one image per
+# harness, chosen by AGENT (codex or claude), so the tools around the CLI stay identical and are kept in one place.
+# Build them with: ./themis build-images
 # uv (and uvx) come from Astral's own image, copied in below.
 ARG UV_VERSION=0.12.15
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 FROM node:22-bookworm-slim
 
+ARG AGENT=codex
 ARG CODEX_VERSION=0.160.1
+ARG CLAUDE_CODE_VERSION=2.1.306
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates ripgrep curl \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g "@openai/codex@${CODEX_VERSION}" \
+    && case "$AGENT" in \
+         codex) npm install -g "@openai/codex@${CODEX_VERSION}" ;; \
+         claude) npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" ;; \
+         *) echo "AGENT must be codex or claude" >&2; exit 1 ;; \
+       esac \
     && npm cache clean --force
 
 # The GitHub CLI, so an agent with a GitHub connection can work with issues and pull requests (git is above). It

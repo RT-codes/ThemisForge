@@ -94,7 +94,9 @@ async def test_agents_belong_to_their_projects_owner(client):
 async def test_the_editor_can_ask_what_harnesses_exist(client):
     await register(client)
     harnesses = (await client.get("/api/harnesses")).json()
-    assert [h["id"] for h in harnesses] == ["codex"] and harnesses[0]["label"] == "Codex"
+    assert [h["id"] for h in harnesses] == ["codex", "claude"]
+    assert [h["label"] for h in harnesses] == ["Codex", "Claude Code"]
+    assert harnesses[1]["default_model"] == "claude-sonnet-5-5" and harnesses[1]["models"]
 
 
 async def test_deleting_an_agent_keeps_its_tasks(client):

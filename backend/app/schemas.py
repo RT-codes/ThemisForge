@@ -5,6 +5,7 @@ from typing import Any, Literal, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from .automation import AutomationOverrides
+from .harness import AgentHarness
 from .models import AttemptStatus, ScheduleKind, TaskStatus
 from .profiles import ProfileOverrides
 from .properties import HEX_COLOR, PropertyDef
@@ -326,7 +327,7 @@ class TaskIn(_ScheduleFields):
     board_id: int | None = None  # left out: the project's first board
     properties: dict[str, Any] = Field(default_factory=dict)
     review_on_success: bool = False
-    harness: Literal["", "codex", "workflow"] = ""
+    harness: Literal["", AgentHarness, "workflow"] = ""
     # the workflows to play, in order, when harness is "workflow" (each is a stage of the task)
     workflow_ids: list[int] = Field(default_factory=list, max_length=MAX_STAGES)
     agent_id: int | None = None  # the agent that does it; its harness replaces the one above
@@ -383,7 +384,7 @@ class TaskPatch(BaseModel):
     cron: str | None = None
     run_at: AwareDatetime | None = None
     review_on_success: bool | None = None
-    harness: Literal["", "codex", "workflow"] | None = None
+    harness: Literal["", AgentHarness, "workflow"] | None = None
     workflow_ids: list[int] | None = Field(default=None, max_length=MAX_STAGES)
     agent_id: int | None = None
     cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)  # sent as null: the project's

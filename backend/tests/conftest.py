@@ -1,10 +1,11 @@
 import asyncio
 
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app import db
+from app import connections, db
 from app.cells import FakeCellManager
 from app.config import DEFAULT_SECRET_KEY, settings
 from app.main import app
@@ -159,3 +160,22 @@ def fresh_notification_repeats():
     from app import notifications
 
     notifications._recent.clear()
+
+
+SUBSCRIPTION = "sk-ant-oat01-subscription-token-0123456789"
+API_KEY = "sk-ant-api03-key-0123456789"
+
+
+@pytest.fixture
+def anthropic(monkeypatch):
+    """Stands in for api.anthropic.com (only API_KEY is accepted) and gives the app a real secret key, so a Claude
+    connection can be stored."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        ok = request.url.path == "/v1/models" and request.headers.get("x-api-key") == API_KEY
+        return httpx.Response(200, json={"data": []}) if ok else httpx.Response(401)
+
+    monkeypatch.setattr(
+        connections, "http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    )
+    monkeypatch.setattr(settings, "secret_key", "a-real-secret-key-for-tests-0123456789")

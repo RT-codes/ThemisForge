@@ -22,6 +22,7 @@ export interface ConnectionProvider {
   description: string
   icon: string // a Lucide icon name
   token_help: string
+  harness: string // the harness this is the login of ("claude"), used by all its agents instead of chosen per project
   methods: ConnectionMethod[]
   config_fields: ConnectionField[] // what a project sets on its connection
 }

@@ -22,8 +22,11 @@ export const SCHEDULE_CHOICES: { id: ScheduleKind; label: string }[] = [
 export const HARNESS_CHOICES: { id: Harness; label: string }[] = [
   { id: '', label: 'Placeholder program' },
   { id: 'codex', label: 'Codex agent' },
+  { id: 'claude', label: 'Claude Code agent' },
   { id: 'workflow', label: 'Workflow' },
 ]
+
+export const harnessLabel = (harness: Harness) => HARNESS_CHOICES.find((c) => c.id === harness)?.label ?? harness
 
 /** the value that stands for "this task has no value for the property" */
 export const NO_VALUE = ''
@@ -127,7 +130,7 @@ function parseFilters(v: unknown): Filters {
   }
   return {
     schedule: strings(o.schedule).filter((s): s is ScheduleKind => ['none', 'once', 'cron'].includes(s)),
-    harness: strings(o.harness).filter((s): s is Harness => ['', 'codex', 'workflow'].includes(s)),
+    harness: strings(o.harness).filter((s): s is Harness => ['', 'codex', 'claude', 'workflow'].includes(s)),
     props,
   }
 }

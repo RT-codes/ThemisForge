@@ -88,6 +88,13 @@ class Provider:
     device: ClassVar[DeviceFlow | None] = None
     config_fields: ClassVar[tuple[ConfigField, ...]] = ()
     env_names: ClassVar[tuple[str, ...]] = ()  # the variables the secret is available as in a cell
+    # The harness this is the login of ("" for a service). Such a connection is not chosen per project or agent: every
+    # run of an agent of that harness uses its owner's (see plan_for_run).
+    harness: ClassVar[str] = ""
+
+    def env_names_for(self, settings: dict[str, Any]) -> tuple[str, ...]:
+        """The variables this particular credential is exported as: usually all of `env_names`."""
+        return self.env_names
 
     def device_client_id(self, cfg: AppSettings) -> str:
         """The app id the code sign in needs, from Settings. Empty means the sign in is not set up yet."""
@@ -115,9 +122,10 @@ class Provider:
 
 
 def providers() -> dict[str, Provider]:
-    from .github import GitHub  # here, not at the top: a provider module imports this one
+    from .claude import ClaudeCode  # here, not at the top: a provider module imports this one
+    from .github import GitHub
 
-    return {p.id: p for p in (GitHub(),)}
+    return {p.id: p for p in (GitHub(), ClaudeCode())}
 
 
 def get_provider(provider_id: str) -> Provider:
@@ -198,20 +206,23 @@ class RunPlan:
     error: str = ""  # why the run cannot start
 
 
-async def plan_for_run(session: AsyncSession, project_id: int, agent: Agent | None) -> RunPlan:
-    """What the agent's opted-in connections give a run. A connection that is missing stops the run with a reason,
-    instead of running without what the agent was set up to have."""
+async def plan_for_run(
+    session: AsyncSession, project_id: int, agent: Agent | None, owner_id: int = 0, harness: str = ""
+) -> RunPlan:
+    """What the agent's opted-in connections give a run, and the login of its harness when that is a connection. A
+    connection that is missing stops the run with a reason, instead of running without what the agent was set up to
+    have."""
     plan = RunPlan()
-    if agent is None or not agent.connections:
-        return plan
     known = providers()
-    for provider_id in dict.fromkeys(agent.connections):
+    for provider_id in dict.fromkeys(agent.connections if agent else []):
         provider = known.get(provider_id)
         if provider is None:
             plan.error = (
                 f"The agent uses '{provider_id}', which Themis does not know. Check the agent's Connections."
             )
             return plan
+        if provider.harness:
+            continue  # a harness login comes with the harness, whatever the agent lists
         bound = await session.scalar(
             select(ProjectConnection).where(
                 ProjectConnection.project_id == project_id, ProjectConnection.provider == provider_id
@@ -228,7 +239,27 @@ async def plan_for_run(session: AsyncSession, project_id: int, agent: Agent | No
         plan.env.update(provider.plain_env(conn.settings, bound.config))
         if note := provider.agent_note(conn.account, bound.config):
             plan.notes.append(note)
+    login = next((p for p in known.values() if p.harness and p.harness == harness), None)
+    if login is not None:
+        conn = await harness_login(session, owner_id, login.id)
+        if conn is None:
+            plan.error = (
+                f"{login.name} is not connected. Connect it in Settings, Connections: "
+                f"{login.name} agents sign in with the account of whoever owns the project."
+            )
+        else:
+            plan.connections.append(RunConnection(login.id, conn.id, login.env_names_for(conn.settings)))
     return plan
+
+
+async def harness_login(session: AsyncSession, user_id: int, provider_id: str) -> Connection | None:
+    """The connection a user's runs of a harness sign in with: the one connected last, when there are several."""
+    return await session.scalar(
+        select(Connection)
+        .where(Connection.user_id == user_id, Connection.provider == provider_id)
+        .order_by(Connection.connected_at.desc())
+        .limit(1)
+    )
 
 
 async def secret_values(maker: async_sessionmaker[AsyncSession], used: list[RunConnection]) -> dict[str, str]:

@@ -219,9 +219,9 @@ async def test_a_run_fails_with_the_reason_when_a_skill_was_removed_from_disk(cl
 
 def test_the_built_in_themis_cell_skill_is_valid_and_matches_the_image():
     """Codex only lists a skill whose front matter has a name and a description, and the skill describes the image in
-    docker/cell-codex, so a browser that the Dockerfile stops installing must not stay in the text."""
+    docker/cell, so a browser that the Dockerfile stops installing must not stay in the text."""
     meta = store.parse_frontmatter(DEFAULT_SKILL)
     assert meta["name"] == "themis-cell" and meta["description"]
     assert len(meta["description"]) < 300  # always in the agent's context, so it stays one line
-    dockerfile = (Path(__file__).resolve().parents[2] / "docker" / "cell-codex" / "Dockerfile").read_text()
+    dockerfile = (Path(__file__).resolve().parents[2] / "docker" / "cell" / "Dockerfile").read_text()
     assert "chromium" in dockerfile and "/usr/bin/chromium" in DEFAULT_SKILL

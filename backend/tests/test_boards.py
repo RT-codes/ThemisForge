@@ -385,7 +385,7 @@ async def test_a_queued_task_keeps_its_schedule_and_a_parked_one_is_paused(clien
 async def test_a_running_task_cannot_be_moved(client, maker):
     from sqlalchemy import update
 
-    from app.models import Task
+    from app.persistence.models import Task
 
     await register(client)
     pid, _, second = await _two_boards(client)

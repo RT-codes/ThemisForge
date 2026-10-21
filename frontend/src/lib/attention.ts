@@ -1,4 +1,4 @@
-import type { Task } from './api'
+import type { Task } from './api/tasks'
 
 export type AttentionReason = 'Waiting for review' | 'Last run failed'
 

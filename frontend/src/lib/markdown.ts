@@ -98,7 +98,17 @@ export function renderMarkdown(markdown: string, options: RenderOptions = {}): R
   return { html, headings }
 }
 
-/** The click handler for the Copy buttons on rendered code blocks (set it on the element that holds the markdown). */
+/**
+ * `use:copyButtons` on the element that holds rendered markdown makes the Copy buttons of its code blocks work. The
+ * element is not a control: the buttons are inside the rendered HTML and are the ones a keyboard reaches (pressing one
+ * clicks it, and the click bubbles up to here). That is why this is one listener here and not an `onclick` in the markup.
+ */
+export function copyButtons(node: HTMLElement) {
+  node.addEventListener('click', onCodeCopyClick)
+  return { destroy: () => node.removeEventListener('click', onCodeCopyClick) }
+}
+
+/** The click handler for the Copy buttons on rendered code blocks (see `copyButtons`). */
 export async function onCodeCopyClick(e: MouseEvent) {
   const button = (e.target as Element).closest<HTMLButtonElement>('[data-copy]')
   if (!button) return

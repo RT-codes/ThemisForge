@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CellDefaults, ProfileOverrides } from '$lib/api'
+	import type { CellDefaults, ProfileOverrides } from '$lib/api/settings'
 	import ProfileFields from '$lib/components/ProfileFields.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { describeCell } from '$lib/cell'

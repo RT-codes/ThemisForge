@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { api, ApiError, type CellPackageInUse, type Skill } from '$lib/api'
+	import { agentsApi, type Skill } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import { settingsApi, type CellPackageInUse } from '$lib/api/settings'
+	import { volumesApi } from '$lib/api/volumes'
 	import { auth } from '$lib/auth.svelte'
 	import ConfigFilePane from '$lib/components/ConfigFilePane.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
@@ -49,16 +52,16 @@
 		dirty = paneDirty
 	})
 
-	// the Themis package every Codex agent gets: shown first, locked, so what the agent is given can be read here. It is
+	// the Themis package every agent gets: shown first, locked, so what the agent is given can be read here. It is
 	// changed in Settings (administrators), never per agent.
 	const BUILTIN = '@themis-cell' // a skill name cannot hold "@", so it never clashes with a project skill
 	let pkg = $state<CellPackageInUse | null>(null)
 	let builtinView = $state<'skill' | 'rules'>('skill')
 
 	onMount(async () => {
-		api.cellPackage().then((p) => (pkg = p)).catch(() => {}) // only the extra row is lost
+		settingsApi.cellPackage().then((p) => (pkg = p)).catch(() => {}) // only the extra row is lost
 		try {
-			volumeId = (await api.configFolder(projectId)).id
+			volumeId = (await volumesApi.configFolder(projectId)).id
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not open the config folder'
 		}
@@ -74,7 +77,7 @@
 		if (focus === null || volumeId === null) return void (files = [])
 		const name = focus
 		try {
-			const got = await api.listFiles(volumeId, joinPath('skills', name))
+			const got = await volumesApi.listFiles(volumeId, joinPath('skills', name))
 			if (name !== focus) return
 			const names = (got?.listing.entries ?? []).filter((e) => !e.is_dir).map((e) => e.name)
 			files = ['SKILL.md', ...names.filter((n) => n !== 'SKILL.md')]
@@ -89,7 +92,7 @@
 
 	async function reload() {
 		try {
-			skills = await api.skills(projectId)
+			skills = await agentsApi.skills(projectId)
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the skills'
 		}
@@ -124,7 +127,7 @@
 		}
 		busy = true
 		try {
-			await api.saveSkill(projectId, name, skillTemplate(name))
+			await agentsApi.saveSkill(projectId, name, skillTemplate(name))
 			await reload()
 			creating = false
 			toggled(name, true) // made for this agent, so it has it
@@ -144,7 +147,7 @@
 		doomed = null
 		if (!target) return
 		try {
-			await api.deleteSkill(projectId, target.name)
+			await agentsApi.deleteSkill(projectId, target.name)
 			if (focus === target.name) focus = null
 			paneDirty = false
 			onremoved(target.name)
@@ -173,7 +176,7 @@
 					</span>
 					<span class="min-w-0 flex-1">
 						<span class="block truncate font-mono text-sm font-medium">{pkg.skill_name}</span>
-						<span class="block truncate text-xs text-muted-foreground">{pkg.skill_enabled ? 'Built in, every Codex agent has it' : 'Built in, switched off in Settings'}</span>
+						<span class="block truncate text-xs text-muted-foreground">{pkg.skill_enabled ? 'Built in, every agent has it' : 'Built in, switched off in Settings'}</span>
 					</span>
 				</button>
 			</div>
@@ -195,8 +198,8 @@
 						<span class="block truncate text-xs text-muted-foreground">{skill.description || 'No description yet: open it to fix the file'}</span>
 					</span>
 				</button>
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-				<span class="flex cursor-default" onclick={(e) => e.stopPropagation()}><Switch checked={on} onCheckedChange={(v) => toggled(skill.name, v)} aria-label="Give the agent {skill.name}" /></span>
+				<!-- the row picks the skill when clicked: flipping the switch must not -->
+				<Switch checked={on} onCheckedChange={(v) => toggled(skill.name, v)} onclick={(e) => e.stopPropagation()} aria-label="Give the agent {skill.name}" />
 			</div>
 		{:else}
 			<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No skills yet. A skill is a short guide that agents read when a task calls for it.</p>
@@ -227,7 +230,7 @@
 				<div class="min-w-0 flex-1">
 					<p class="truncate font-mono text-sm font-medium">{pkg.skill_name}</p>
 					<p class="text-xs text-muted-foreground">
-						Built in and locked here: every Codex agent gets it, so it is the same for all of them.
+						Built in and locked here: every agent gets it, so it is the same for all of them.
 						{#if auth.user?.is_admin}
 							Edit or switch it off under <a class="text-primary hover:underline" href="/settings#package">Settings, Cell package</a>.
 						{:else}

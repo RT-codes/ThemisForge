@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Agent } from '$lib/api'
+	import { agentsApi, type Agent } from '$lib/api/agents'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { router } from '$lib/router.svelte'
 	import BotIcon from '@lucide/svelte/icons/bot'
@@ -18,7 +18,7 @@
 
 	async function load() {
 		try {
-			agents = await api.agents(projectId)
+			agents = await agentsApi.agents(projectId)
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the agents'

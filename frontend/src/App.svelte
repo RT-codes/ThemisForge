@@ -2,6 +2,10 @@
 	import { auth } from '$lib/auth.svelte'
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
 	import AppSidebar from '$lib/components/AppSidebar.svelte'
+	import ApprovalsPanel from '$lib/components/ApprovalsPanel.svelte'
+	import Toasts from '$lib/components/Toasts.svelte'
+	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check'
+	import { approvals } from '$lib/approvals.svelte'
 	import InviteScreen from '$lib/components/InviteScreen.svelte'
 	import PausedBanner from '$lib/components/PausedBanner.svelte'
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte'
@@ -43,6 +47,15 @@
 		}
 		tick()
 		const timer = setInterval(() => !document.hidden && tick(), 10_000)
+		return () => clearInterval(timer)
+	})
+
+	// Runs parked at an approval are polled faster than the rest: someone may be waiting for the toast. Signing out
+	// forgets them, so the next person to sign in is not shown (or toasted) the last one's approvals.
+	$effect(() => {
+		if (!auth.user) return approvals.reset()
+		approvals.refresh()
+		const timer = setInterval(() => !document.hidden && approvals.refresh(), 5_000)
 		return () => clearInterval(timer)
 	})
 
@@ -104,6 +117,17 @@
 						{/if}
 					{/each}
 				</nav>
+				{#if approvals.list.length}
+					<button
+						type="button"
+						class="ms-auto inline-flex shrink-0 items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-sm font-medium text-amber-600 transition-colors hover:bg-amber-500/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:text-amber-400"
+						onclick={() => approvals.show()}
+					>
+						<ShieldCheckIcon class="size-4" aria-hidden="true" />
+						<span class="hidden sm:inline">Approvals</span>
+						<span class="rounded-full bg-amber-500/25 px-1.5 text-xs tabular-nums" aria-label="{approvals.list.length} waiting">{approvals.list.length}</span>
+					</button>
+				{/if}
 			</header>
 			<PausedBanner />
 			<UpdateBanner />
@@ -164,4 +188,6 @@
 			</div>
 		</Sidebar.Inset>
 	</Sidebar.Provider>
+	<ApprovalsPanel />
+	<Toasts />
 {/if}

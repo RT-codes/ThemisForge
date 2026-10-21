@@ -1,6 +1,6 @@
 """Duplicating a task: the same request and the same way of running, parked in the Backlog, with none of its past."""
 
-from app.models import Task
+from app.persistence.models import Task
 from tests.conftest import make_project, make_task, register
 from tests.test_workflows import make_workflow
 

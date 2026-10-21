@@ -1,8 +1,12 @@
 <script lang="ts">
-	import { api, type Workspace, type Agent, type CellDefaults, type ProfileOverrides, type Project, type Volume } from '$lib/api'
+	import { agentsApi, type Agent, type HarnessInfo } from '$lib/api/agents'
+	import { projectsApi, type Project, type Workspace } from '$lib/api/projects'
+	import { settingsApi, type CellDefaults, type ProfileOverrides } from '$lib/api/settings'
+	import { volumesApi, type Volume } from '$lib/api/volumes'
 	import { boardChoices, customStatusChoices, whereChoices } from '$lib/boards'
 	import { effectiveCell } from '$lib/cell'
 	import CellChoice from '$lib/components/CellChoice.svelte'
+	import ModelPicker from '$lib/components/ModelPicker.svelte'
 	import MountsPicker from '$lib/components/MountsPicker.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -47,7 +51,7 @@
 	const Icon = $derived(nodeIcons[data.kind])
 	const fields = $derived(visibleFields(data.kind, data.config))
 	const mainFields = $derived(fields.filter((f) => !f.advanced))
-	const advancedFields = $derived(fields.filter((f) => f.advanced && !CELL_KEYS.includes(f.key)))
+	const advancedFields = $derived(fields.filter((f) => f.advanced && !CELL_KEYS.includes(f.key) && !MODEL_KEYS.includes(f.key)))
 	// the Advanced tab: what happens when the step fails comes first, then the cell and folders of this one step
 	const behaviourFields = $derived(advancedFields.filter((f) => f.type !== 'mounts'))
 	const folderFields = $derived(advancedFields.filter((f) => f.type === 'mounts'))
@@ -59,18 +63,20 @@
 	let project = $state<Project | null>(null)
 	let defaults = $state<CellDefaults | null>(null)
 	let volumes = $state<Volume[]>([])
+	let harnesses = $state<HarnessInfo[]>([]) // the models of each harness and what an empty model means
 	// Trigger and Task steps pick statuses and boards of the project: the seven built-in statuses plus the custom ones
 	// (each belongs to one board), and the boards themselves
 	let workspaces = $state<Workspace[]>([])
 	let boardsLoaded = $state(false)
 	onMount(async () => {
 		if (data.kind === 'trigger' || data.kind === 'task') {
-			api.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
+			projectsApi.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
 		}
-		if (data.kind === 'agent' || data.kind === 'volume') api.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
+		if (data.kind === 'agent' || data.kind === 'volume') volumesApi.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
 		if (data.kind !== 'agent') return
+		agentsApi.harnesses().then((h) => (harnesses = h)).catch(() => {}) // without it the picker only knows the current model
 		try {
-			;[agents, project, defaults] = await Promise.all([api.agents(projectId), api.project(projectId), api.systemStatus().then((s) => s.cell_defaults)])
+			;[agents, project, defaults] = await Promise.all([agentsApi.agents(projectId), projectsApi.project(projectId), settingsApi.systemStatus().then((s) => s.cell_defaults)])
 		} catch {
 			// the picker then only offers "no agent", and the cell is described without numbers
 		} finally {
@@ -81,6 +87,8 @@
 	// The cell of this step is automatic (the agent's, which is the project's, which is the default) until customised.
 	// The node keeps it as four plain text settings, like everything else on a node.
 	const CELL_KEYS = ['cellCpus', 'cellMemory', 'cellTimeout', 'cellImage']
+	// the model and effort of this step: empty means the agent's own, or Settings when no agent is chosen
+	const MODEL_KEYS = ['model', 'reasoningEffort']
 	const readCell = (c: Record<string, string>): ProfileOverrides | null => {
 		const out: ProfileOverrides = {}
 		if (c.cellCpus) out.cpus = Number(c.cellCpus)
@@ -139,10 +147,10 @@
 	// the tabs: a node with nothing advanced has no tabs at all. A dot on the Advanced tab says something in there has been
 	// changed from its default (a custom cell, extra folders, a failure rule other than stopping), since it is out of sight.
 	let tab = $state('settings')
-	const hasAdvanced = $derived(advancedFields.length > 0 || fields.some((f) => CELL_KEYS.includes(f.key)))
+	const hasAdvanced = $derived(advancedFields.length > 0 || fields.some((f) => CELL_KEYS.includes(f.key) || MODEL_KEYS.includes(f.key)))
 	const advancedChanged = $derived.by(() => {
 		const base = defaultConfig(data.kind)
-		return cell !== null || advancedFields.some((f) => (data.config[f.key] ?? '') !== (base[f.key] ?? ''))
+		return cell !== null || MODEL_KEYS.some((k) => !!data.config[k]) || advancedFields.some((f) => (data.config[f.key] ?? '') !== (base[f.key] ?? ''))
 	})
 	// a Task step on a chosen board, or a Trigger on one board, only offers that board's own statuses
 	const chosenBoardId = $derived.by(() => {
@@ -151,6 +159,11 @@
 		return isBoard && /^\d+$/.test(wanted) ? Number(wanted) : null
 	})
 	const chosenAgent = $derived(agents.find((a) => String(a.id) === data.config.agentId))
+	// the harness this step runs with: its agent's, else the one the node names (Codex when it names none)
+	const harness = $derived(harnesses.find((x) => x.id === (chosenAgent?.harness || data.config.harness || 'codex')) ?? null)
+	// what an empty model and effort resolve to here: the agent's, which falls back to the ones in Settings
+	const inheritedModel = $derived(chosenAgent?.model || harness?.default_model || '')
+	const inheritedEffort = $derived(chosenAgent?.reasoning_effort || harness?.default_effort || '')
 	const inheritedCell = $derived(defaults ? effectiveCell(defaults, project?.cell_profile, chosenAgent?.cell_profile) : null)
 </script>
 
@@ -245,6 +258,26 @@
 				{#each behaviourFields as f (f.key)}
 					{@render field(f)}
 				{/each}
+				{#if fields.some((f) => MODEL_KEYS.includes(f.key))}
+					<div class="grid grid-cols-[minmax(0,1fr)] gap-4 border-t pt-4 first:border-t-0 first:pt-0">
+						<div class="grid gap-0.5">
+							<p class="text-sm font-medium">Model</p>
+							<p class="text-xs text-muted-foreground">Only for this step. Leave them on the default to use {chosenAgent ? "the agent's own" : 'the ones in Settings'}.</p>
+						</div>
+						<ModelPicker
+							models={harness?.models ?? []}
+							model={data.config.model ?? ''}
+							effort={data.config.reasoningEffort ?? ''}
+							onchange={(model, reasoningEffort) => onchange({ config: { ...data.config, model, reasoningEffort } })}
+							{inheritedModel}
+							{inheritedEffort}
+							inheritLabel={chosenAgent ? "From the agent" : 'From Settings'}
+							prefix="node-{id}"
+							modelIcon={fieldIcons.model}
+							effortIcon={fieldIcons.reasoningEffort}
+						/>
+					</div>
+				{/if}
 				<div class="grid grid-cols-[minmax(0,1fr)] gap-4 border-t pt-4 first:border-t-0 first:pt-0">
 					<div class="grid gap-0.5">
 						<p class="text-sm font-medium">Cell and folders</p>

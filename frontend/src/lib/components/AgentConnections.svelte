@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type ConnectionProvider, type ProjectConnection } from '$lib/api'
+	import { connectionsApi, type ConnectionProvider, type ProjectConnection } from '$lib/api/connections'
 	import { router } from '$lib/router.svelte'
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
@@ -20,7 +20,7 @@
 
 	onMount(async () => {
 		try {
-			const [list, used] = await Promise.all([api.connections(), api.projectConnections(projectId)])
+			const [list, used] = await Promise.all([connectionsApi.connections(), connectionsApi.projectConnections(projectId)])
 			services = list.providers.filter((p) => p.category === 'service')
 			bound = used
 		} finally {

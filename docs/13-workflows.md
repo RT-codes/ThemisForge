@@ -39,6 +39,7 @@ move them all together. **Esc** lets go of the selection.
 | **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). It can work on a chosen **board**: create the task there, or send the moved task there. A created task can be a **follow-up** of the task that started the run. A task that becomes **Ready** runs like any other task and the node waits for it. |
 | **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task behind the run: the task that started it, or the task it is a stage of (its title and description). That is how a ticket steers a workflow, see [Steering a run from the task](#steering-a-run-from-the-task). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
+| **Approval** | Parks the run until a person approves or rejects. See [Approvals](#approvals-waiting-for-a-person). |
 | **Splitter** | Sends the run down 2 to 4 **branches** that run at the same time. Each branch can have a rule: only when the result contains some text, and only some of the files. See [Branches](#branches-running-side-by-side). |
 | **Merger** | Waits for its branches, then carries on once with all of them: their results in one text and their working folders side by side. See [Branches](#branches-running-side-by-side). |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
@@ -76,7 +77,10 @@ Pick an **agent** and write the **instructions** for this step. The agent's own 
 and what you write here is the task it is given. With **No agent** the node runs a plain Codex agent, as before.
 
 The window of an Agent node has two tabs. **Settings** holds the name, the agent and what it should do. **Advanced** holds
-**If it fails** (stop the whole workflow, the default, or carry on to the next step) and **Cell and folders**: a step can
+**If it fails** (stop the whole workflow, the default, or carry on to the next step), **Model** and **Cell and folders**.
+**Model** picks another model and reasoning effort for this one step; left on the default, the step uses the agent's own
+(or the ones in Settings when no agent is chosen). The efforts offered follow the model. If the agent asks for an effort the
+step's model does not have, the model's own default effort is used instead. A step can
 change the cell size or mount extra [shared folders](/docs/cells#shared-folders) (or join Folder nodes to it, see below) for
 this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press
 **Customise**. A dot on the Advanced tab tells you something in there is not at its default. Nodes with nothing advanced
@@ -153,6 +157,40 @@ it up. It then carries on with:
   other, and are drawn **in amber** with a note; put a Splitter or a Merger there to say what you mean.
 - A workflow that nests other workflows (a Task node that runs a task that plays a workflow) counts against the same
   limit of workflows playing at once as before; many parallel branches that each start one use it up faster.
+
+## Approvals: waiting for a person
+
+An **Approval** node stops the run at that point and waits for you. It is how a workflow can be allowed to do something
+that matters, such as publishing a listing or sending a message, without doing it unseen.
+
+- **What to approve** is the question you write in the node. Next to it you are shown what the step before produced, so
+  you decide on the real thing.
+- **Approve** carries on down the line. What the step before produced passes on unchanged.
+- **Reject** fails the node, and the run with it, with your note as the reason. Nothing after the Approval node runs.
+- The first answer stands. Whatever the note says is kept in the node's log, with who answered.
+
+A run that waits is not stuck. It holds no cell and costs no budget, and other branches go on meanwhile.
+
+### Where you answer
+
+- A **toast** appears in the corner of the page when a run reaches an Approval node. Click it to open that approval
+  straight away. It goes away by itself after a while (and waits while the pointer is on it), but the approval is still
+  there.
+- The **Approvals** button in the top bar shows how many are waiting. It is there whenever something waits, and opens the
+  list. Each entry unfolds to show the question, the result to approve, and a note field.
+- A project's **Needs attention** card lists its waiting approvals first.
+- On the **Runs** tab the waiting node unfolds on its own, with a button that opens the same answer panel. On the canvas of
+  a test run the node holds a steady amber ring.
+
+### Restarts
+
+A run waiting at an Approval node **survives a restart** of Themis, and an answer given before or after one counts. What
+does not survive is anything else that was in motion: a step that was running next to it fails with "Themis restarted",
+the run ends as failed in the end, and only the part of the workflow **below** the Approval node carries on.
+
+This holds for runs started by a trigger or by hand. A workflow that a **task plays** (a stage, or a Task node that runs a
+task) ends with that task's attempt when Themis restarts, waiting approval included, so keep an Approval node in workflows
+that start from a trigger.
 
 ## How a run works
 
@@ -248,8 +286,10 @@ Nodes that failed unfold on their own. Nodes the run never reached are listed un
 reason: a failed node before it, the other side of a condition, or no line leading to it.
 
 Node results open as formatted Markdown, with clickable web links and **Copy** buttons on code blocks. Switch to
-**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Selecting
-another run opens its results in Rendered view.
+**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Use **Enlarge result**
+for a wide reading window with more room for reports, tables and code. You can switch views there too; closing the window
+keeps your chosen view. Press **Esc** or the close button to return to the node. Selecting another run opens its results
+in Rendered view.
 
 A run that is still going can be cancelled; this also stops the container its current task is running in.
 

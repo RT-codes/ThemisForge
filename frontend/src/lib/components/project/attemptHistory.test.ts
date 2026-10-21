@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Attempt, AttemptDetail } from '../../api.ts'
+import type { Attempt, AttemptDetail } from '../../api/tasks.ts'
 import { createAttemptHistory } from './attemptHistory.ts'
 
 const attempt = (id: number): Attempt => ({
@@ -91,4 +91,57 @@ test('refresh failures keep loaded content with an error until a successful retr
 	failDetail = false
 	await history.select(1)
 	assert.equal(history.state.detailError, false)
+})
+
+test('a polling refresh does not restart a selection that is still loading', async () => {
+	const pending = deferred<AttemptDetail>()
+	const calls: number[] = []
+	const history = createAttemptHistory(() => 1, {
+		attempts: async () => [attempt(2), attempt(1)],
+		attempt: async (id) => { calls.push(id); return id === 1 ? pending.promise : detail(id) },
+	}, () => {})
+	await history.load()
+	const selecting = history.select(1)
+	await history.load()
+	assert.deepEqual(calls, [2, 1])
+	assert.equal(history.state.detailLoading, true)
+	pending.resolve(detail(1))
+	await selecting
+	assert.equal(history.state.detail?.id, 1)
+})
+
+test('disposing ignores late responses and prevents new requests', async () => {
+	const pending = deferred<Attempt[]>()
+	let calls = 0
+	let updates = 0
+	const history = createAttemptHistory(() => 1, {
+		attempts: async () => { calls++; return pending.promise },
+		attempt: async (id) => { calls++; return detail(id) },
+	}, () => { updates++ })
+	const loading = history.load()
+	history.dispose()
+	const before = updates
+	pending.resolve([attempt(1)])
+	await loading
+	await history.load()
+	await history.select(1)
+	assert.equal(updates, before)
+	assert.equal(calls, 1)
+})
+
+test('a failed list remains an error while Retry is pending', async () => {
+	const pending = deferred<Attempt[]>()
+	let fail = true
+	const history = createAttemptHistory(() => 1, {
+		attempts: async () => { if (fail) throw new Error('offline'); return pending.promise },
+		attempt: async (id) => detail(id),
+	}, () => {})
+	await history.load()
+	fail = false
+	const retrying = history.load()
+	assert.equal(history.state.listError, true)
+	assert.equal(history.state.listLoading, true)
+	pending.resolve([])
+	await retrying
+	assert.equal(history.state.listError, false)
 })

@@ -3,8 +3,9 @@ latest output, however long the run goes."""
 
 import json
 
-from app.harness import CodexRenderer, trim_output
-from app.scheduler import LOG_HEAD_CHARS, MAX_LOG_CHARS, _LogBuffer
+from app.execution.harnesses.codex import CodexRenderer
+from app.execution.harnesses.rendering import trim_output
+from app.execution.logs import LOG_HEAD_CHARS, MAX_LOG_CHARS, _LogBuffer
 
 
 def ev(**kw) -> str:

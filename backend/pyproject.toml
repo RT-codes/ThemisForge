@@ -1,6 +1,6 @@
 [project]
 name = "backend"
-version = "0.2.2"
+version = "0.3.0"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.142.2",
     "greenlet>=3.5.6",
     "httpx>=0.28.1",
+    "mcp>=2.3.0",
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.15.0",
     "pyjwt>=2.15.1",
@@ -30,6 +31,12 @@ dev = [
 
 [tool.ruff]
 line-length = 110
+
+[tool.ruff.lint]
+# On top of ruff's defaults: likely bugs (B), modern syntax (UP), simplifications (SIM, C4, RET).
+# PTH (use pathlib) is left out on purpose: os.replace/os.rename for atomic writes and
+# os.symlink in the cell and workflow code are clearer than their Path twins.
+extend-select = ["B", "UP", "SIM", "C4", "RET"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

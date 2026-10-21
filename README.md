@@ -14,11 +14,15 @@ For example: *"Every morning, research the news in my field and write me a short
 
 - **Give agents jobs.** Say what should be done and when: right now, at a set time, or every day.
 
-- **Keep work organised.** Each project has its own agents, tasks and files. Tasks show up on a board, a list or a timeline.
+- **Keep work organised.** Each project has its own agents, tasks and files, split into workspaces with one or more boards of their own. Tasks show up on a board, a list or a timeline.
 
 - **Build a small team.** Give each agent a role and instructions. Add **skills** (how-to guides it can follow), **tools** (extra abilities, such as working with files) and **keys** (access to services it needs). Agents, skills and tools are plain files in the project's config folder that you can read and edit.
 
-- **Chain steps together.** Draw a **workflow**, like a flowchart, where one agent's result feeds the next step.
+- **Chain steps together.** Draw a **workflow**, like a flowchart, where one agent's result feeds the next step, or several agents work side by side and their results are merged.
+
+- **Let the outside world start work.** Give a project a **webhook** and a shop order, a GitHub issue or a script of your own becomes a task, set up the way you choose.
+
+- **Hear about it.** Connect a Discord channel and Themis messages you when a task fails or something waits for your approval.
 
 - **Share files safely.** Agents hand files to each other through shared folders, and you choose which folders they may read or change.
 

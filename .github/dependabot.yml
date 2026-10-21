@@ -1,0 +1,46 @@
+# Keeps dependencies from drifting. Dependabot opens one pull request a week per ecosystem for all minor and patch
+# updates together, and a separate pull request for each major one, so a major bump is reviewed (and can fail CI) on its
+# own. CI installs with locked files, so every pull request carries its lockfile change.
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      backend:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        update-types: [minor, patch]
+    ignore:
+      # svelte-check cannot check with TypeScript 7 yet except through an experimental flag that covers fewer files
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # the types should follow the Node that CI and the cell image run (22), or they allow APIs that Node lacks
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  # The base image of the agent cells. A new major version of Node changes what every agent runs on, so that is chosen by
+  # hand (the uv, Codex and Claude Code versions are build arguments, bumped by hand in the same file).
+  - package-ecosystem: docker
+    directory: /docker/cell
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

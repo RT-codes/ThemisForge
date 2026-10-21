@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
+	import { settingsApi, type CellDefaults, type ProfileOverrides } from '$lib/api/settings'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import GuardFields from '$lib/components/GuardFields.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -19,7 +21,7 @@
 	let justSaved = $state(false)
 
 	onMount(() => {
-		api.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
+		settingsApi.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
 	})
 
 	const guard = () => (cooldown === null && hops === null ? null : { start_cooldown_seconds: cooldown, max_hops: hops })
@@ -32,7 +34,7 @@
 		error = ''
 		saving = true
 		try {
-			await api.updateProject(project.id, { cell_profile: profile, automation: guard() })
+			await projectsApi.updateProject(project.id, { cell_profile: profile, automation: guard() })
 			onsaved()
 			justSaved = true
 			setTimeout(() => (justSaved = false), 2500)

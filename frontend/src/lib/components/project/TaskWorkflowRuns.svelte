@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type RunStatus, type TaskWorkflowRunSummary } from '$lib/api'
+	import { workflowsApi, type RunStatus, type TaskWorkflowRunSummary } from '$lib/api/workflows'
 	import { dateTime } from '$lib/format'
 	import { cn } from '$lib/utils'
 	import WorkflowIcon from '@lucide/svelte/icons/workflow'
@@ -11,7 +11,7 @@
 
 	async function load() {
 		try {
-			runs = await api.taskWorkflowRuns(taskId)
+			runs = await workflowsApi.taskWorkflowRuns(taskId)
 		} catch {
 			// transient: the next poll retries
 		}

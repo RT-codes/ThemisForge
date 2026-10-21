@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Board as BoardInfo, type Workspace } from '$lib/api'
+	import { projectsApi, type Board as BoardInfo, type Workspace } from '$lib/api/projects'
 	import { columnsOf, defaultBoard, findBoard, workspaceOf } from '$lib/boards'
 	import { watchersByStatus } from '$lib/workflow'
 	import { BoardViewStore } from '$lib/boardView.svelte'
@@ -95,7 +95,7 @@
 
 	async function duplicate() {
 		if (!board) return
-		const copy = await api.duplicateBoard(board.id)
+		const copy = await projectsApi.duplicateBoard(board.id)
 		await desk.reload()
 		router.navigate(`/projects/${id}/boards/${copy.id}`)
 	}

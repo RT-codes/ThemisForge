@@ -4,8 +4,9 @@ import asyncio
 
 from sqlalchemy import select, update
 
-from app.models import Task
-from app.workflows import Graph, WorkflowRunner, _Ctx
+from app.features.workflows.graph import Graph
+from app.features.workflows.runner import WorkflowRunner, _Ctx
+from app.persistence.models import Task
 from tests.conftest import drain, make_task, register
 from tests.test_workflows import (
     by_id,
@@ -167,7 +168,7 @@ async def test_a_step_makes_its_task_once(client, runner, maker):
 
     graph = Graph.model_validate({"nodes": nodes, "edges": [edge("s", "m")]})
     again = WorkflowRunner(maker, lambda: None)
-    outcome = await again._task(
+    outcome = await again.nodes._task(
         _Ctx(detail["id"], pid, graph), by_id(detail)["m"]["id"], next(n for n in graph.nodes if n.id == "m")
     )
     assert outcome.status == "succeeded"
@@ -216,13 +217,13 @@ async def test_automation_stops_at_the_hop_limit_and_says_why(client, runner, ma
 
     await set_hops(maker, task["id"], 2)  # handled twice in a row: one more is allowed
     await put_in_review(maker, task["id"])
-    await runner._fire([(pid, task["id"], "review")])
+    await runner.triggers._fire([(pid, task["id"], "review")])
     (first_run,) = await wait_for_runs(client, wid, 1)
     assert (await wait_for_run(client, first_run["id"]))["status"] == "succeeded"
     assert (await task_of(client, task["id"]))["hops"] == 3
 
     await put_in_review(maker, task["id"])  # and now the limit is reached
-    await runner._fire([(pid, task["id"], "review")])
+    await runner.triggers._fire([(pid, task["id"], "review")])
     runs = await wait_for_runs(client, wid, 2)
     detail = await wait_for_run(client, runs[0]["id"])
     error = by_id(detail)["m"]["error"]
@@ -265,7 +266,7 @@ async def test_a_task_can_have_a_hop_limit_of_its_own(client, runner, maker):
     assert task["max_hops"] == 1 and task["hops"] == 0
     await set_hops(maker, task["id"], 1)
     await put_in_review(maker, task["id"])
-    await runner._fire([(pid, task["id"], "review")])
+    await runner.triggers._fire([(pid, task["id"], "review")])
     (started,) = await wait_for_runs(client, wid, 1)
     detail = await wait_for_run(client, started["id"])
     assert detail["status"] == "failed" and "limit is 1" in by_id(detail)["m"]["error"]
@@ -273,9 +274,9 @@ async def test_a_task_can_have_a_hop_limit_of_its_own(client, runner, maker):
 
 async def test_the_limit_comes_from_the_task_then_the_project_then_the_settings(client):
     await register(client)
-    from app.app_settings import AppSettings
-    from app.automation import hop_limit, start_cooldown
-    from app.models import Project
+    from app.features.projects.automation import hop_limit, start_cooldown
+    from app.features.system.settings import AppSettings
+    from app.persistence.models import Project
 
     cfg = AppSettings(max_automation_hops=7, start_cooldown_seconds=5)
     task = Task(max_hops=None, cooldown_seconds=None)

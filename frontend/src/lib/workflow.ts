@@ -1,4 +1,4 @@
-export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'end' | 'volume' | 'split' | 'merge'
+export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'approval' | 'end' | 'volume' | 'split' | 'merge'
 
 export type NodeKindInfo = {
   kind: NodeKind
@@ -25,6 +25,7 @@ export const NODE_KINDS: NodeKindInfo[] = [
   { kind: 'task', label: 'Task', description: 'Creates, moves or runs a task', hasInput: true, hasOutput: true },
   { kind: 'agent', label: 'Agent', description: 'Runs an agent', hasInput: true, hasOutput: true, mountIn: true },
   { kind: 'condition', label: 'Condition', description: 'Branches on a check: yes or no', hasInput: true, hasOutput: true, outputs: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+  { kind: 'approval', label: 'Approval', description: 'Waits for a person to approve or reject before the run goes on', hasInput: true, hasOutput: true },
   { kind: 'split', label: 'Splitter', description: 'Sends the run down several branches that run at the same time', hasInput: true, hasOutput: true, branching: 'out' },
   { kind: 'merge', label: 'Merger', description: 'Waits for its branches, then carries on with all of them together', hasInput: true, hasOutput: true, branching: 'in' },
   { kind: 'end', label: 'End', description: 'Finishes the workflow', hasInput: true, hasOutput: false },
@@ -83,13 +84,16 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
   ],
   agent: [
     // the options of agentId are the project's agents: the panel fills them in, this one is always there
-    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: plain Codex']) },
-    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent']), when: { key: 'agentId', oneOf: [''] } },
+    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: a plain one, chosen below']) },
+    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent'], ['claude', 'Claude Code agent']), when: { key: 'agentId', oneOf: [''] } },
     { key: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'What should the agent do?' },
     { key: 'brief', label: 'Include task title and description', type: 'toggle', hint: "Added to this step's instructions. Turn it off for housekeeping steps, like syncing or publishing." },
     { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue works in the folder of the step before this one (or of the stage before this workflow), and is told what that step changed. Without anything before it, the agent gets a fresh folder.' },
     // the Advanced tab: most steps should simply stop the workflow
     { key: 'onFailure', label: 'If it fails', type: 'select', advanced: true, options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on']) },
+    // the model and effort are drawn as one picker whose efforts follow the model (see ModelPicker.svelte); empty means the agent's own
+    { key: 'model', label: 'Model', type: 'text', advanced: true },
+    { key: 'reasoningEffort', label: 'Reasoning effort', type: 'text', advanced: true },
     { key: 'cellCpus', label: 'CPUs', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellMemory', label: 'Memory (MB)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellTimeout', label: 'Time limit (seconds)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
@@ -100,6 +104,9 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'source', label: 'Check', type: 'select', options: opts(['result', 'The previous result'], ['status', 'The previous status']) },
     { key: 'operator', label: 'Is', type: 'select', options: opts(['contains', 'contains'], ['equals', 'equal to'], ['not_equals', 'not equal to'], ['empty', 'empty']) },
     { key: 'value', label: 'Value', type: 'text', when: { key: 'operator', oneOf: ['contains', 'equals', 'not_equals'] } },
+  ],
+  approval: [
+    { key: 'prompt', label: 'What to approve', type: 'textarea', placeholder: 'Publish this listing?', hint: 'Shown with the result of the step before, which passes on unchanged when someone approves. Rejecting stops this branch and fails the run, with their note as the reason.' },
   ],
   volume: [
     // the options of volumeId are the project's folders: the panel fills them in
@@ -167,6 +174,8 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
       return c.instructions.trim() ? c.instructions.trim().split('\n')[0] : 'No instructions yet'
     case 'condition':
       return c.operator === 'empty' ? `${optionLabel('condition', 'source', c)} is empty` : `${optionLabel('condition', 'source', c)} ${optionLabel('condition', 'operator', c)} ${c.value || '...'}`
+    case 'approval':
+      return c.prompt?.trim() ? c.prompt.trim().split('\n')[0] : 'Waits for a person'
     case 'end':
       return `Ends as ${c.outcome}`
     case 'volume':
@@ -350,14 +359,14 @@ export const nextNodeNumber = (ids: string[]) => ids.reduce((max, id) => Math.ma
 
 /** the graph a new workflow starts with: just where a run begins */
 /** The steps of a graph that are given instructions (its Agent nodes), with who does each: for a ticket to show what its
- * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs plain Codex. */
+ * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs a plain agent of the harness it names (Codex by default). */
 export function agentSteps(graph: Graph, agents: { id: number; name: string }[]) {
   return graph.nodes
     .filter((n) => n.kind === 'agent')
     .map((n) => ({
       nodeId: n.id,
       label: n.label.trim() || 'Agent',
-      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? 'Plain Codex',
+      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? (n.config.harness === 'claude' ? 'Plain Claude Code' : 'Plain Codex'),
       instructions: (n.config.instructions ?? '').trim(),
     }))
 }

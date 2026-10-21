@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { api, type WorkflowRunDetail } from '$lib/api'
+	import { workflowsApi, type WorkflowRunDetail } from '$lib/api/workflows'
 	import { stageTrack, type TrackNode, type TrackState } from '$lib/stageTrack'
 	import { cn } from '$lib/utils'
 	import BanIcon from '@lucide/svelte/icons/ban'
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
+	import HourglassIcon from '@lucide/svelte/icons/hourglass'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import { onMount, untrack } from 'svelte'
 
@@ -21,6 +22,7 @@
 	const chip: Record<TrackState, string> = {
 		done: 'border-emerald-400/40',
 		running: 'border-primary bg-primary/10 ring-1 ring-primary/40',
+		waiting: 'border-amber-400/60 bg-amber-500/10',
 		failed: 'border-destructive/60 text-destructive',
 		cancelled: 'text-muted-foreground',
 		upcoming: 'border-dashed text-muted-foreground',
@@ -29,14 +31,15 @@
 	const chipIcon: Partial<Record<TrackState, typeof CircleCheckIcon>> = {
 		done: CircleCheckIcon,
 		running: LoaderCircleIcon,
+		waiting: HourglassIcon,
 		failed: CircleXIcon,
 		cancelled: BanIcon,
 	}
-	const chipTone: Partial<Record<TrackState, string>> = { done: 'text-emerald-400', running: 'text-primary' }
+	const chipTone: Partial<Record<TrackState, string>> = { done: 'text-emerald-400', running: 'text-primary', waiting: 'text-amber-400' }
 
 	async function load(id: number) {
 		try {
-			const fresh = await api.workflowRun(id)
+			const fresh = await workflowsApi.workflowRun(id)
 			if (id === runId) detail = fresh // a slow answer for a run that is no longer the one shown is dropped
 		} catch {
 			// transient: the next poll retries

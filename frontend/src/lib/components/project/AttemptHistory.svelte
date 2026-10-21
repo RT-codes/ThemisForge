@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type AttemptStatus } from '$lib/api'
+	import { tasksApi, type AttemptStatus } from '$lib/api/tasks'
 	import { attemptLabel, dateTime, duration } from '$lib/format'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import FailureNote from './FailureNote.svelte'
@@ -17,7 +17,7 @@
 	let { taskId, taskStatus, projectId }: { taskId: number; taskStatus: string; projectId: number } = $props()
 
 	let history = $state(initialAttemptHistory)
-	const controller = createAttemptHistory(() => taskId, api, (next) => (history = next))
+	const controller = createAttemptHistory(() => taskId, tasksApi, (next) => (history = next))
 
 	const icons: Record<AttemptStatus, typeof CircleCheckIcon> = {
 		running: LoaderCircleIcon,

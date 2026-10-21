@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Volume } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { volumesApi, type Volume } from '$lib/api/volumes'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import VolumeControls from '$lib/components/VolumeControls.svelte'
@@ -26,7 +27,7 @@
 
 	async function load() {
 		try {
-			volumes = await api.volumes(projectId)
+			volumes = await volumesApi.volumes(projectId)
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the folders'
@@ -49,7 +50,7 @@
 
 	async function change(v: Volume, patch: { mode?: 'ro' | 'rw'; exclusive_write?: boolean }) {
 		try {
-			await api.updateVolume(v.id, patch)
+			await volumesApi.updateVolume(v.id, patch)
 			await load()
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not change the folder'
@@ -61,7 +62,7 @@
 		confirmOpen = false
 		if (!target) return
 		try {
-			await api.deleteVolume(target.id)
+			await volumesApi.deleteVolume(target.id)
 			await load()
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not remove the folder'

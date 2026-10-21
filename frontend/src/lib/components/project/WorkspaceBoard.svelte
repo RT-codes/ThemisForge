@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Board as BoardInfo } from '$lib/api'
+	import type { Board as BoardInfo } from '$lib/api/projects'
 	import { MIN_BOARD_HEIGHT, clampHeight, columnsOf, statusTone } from '$lib/boards'
 	import StatusIcon from '$lib/components/StatusIcon.svelte'
 	import AnvilIcon from '@lucide/svelte/icons/anvil'

@@ -6,8 +6,8 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.cells import CellSpec
-from app.models import Task, utcnow
+from app.execution.cells.contract import CellResult, CellSpec
+from app.persistence.models import Task, utcnow
 from tests.conftest import drain, make_project, make_task, register
 from tests.test_harness import connect
 from tests.test_workflows import attempt_of, edge, make_workflow, node, play_task, save, setup
@@ -31,7 +31,7 @@ def hold_cells(cells, monkeypatch) -> asyncio.Event:
     async def forever(spec: CellSpec, on_log):
         await on_log("working\n")
         await gate.wait()
-        return type("R", (), {"exit_code": 0, "result": "", "writeback": {}})()
+        return CellResult(exit_code=0)
 
     monkeypatch.setattr(cells, "run", forever)
     return gate
@@ -234,8 +234,8 @@ async def test_halt_stops_a_task_playing_workflows_and_the_cell_under_it(
     async with maker() as s:
         step = await s.scalar(select(Task).where(Task.title == "Slow step"))
         assert step is not None and step.status != "running"
-    assert not scheduler._live
+    assert not scheduler.runs.live
 
 
 def cells_started(cells, scheduler) -> bool:
-    return any(live.cell for live in scheduler._live.values())
+    return any(live.cell for live in scheduler.runs.live.values())

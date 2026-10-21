@@ -1,4 +1,4 @@
-import type { Attempt, AttemptDetail } from '$lib/api'
+import type { Attempt, AttemptDetail } from '$lib/api/tasks'
 
 export interface AttemptHistoryState {
 	attempts: Attempt[]
@@ -41,6 +41,7 @@ export function createAttemptHistory(
 	}
 
 	async function select(id: number) {
+		if (!active) return
 		const request = ++detailRequest
 		// A refresh can keep the selected result visible; a different selection cannot.
 		update({ selectedId: id, detail: state.selectedId === id ? state.detail : null, detailLoading: true, detailError: false })
@@ -57,20 +58,20 @@ export function createAttemptHistory(
 	}
 
 	async function load() {
-		if (state.listLoading) return
+		if (!active || state.listLoading) return
 		const request = ++listRequest
-		update({ listLoading: true, listError: false })
+		update({ listLoading: true })
 		try {
 			const attempts = await requests.attempts(taskId())
 			if (!active || request !== listRequest) return
 			const selectedId = attempts.some((attempt) => attempt.id === state.selectedId)
 				? state.selectedId
 				: (attempts[0]?.id ?? null)
-			update({ attempts, loaded: true, listLoading: false, tick: Date.now() })
+			update({ attempts, loaded: true, listLoading: false, listError: false, tick: Date.now() })
 			if (selectedId === null) {
 				++detailRequest
 				update({ selectedId: null, detail: null, detailLoading: false, detailError: false })
-			} else {
+			} else if (selectedId !== state.selectedId || !state.detailLoading) {
 				await select(selectedId)
 			}
 		} catch {

@@ -58,8 +58,9 @@ case "${1:-}" in
     build_frontend
     ;;
   build-images)
-    # The cell image for Codex agents. Rebuild after changing docker/cell-codex/Dockerfile.
-    docker build -t themisforge/cell-codex:latest "$ROOT/docker/cell-codex"
+    # The cell images for Codex and Claude Code agents. Rebuild after changing docker/cell/Dockerfile.
+    docker build --build-arg AGENT=codex -t themisforge/cell-codex:latest "$ROOT/docker/cell"
+    docker build --build-arg AGENT=claude -t themisforge/cell-claude:latest "$ROOT/docker/cell"
     ;;
   start)
     (cd "$ROOT/backend" && uv sync --quiet)

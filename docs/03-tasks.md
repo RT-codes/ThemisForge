@@ -8,6 +8,11 @@ summary: The project dashboard, task statuses, custom properties and the board.
 
 ## The project pages
 
+On **Home**, each project card shows running, ready and done task counts. Cards also show badges when tasks are waiting
+for review or are failed, so you can see which projects need a follow-up before opening one. These badges count tasks in
+those statuses; a recurring task back in Ready after a failed run appears in the project's **Needs attention** section
+instead.
+
 Selecting a project in the sidebar opens its **Overview** and expands its sub pages. The overview is the project's
 dashboard: how many tasks are ready and running, how many are scheduled for today and the next 7 days, what needs
 attention, the next runs, a card for each workspace, and the recent activity. A workspace card lists its boards as
@@ -68,6 +73,11 @@ and **Open** it to get its own page with a header and four views of the **same**
 - **List**: a table, handy when there are many tasks. The same search, order and filters apply here too.
 - **Schedule**: a timeline of what will run in the next 24 hours or 7 days.
 - **History**: what was done on this board: tasks created, moved, sent or deleted, and changes to its statuses.
+
+In **List**, a task whose latest run failed shows **Last run failed** beneath its title, with up to two lines of the
+reason when available. This includes recurring tasks back in Ready. The warning clears when a new run starts or the
+latest attempt no longer failed. Click the title or row to open the task's details and read the full explanation and
+log in **History**.
 
 The header shows how many tasks are running, ready, waiting for review or failed, when the next run is due, and
 whether the scheduler is on and how many cells are busy. A workspace page also has a **History** tab for the whole

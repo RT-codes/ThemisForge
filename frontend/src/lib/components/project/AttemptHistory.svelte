@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { tasksApi, type Attempt, type AttemptDetail, type AttemptStatus } from '$lib/api/tasks'
+	import { tasksApi, type AttemptStatus } from '$lib/api/tasks'
 	import { attemptLabel, dateTime, duration } from '$lib/format'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import FailureNote from './FailureNote.svelte'
 	import ResultView from '$lib/components/ResultView.svelte'
 	import { cn } from '$lib/utils'
+	import { Button } from '$lib/components/ui/button/index.js'
+	import { createAttemptHistory, initialAttemptHistory } from './attemptHistory'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
 	import CircleXIcon from '@lucide/svelte/icons/circle-x'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
@@ -14,11 +16,8 @@
 
 	let { taskId, taskStatus, projectId }: { taskId: number; taskStatus: string; projectId: number } = $props()
 
-	let attempts = $state<Attempt[]>([])
-	let loaded = $state(false)
-	let selectedId = $state<number | null>(null)
-	let detail = $state<AttemptDetail | null>(null)
-	let tick = $state(Date.now())
+	let history = $state(initialAttemptHistory)
+	const controller = createAttemptHistory(() => taskId, tasksApi, (next) => (history = next))
 
 	const icons: Record<AttemptStatus, typeof CircleCheckIcon> = {
 		running: LoaderCircleIcon,
@@ -33,74 +32,77 @@
 		cancelled: 'text-muted-foreground',
 	}
 
-	async function load() {
-		try {
-			attempts = await tasksApi.attempts(taskId)
-			if (selectedId === null && attempts.length) selectedId = attempts[0].id
-			if (selectedId !== null) detail = await tasksApi.attempt(selectedId)
-		} catch {
-			// transient: the next poll retries
-		} finally {
-			loaded = true
-			tick = Date.now()
-		}
-	}
-
 	onMount(() => {
-		load()
+		controller.load()
 		const timer = setInterval(() => {
-			if (!document.hidden && (taskStatus === 'running' || attempts[0]?.status === 'running')) load()
+			if (!document.hidden && (taskStatus === 'running' || history.attempts[0]?.status === 'running')) controller.load()
 		}, 1500)
-		return () => clearInterval(timer)
+		return () => { clearInterval(timer); controller.dispose() }
 	})
 
 	// a finished run: fetch once more so the final status and log show up
 	let lastStatus: string | undefined
 	$effect(() => {
 		const status = taskStatus
-		if (lastStatus !== undefined && status !== lastStatus) load()
+		if (lastStatus !== undefined && status !== lastStatus) controller.load()
 		lastStatus = status
 	})
-
-	async function select(id: number) {
-		selectedId = id
-		detail = await tasksApi.attempt(id)
-	}
 </script>
 
-{#if !loaded}
+{#if !history.loaded}
 	<p class="px-4 py-6 text-sm text-muted-foreground">Loading...</p>
-{:else if attempts.length === 0}
+{:else if history.listError && history.attempts.length === 0}
+	<div class="px-4 py-8 text-center" role="alert">
+		<p class="text-sm text-destructive">Could not load attempts.</p>
+		<Button variant="outline" size="sm" class="mt-3" disabled={history.listLoading} onclick={() => controller.load()}>Retry</Button>
+	</div>
+{:else if history.attempts.length === 0}
 	<div class="px-4 py-10 text-center">
 		<p class="text-sm font-medium">No attempts yet</p>
 		<p class="mt-1 text-xs text-muted-foreground">Each time a cell works on this task, it is recorded here with its log and result.</p>
 	</div>
 {:else}
 	<div class="grid gap-3 px-4 pb-4">
+		{#if history.listError}
+			<div class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+				<span>Could not refresh attempts. Showing the last loaded list.</span>
+				<Button variant="outline" size="sm" disabled={history.listLoading} onclick={() => controller.load()}>Retry</Button>
+			</div>
+		{/if}
 		<ul class="grid gap-1">
-			{#each attempts as a (a.id)}
+			{#each history.attempts as a (a.id)}
 				{@const Icon = icons[a.status]}
 				<li>
 					<button
 						type="button"
-						onclick={() => select(a.id)}
+						onclick={() => controller.select(a.id)}
 						class={cn(
 							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm transition-colors hover:bg-accent',
-							selectedId === a.id && 'bg-accent'
+							history.selectedId === a.id && 'bg-accent'
 						)}
 					>
 						<Icon class={cn('size-4 shrink-0', tone[a.status], a.status === 'running' && 'animate-spin')} />
 						<span class="font-medium">{attemptLabel[a.status]}</span>
 						<span class="truncate text-xs text-muted-foreground">{dateTime(a.started_at)}</span>
 						<span class="ms-auto text-xs text-muted-foreground tabular-nums">
-							{duration(a.started_at, a.finished_at ?? new Date(tick).toISOString())}
+							{duration(a.started_at, a.finished_at ?? new Date(history.tick).toISOString())}
 						</span>
 					</button>
 				</li>
 			{/each}
 		</ul>
 
-		{#if detail}
+		{#if history.detailLoading && !history.detail}
+			<p class="text-sm text-muted-foreground" role="status">Loading attempt...</p>
+		{/if}
+		{#if history.detailError}
+			<div class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+				<span>{history.detail ? 'Could not refresh this attempt. Showing the last loaded result.' : 'Could not load this attempt.'}</span>
+				<Button variant="outline" size="sm" disabled={history.detailLoading} onclick={() => history.selectedId !== null && controller.select(history.selectedId)}>Retry</Button>
+			</div>
+		{/if}
+		{#if history.detail && history.detail.id === history.selectedId}
+			{@const detail = history.detail}
 			{#if detail.workflow_run_id && detail.workflow_id}
 				<a
 					href="/projects/{projectId}/workflows/{detail.workflow_id}/runs/{detail.workflow_run_id}"

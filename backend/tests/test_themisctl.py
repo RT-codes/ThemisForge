@@ -295,7 +295,7 @@ class Machine:
             ctl_module, "service_action", lambda home, action, check=True: self.calls.append((action,))
         )
         monkeypatch.setattr(ctl_module, "ensure_docker", lambda *a, **k: None)
-        monkeypatch.setattr(ctl_module, "get_cell_image", lambda *a, **k: None)
+        monkeypatch.setattr(ctl_module, "get_cell_images", lambda *a, **k: None)
         monkeypatch.setattr(
             ctl_module, "stage_release", lambda home, release=None, **k: put_release(home, release["version"])
         )

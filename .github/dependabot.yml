@@ -35,10 +35,10 @@ updates:
       actions:
         update-types: [minor, patch]
 
-  # The base image of the Codex cell. A new major version of Node changes what every agent runs on, so that is chosen by
-  # hand (the uv and Codex versions are build arguments, bumped by hand in the same file).
+  # The base image of the agent cells. A new major version of Node changes what every agent runs on, so that is chosen by
+  # hand (the uv, Codex and Claude Code versions are build arguments, bumped by hand in the same file).
   - package-ecosystem: docker
-    directory: /docker/cell-codex
+    directory: /docker/cell
     schedule:
       interval: weekly
     ignore:

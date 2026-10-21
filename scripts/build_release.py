@@ -42,7 +42,7 @@ INCLUDE = [
     "backend/.env.example",
     "scripts/themisctl.py",
     "frontend/dist",
-    "docker/cell-codex",
+    "docker/cell",
 ]
 # Names that never go in, wherever they are: caches, local state, and anything that could hold someone's data.
 EXCLUDE_NAMES = {"__pycache__", ".venv", ".pytest_cache", ".ruff_cache", "backups", ".env", ".DS_Store"}

@@ -4,13 +4,16 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.app_settings import AppSettings
-from app.cells import WritebackFilter
-from app.codex import get_connection, save_auth
 from app.config import settings
 from app.crypto import decrypt
-from app.harness import CODEX_AUTH, CodexRenderer, TokenUsage, build_prompt, plan_for
-from app.models import Attempt, AttemptStatus, utcnow
+from app.execution.cells.secrets import WritebackFilter
+from app.execution.harnesses.codex import CODEX_AUTH, CodexRenderer
+from app.execution.harnesses.prompts import build_prompt
+from app.execution.harnesses.service import plan_for
+from app.execution.harnesses.types import TokenUsage
+from app.features.connections.codex import get_connection, save_auth
+from app.features.system.settings import AppSettings
+from app.persistence.models import Attempt, AttemptStatus, utcnow
 from tests.conftest import drain, make_project, make_task, register
 
 

@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from app import notifications
-from app.models import Task
+import app.features.notifications.delivery as notifications
+from app.persistence.models import Task
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_approvals import gated, open_approvals, start
 from tests.test_workflows import setup

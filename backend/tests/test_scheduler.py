@@ -4,11 +4,12 @@ from types import SimpleNamespace
 
 from sqlalchemy import select
 
-from app.budget import Cost
-from app.cells import CellError, CellResult, CellSpec, CellTimeout
-from app.keys import Redactor
-from app.models import Attempt, AttemptStatus, Task, TaskStatus, utcnow
-from app.scheduler import _judge, _Live
+from app.execution.active_runs import _Live
+from app.execution.budget import Cost
+from app.execution.cells.contract import CellError, CellResult, CellSpec, CellTimeout
+from app.execution.failures import _judge
+from app.features.tools.keys import Redactor
+from app.persistence.models import Attempt, AttemptStatus, Task, TaskStatus, utcnow
 from tests.conftest import drain, make_project, make_task, register
 
 
@@ -272,55 +273,58 @@ def test_what_the_agent_wrote_when_blocked_never_shows_a_key():
 
 
 def test_a_writer_waits_while_another_run_holds_its_folder(scheduler):
-    scheduler._live[1] = _Live(task=None, locks=frozenset({7}))
+    scheduler.runs.live[1] = _Live(task=None, locks=frozenset({7}))
     waiting, free = _plan(1, (7,), writers=(7,)), _plan(1, (8,), writers=(8,))
-    assert scheduler._admit(Cost(8, 8192), [waiting, free]) == [free]  # the next task goes first
+    assert scheduler.runs.admit(Cost(8, 8192), [waiting, free]) == [free]  # the next task goes first
 
 
 def test_two_writers_of_one_folder_never_start_in_the_same_tick(scheduler):
     first, second, reader = _plan(1, (7,), writers=(7,)), _plan(1, (7,), writers=(7,)), _plan(1, (7,))
-    assert scheduler._admit(Cost(8, 8192), [first, second, reader]) == [first, reader]
+    assert scheduler.runs.admit(Cost(8, 8192), [first, second, reader]) == [first, reader]
 
 
 def test_a_folder_that_is_being_renamed_starts_nothing(scheduler):
-    scheduler._renaming.add(7)
-    started = scheduler._admit(Cost(8, 8192), [(a := _plan(1, (7,))), (b := _plan(1, (8,)))])
+    scheduler.runs.renaming_ids.add(7)
+    started = scheduler.runs.admit(Cost(8, 8192), [(a := _plan(1, (7,))), (b := _plan(1, (8,)))])
     assert started == [b] and a not in started
 
 
 def test_cells_start_in_order_as_far_as_the_budget_reaches(scheduler):
     plans = [_plan(2), _plan(2), _plan(2)]
-    assert scheduler._admit(Cost(4, 8192), plans) == plans[:2]
+    assert scheduler.runs.admit(Cost(4, 8192), plans) == plans[:2]
     # a cell that is already running uses part of the budget
-    scheduler._live[1] = _Live(task=None, spec=SimpleNamespace(cpus=2, memory_mb=512))
-    assert scheduler._admit(Cost(4, 8192), plans) == plans[:1]
+    scheduler.runs.live[1] = _Live(task=None, spec=SimpleNamespace(cpus=2, memory_mb=512))
+    assert scheduler.runs.admit(Cost(4, 8192), plans) == plans[:1]
 
 
 async def test_a_cancel_the_person_asked_for_is_not_a_failure(scheduler):
-    scheduler._live[1] = _Live(task=None, cancel_reason="user")
+    scheduler.runs.live[1] = _Live(task=None, cancel_reason="user")
     buf = _Writes()
-    assert await scheduler._explain(asyncio.CancelledError(), 1, buf) == (AttemptStatus.CANCELLED, None)
+    assert await scheduler.executor._explain(asyncio.CancelledError(), 1, buf) == (
+        AttemptStatus.CANCELLED,
+        None,
+    )
     assert "[Cancelled]" in buf.text
 
 
 async def test_a_run_cut_off_by_a_shutdown_fails_and_says_to_run_it_again(scheduler):
-    scheduler._live[1] = _Live(task=None, cancel_reason="shutdown")
+    scheduler.runs.live[1] = _Live(task=None, cancel_reason="shutdown")
     buf = _Writes()
-    outcome, failure = await scheduler._explain(asyncio.CancelledError(), 1, buf)
+    outcome, failure = await scheduler.executor._explain(asyncio.CancelledError(), 1, buf)
     assert outcome == AttemptStatus.FAILED and failure["action"] == "Run it again with Run now."
     assert "shut down" in buf.text
 
 
 async def test_each_kind_of_error_ends_the_attempt_with_its_own_reason(scheduler, caplog):
     buf = _Writes()
-    outcome, failure = await scheduler._explain(CellTimeout("took too long"), 1, buf)
+    outcome, failure = await scheduler.executor._explain(CellTimeout("took too long"), 1, buf)
     assert (
         outcome == AttemptStatus.FAILED
         and failure["reason"] == "took too long"
         and "time limit" in failure["action"]
     )
-    outcome, failure = await scheduler._explain(CellError("no docker"), 1, buf)
+    outcome, failure = await scheduler.executor._explain(CellError("no docker"), 1, buf)
     assert failure["reason"] == "no docker" and failure["action"] == ""
-    outcome, failure = await scheduler._explain(RuntimeError("boom"), 1, buf)
+    outcome, failure = await scheduler.executor._explain(RuntimeError("boom"), 1, buf)
     assert "unexpected error: boom" in failure["reason"] and "a bug in Themis" in failure["action"]
     assert "attempt 1 crashed" in caplog.text  # a bug is logged with its traceback; the others are not

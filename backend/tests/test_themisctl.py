@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from app import version as app_version
+import app.features.system.version as app_version
 
 ROOT = Path(__file__).resolve().parents[2]
 

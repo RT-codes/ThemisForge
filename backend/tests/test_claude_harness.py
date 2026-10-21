@@ -1,13 +1,17 @@
 import json
 
-from app import connections
-from app.app_settings import AppSettings
-from app.cells import CellResult, CellSpec, DockerCellManager, prepare_dirs
-from app.claude import API_KEY_ENV, SUBSCRIPTION_ENV
+import app.features.connections.service as connections
 from app.config import settings
-from app.harness import CLAUDE_MCP, ClaudeRenderer, TokenUsage, plan_for, renderer_for
-from app.keys import key_path
-from app.mcp import CONFIG_PATH, McpSpec, config_file
+from app.execution.cells.contract import CellResult, CellSpec
+from app.execution.cells.docker import DockerCellManager
+from app.execution.cells.files import prepare_dirs
+from app.execution.harnesses.claude import CLAUDE_MCP, ClaudeRenderer
+from app.execution.harnesses.service import plan_for, renderer_for
+from app.execution.harnesses.types import TokenUsage
+from app.features.connections.providers.claude import API_KEY_ENV, SUBSCRIPTION_ENV
+from app.features.system.settings import AppSettings
+from app.features.tools.keys import key_path
+from app.features.tools.mcp import CONFIG_PATH, McpSpec, config_file
 from tests.conftest import API_KEY, SUBSCRIPTION, drain, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_claude_connection import connect

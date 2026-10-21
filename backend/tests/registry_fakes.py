@@ -13,7 +13,8 @@ from urllib.parse import unquote
 
 import pytest
 
-from app import mcp_catalog, mcp_registry
+import app.features.tools.catalog as mcp_catalog
+import app.features.tools.registry as mcp_registry
 from app.config import settings
 
 SAMPLE = json.loads(

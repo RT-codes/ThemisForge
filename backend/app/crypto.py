@@ -4,7 +4,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from .config import settings
+from app.config import settings
 
 
 def _fernet() -> Fernet:

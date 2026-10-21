@@ -5,13 +5,14 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app import connections, db
-from app.cells import FakeCellManager
+import app.features.connections.service as connections
 from app.config import DEFAULT_SECRET_KEY, settings
+from app.execution.cells.fake import FakeCellManager
+from app.execution.scheduler import Scheduler
+from app.features.tools.auth import McpLogins
+from app.features.workflows.runner import WorkflowRunner
 from app.main import app
-from app.mcp_auth import McpLogins
-from app.scheduler import Scheduler
-from app.workflows import WorkflowRunner
+from app.persistence import db
 
 # shared test doubles for the MCP registry (fixtures: registry, fresh_caches)
 pytest_plugins = ["tests.registry_fakes"]
@@ -26,7 +27,7 @@ def default_secret_key(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_start_cooldown(monkeypatch):
     """Tests tick right after creating a task; the cooldown has its own test."""
-    from app import app_settings
+    import app.features.system.settings as app_settings
 
     monkeypatch.setattr(app_settings, "DEFAULT_START_COOLDOWN_SECONDS", 0)
 
@@ -36,7 +37,8 @@ def fresh_codex_locks():
     """A login gate that was contended in one test holds futures bound to that test's event loop, so the next test must not reuse it."""
     import asyncio
 
-    from app import codex, project_config
+    import app.features.project_config.store as project_config
+    from app.features.connections import codex
 
     codex._gates.clear()
     project_config.lock = asyncio.Lock()
@@ -51,6 +53,12 @@ async def maker(tmp_path, monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(db.Base.metadata.create_all)
     yield async_sessionmaker(engine, expire_on_commit=False)
+    # Notifications run after attempts finish and use their own sessions. Finish
+    # those reads/writes before disposing this test's database and event loop.
+    from app.features.notifications.delivery import pending
+
+    while pending:
+        await asyncio.gather(*pending, return_exceptions=True)
     await engine.dispose()
 
 
@@ -60,13 +68,18 @@ def cells():
 
 
 @pytest.fixture
-def scheduler(maker, cells):
+async def scheduler(maker, cells):
     """A scheduler that is driven by hand with tick(); the background loop is not started."""
     sched = Scheduler(maker, cells)
     sched.mcp_logins = McpLogins(maker)
     app.state.scheduler = sched
     app.state.mcp_logins = sched.mcp_logins
-    return sched
+    yield sched
+    # Admission/error policy tests also install entries with no real task.
+    for attempt_id, live in list(sched.runs.live.items()):
+        if live.task is None:
+            del sched.runs.live[attempt_id]
+    await sched.stop()
 
 
 @pytest.fixture
@@ -97,14 +110,16 @@ async def runner(maker, scheduler):
     pumper = asyncio.create_task(pump())
     yield r
     pumper.cancel()
-    await r.shutdown()
     await asyncio.gather(pumper, return_exceptions=True)
+    await r.shutdown()
 
 
 async def drain(scheduler: Scheduler) -> None:
     """Wait until every running cell has finished and been recorded."""
-    while scheduler._live:
-        await asyncio.gather(*(live.task for live in list(scheduler._live.values())), return_exceptions=True)
+    while scheduler.runs.live:
+        await asyncio.gather(
+            *(live.task for live in list(scheduler.runs.live.values())), return_exceptions=True
+        )
         await asyncio.sleep(0)
 
 
@@ -149,7 +164,7 @@ async def make_task(client: AsyncClient, project_id: int, **body) -> dict:
 @pytest.fixture(autouse=True)
 def fresh_webhook_limits():
     """The per-minute count of messages is kept in memory; every test starts a new minute."""
-    from app import webhooks
+    import app.features.webhooks.receiver as webhooks
 
     webhooks._hits.clear()
 
@@ -157,7 +172,7 @@ def fresh_webhook_limits():
 @pytest.fixture(autouse=True)
 def fresh_notification_repeats():
     """A message is not sent twice for the same thing within minutes; every test starts a new window."""
-    from app import notifications
+    import app.features.notifications.delivery as notifications
 
     notifications._recent.clear()
 

@@ -2,7 +2,8 @@
 
 import json
 
-from app.harness import CodexRenderer, TokenUsage
+from app.execution.harnesses.codex import CodexRenderer
+from app.execution.harnesses.types import TokenUsage
 from tests.conftest import drain, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_failures import latest_attempt, retry_after

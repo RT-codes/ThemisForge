@@ -5,9 +5,9 @@ import asyncio
 
 from sqlalchemy import select
 
+from app.features.workflows.runner import WorkflowRunner
 from app.main import app
-from app.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
-from app.workflows import WorkflowRunner
+from app.persistence.models import NodeStatus, RunStatus, Workflow, WorkflowNodeRun, WorkflowRun, utcnow
 from tests.conftest import login, register
 from tests.test_workflow_branches import branches, task
 from tests.test_workflows import by_id, edge, make_workflow, node, save, setup, wait_for_run
@@ -228,7 +228,7 @@ async def test_a_node_caught_running_by_the_restart_still_fails_the_run(
     run_id = await start(client, pid, nodes, edges)
     [approval] = await open_approvals(client)
     async with asyncio.timeout(10):
-        while not scheduler._live:
+        while not scheduler.runs.live:
             await asyncio.sleep(0.02)
     fresh = await restart(maker, runner, scheduler)
     try:

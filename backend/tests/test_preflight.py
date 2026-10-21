@@ -6,10 +6,11 @@ import logging.handlers
 
 import pytest
 
-from app import docker_check, doctor, preflight, runlog
-from app.app_settings import AppSettings
+from app import doctor
 from app.config import settings
-from app.docker_check import DockerStatus, parse_version
+from app.features.system import docker_check, preflight, runlog
+from app.features.system.docker_check import DockerStatus, parse_version
+from app.features.system.settings import AppSettings
 from app.main import app
 from tests.conftest import drain, make_project, make_task, register
 

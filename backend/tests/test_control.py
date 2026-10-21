@@ -6,11 +6,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.config import settings
-from app.control import ControlPlane
-from app.control_tools import NOT_FOUND
+from app.control.server import ControlPlane
+from app.control.tools import NOT_FOUND
 from app.crypto import encrypt
 from app.main import app
-from app.models import ControlToken
+from app.persistence.models import ControlToken
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_approvals import gated, open_approvals, start
@@ -497,47 +497,19 @@ async def test_global_settings_need_an_all_projects_connection_of_an_administrat
     assert {p["name"] for p in await call(agent_client, bos_secret, "list_projects")} == {"Bo's"}
 
 
-def test_a_handler_that_needs_an_administrator_is_checked_by_hand_in_its_tool():
-    """The tools call route handlers as plain functions, so a route's `AdminUser` dependency does not run for them. Every
-    handler a tool calls that has one must be named here, and its tool must make the check itself."""
-    import inspect
-    import re
+async def test_shared_settings_operation_checks_administrator_without_http(maker):
+    from types import SimpleNamespace
 
-    from app import control_tools
-    from app.deps import require_admin
-    from app.routers import (
-        agents,
-        connections,
-        notifications,
-        projects,
-        skills,
-        system,
-        tools,
-        volumes,
-        webhooks,
-        workflows,
-        workspaces,
-    )
+    from app.errors import ApplicationError
+    from app.features.system.service import get_settings
+    from app.features.system.settings import AppSettings
 
-    modules = {
-        "agents": agents, "connections": connections, "notifications": notifications, "projects": projects,
-        "skills": skills, "system": system, "tools": tools, "volumes": volumes, "webhooks": webhooks,
-        "workflows": workflows, "workspaces_router": workspaces,
-    }  # fmt: skip
-    source = inspect.getsource(control_tools)
-    needing_admin = set()
-    for module_name, function_name in set(re.findall(r"\b(\w+)\.(\w+)\(", source)):
-        handler = getattr(modules.get(module_name), function_name, None)
-        if not inspect.iscoroutinefunction(handler):
-            continue
-        for parameter in inspect.signature(handler).parameters.values():
-            depends = [
-                m for m in getattr(parameter.annotation, "__metadata__", ()) if hasattr(m, "dependency")
-            ]
-            if any(d.dependency is require_admin for d in depends):
-                needing_admin.add(f"{module_name}.{function_name}")
-    assert needing_admin == {"system.get_settings"}
-    assert "require_admin(owner)" in source
+    async with maker() as session:
+        with pytest.raises(ApplicationError) as refused:
+            await get_settings(session, SimpleNamespace(is_admin=False))
+        assert refused.value.status_code == 403
+        assert refused.value.detail == "Only an administrator can do this"
+        assert isinstance(await get_settings(session, SimpleNamespace(is_admin=True)), AppSettings)
 
 
 # ----- actions: they need a token that may change things -----

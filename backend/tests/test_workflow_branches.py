@@ -4,7 +4,7 @@ and the working folders. Everything else about a run (one node at a time, in ord
 import asyncio
 from datetime import datetime
 
-from app.codex import save_auth
+from app.features.connections.codex import save_auth
 from tests.test_harness import fake_auth
 from tests.test_workflows import by_id, edge, make_workflow, node, run, save, setup
 
@@ -202,12 +202,12 @@ async def test_cancelling_stops_every_branch(client, runner, cells, scheduler):
     await save(client, wid, nodes, edges)
     run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     async with asyncio.timeout(10):
-        while len(scheduler._live) < 2:
+        while len(scheduler.runs.live) < 2:
             await asyncio.sleep(0.02)
     r = await client.post(f"/api/workflow-runs/{run_id}/cancel")
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
     assert by_id(r.json())["l"]["status"] == "cancelled" and by_id(r.json())["r"]["status"] == "cancelled"
-    assert not scheduler._live
+    assert not scheduler.runs.live
 
 
 async def test_a_branch_waiting_for_a_cell_is_not_failed_for_the_time_it_waited(client, runner, cells):

@@ -4,10 +4,11 @@ import os
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.app_settings import MountRoot
-from app.cells import CellSpec, DockerCellManager, Mount
 from app.config import BACKEND_DIR, settings
-from app.volumes import MountError, host_target
+from app.execution.cells.contract import CellSpec, Mount
+from app.execution.cells.docker import DockerCellManager
+from app.features.storage.volumes import MountError, host_target
+from app.features.system.settings import MountRoot
 from tests.conftest import drain, make_project, make_task, register
 
 
@@ -260,7 +261,7 @@ def test_docker_gets_one_mount_flag_per_folder_and_read_only_ones_say_so(tmp_pat
 
 
 def test_a_comma_or_quote_in_a_folder_name_cannot_start_another_mount_field():
-    from app.cells import mount_arg
+    from app.execution.cells.docker import mount_arg
 
     for source in (
         "/home/me/a,b",
@@ -325,7 +326,7 @@ async def test_a_run_fails_with_the_reason_when_its_host_folder_is_no_longer_app
 async def test_writers_on_a_locked_folder_take_turns_without_blocking_others(
     client, scheduler, cells, monkeypatch
 ):
-    from app.cells import CellResult
+    from app.execution.cells.contract import CellResult
     from tests.test_harness import connect
 
     me = await register(client)
@@ -360,7 +361,7 @@ async def test_writers_on_a_locked_folder_take_turns_without_blocking_others(
     monkeypatch.setattr(cells, "run", slow)
     assert await scheduler.tick() == 3  # w1, r1 (read only, no lock) and plain; w2 waits its turn
     assert await scheduler.tick() == 0
-    started = {s.title for s in (live.spec for live in scheduler._live.values())}
+    started = {s.title for s in (live.spec for live in scheduler.runs.live.values())}
     assert started == {"w1", "r1", "plain"}
     gate.set()
     await drain(scheduler)
@@ -396,7 +397,7 @@ async def test_the_id_of_a_removed_agent_is_never_given_to_a_new_one(client):
 
 
 def test_on_windows_the_drive_letters_colon_is_fine_and_every_other_colon_is_not():
-    from app.volumes import has_bad_colon
+    from app.features.storage.volumes import has_bad_colon
 
     assert not has_bad_colon("C:\\Users\\me\\notes", windows=True) and not has_bad_colon(
         "d:/data", windows=True
@@ -408,7 +409,7 @@ def test_on_windows_the_drive_letters_colon_is_fine_and_every_other_colon_is_not
 
 
 def test_on_windows_a_path_cannot_use_names_that_mean_something_else_to_the_system(tmp_path):
-    from app.volumes import FileError, safe_path
+    from app.features.storage.volumes import FileError, safe_path
 
     for bad in (
         "a\\b",
@@ -434,7 +435,7 @@ def test_on_windows_a_path_cannot_use_names_that_mean_something_else_to_the_syst
 def test_windows_folder_paths_are_approved_in_a_normal_form_and_a_whole_drive_is_not(monkeypatch):
     import types
 
-    from app import app_settings
+    import app.features.system.settings as app_settings
 
     monkeypatch.setattr(app_settings, "os", types.SimpleNamespace(name="nt"))
     ok = lambda p: app_settings.MountRoot(path=p).path

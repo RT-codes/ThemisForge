@@ -4,14 +4,14 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app import connections
-from app.app_settings import AppSettings, save_settings
+import app.features.connections.service as connections
 from app.config import settings
-from app.connections import DeviceLogins
-from app.github import CREDENTIAL_HELPER, GitHub
-from app.keys import HIDDEN
+from app.features.connections.providers.github import CREDENTIAL_HELPER, GitHub
+from app.features.connections.service import DeviceLogins
+from app.features.system.settings import AppSettings, save_settings
+from app.features.tools.keys import HIDDEN
 from app.main import app
-from app.models import Connection
+from app.persistence.models import Connection
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect

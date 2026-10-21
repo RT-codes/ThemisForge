@@ -2,12 +2,12 @@ import tomllib
 
 import pytest
 
-from app import toolcheck
+import app.features.agents.service as agents_router
 from app.config import settings
-from app.harness import codex_script
-from app.keys import HIDDEN, Redactor, key_env_name, unique_env_names
-from app.mcp import McpSpec, config_toml
-from app.routers import agents as agents_router
+from app.execution.harnesses.codex import codex_script
+from app.features.tools import toolcheck
+from app.features.tools.keys import HIDDEN, Redactor, key_env_name, unique_env_names
+from app.features.tools.mcp import McpSpec, config_toml
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect

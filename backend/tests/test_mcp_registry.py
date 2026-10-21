@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-from app import mcp_registry
-from app.mcp_registry import MissingInput, build_tool, display_title, to_tool, tool_name
+import app.features.tools.registry as mcp_registry
+from app.features.tools.registry import MissingInput, build_tool, display_title, to_tool, tool_name
 from tests.conftest import make_project, register
 from tests.registry_fakes import entry
 

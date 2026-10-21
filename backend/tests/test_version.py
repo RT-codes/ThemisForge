@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from app import version as v
+import app.features.system.version as v
 
 ROOT = Path(__file__).resolve().parents[2]
 

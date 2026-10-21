@@ -3,8 +3,8 @@ that is made is set by the project's owner."""
 
 from sqlalchemy import select
 
-from app import webhooks
-from app.models import Task, WebhookDelivery
+import app.features.webhooks.receiver as webhooks
+from app.persistence.models import Task, WebhookDelivery
 from app.security import hash_secret
 from tests.conftest import login, make_project, make_task, register
 from tests.test_agents import make_agent

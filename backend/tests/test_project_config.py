@@ -3,11 +3,14 @@
 import pytest
 from sqlalchemy import select
 
-from app import project_config as pc
-from app.app_settings import AppSettings
+import app.features.project_config.common as config_types
+import app.features.project_config.formats as config_formats
+import app.features.project_config.store as pc
 from app.config import settings
-from app.models import Agent, McpServer
-from app.volumes import MountError, plan_mounts
+from app.execution.profiles import ProfileOverrides
+from app.features.storage.volumes import MountError, plan_mounts
+from app.features.system.settings import AppSettings
+from app.persistence.models import Agent, McpServer
 from tests.conftest import login, make_project, register
 from tests.test_agents import make_agent
 from tests.test_skills import skill_md
@@ -38,20 +41,20 @@ async def project(client):
 
 
 def test_an_agent_file_round_trips_with_awkward_text():
-    af = pc.AgentFile(
+    af = config_formats.AgentFile(
         name="Researcher: the 2nd",
         role="finds # sources",
         description="Line one\n\nLine three: with a colon",
         model="gpt-5",
         reasoning_effort="high",
-        cell=pc.ProfileOverrides(cpus=2, memory_mb=2048),
-        folders=[pc.FolderRef(name="notes", mode="ro")],
+        cell=ProfileOverrides(cpus=2, memory_mb=2048),
+        folders=[config_formats.FolderRef(name="notes", mode="ro")],
         skills=["pdf-tips"],
         tools=["files"],
         keys=["GitHub token"],
         instructions="# Heading\n\n---\nNot a frontmatter line\n\n- be brief",
     )
-    assert pc.parse_agent(pc.render_agent(af)) == af
+    assert config_formats.parse_agent(config_formats.render_agent(af)) == af
 
 
 def test_a_file_that_is_not_an_agent_is_refused_with_a_hint():
@@ -65,17 +68,17 @@ def test_a_file_that_is_not_an_agent_is_refused_with_a_hint():
         "---\nname: a\nharness: pi\n---\n": "harness",
     }
     for text, hint in cases.items():
-        with pytest.raises(pc.ConfigError, match=hint):
-            pc.parse_agent(text)
+        with pytest.raises(config_types.ConfigError, match=hint):
+            config_formats.parse_agent(text)
 
 
 def test_a_tool_file_is_read_in_both_kinds_and_numbers_become_text():
-    web = pc.parse_mcp("kind: http\nurl: https://example.com/mcp\nbearer_key: Token\n")
+    web = config_formats.parse_mcp("kind: http\nurl: https://example.com/mcp\nbearer_key: Token\n")
     assert (web.kind, web.url, web.bearer_key) == ("http", "https://example.com/mcp", "Token")
-    local = pc.parse_mcp("command: npx\nargs: [-y, pkg, 8080]\nenv: {PORT: 8080}\n")
+    local = config_formats.parse_mcp("command: npx\nargs: [-y, pkg, 8080]\nenv: {PORT: 8080}\n")
     assert local.args == ["-y", "pkg", "8080"] and local.env == {"PORT": "8080"}
-    with pytest.raises(pc.ConfigError, match="not a setting"):
-        pc.parse_mcp("comand: npx\n")
+    with pytest.raises(config_types.ConfigError, match="not a setting"):
+        config_formats.parse_mcp("comand: npx\n")
 
 
 # ----- the API writes the files -----
@@ -93,7 +96,7 @@ async def test_an_agent_made_through_the_api_gets_a_file_that_says_the_same(clie
         mcp_servers=[server["id"]],
     )
     assert agent["path"] == "agents/code-reviewer/agent.md" and agent["config_error"] == ""
-    af = pc.parse_agent((config_dir(project) / agent["path"]).read_text())
+    af = config_formats.parse_agent((config_dir(project) / agent["path"]).read_text())
     assert (af.name, af.instructions, af.skills, af.tools) == (
         "Code Reviewer",
         "Be brief.",
@@ -214,7 +217,7 @@ async def test_a_file_broken_on_disk_keeps_the_last_good_agent_and_stops_its_run
     assert shown["instructions"] == "Fine." and "must start with" in shown["config_error"]
     # saving the agent from the editor writes the file again and clears the problem
     ok = (await client.patch(f"/api/agents/{agent['id']}", json={"role": "back"})).json()
-    assert ok["config_error"] == "" and pc.parse_agent(file.read_text()).role == "back"
+    assert ok["config_error"] == "" and config_formats.parse_agent(file.read_text()).role == "back"
 
 
 async def test_a_missing_file_flags_the_agent_instead_of_deleting_it(client, project):
@@ -250,11 +253,11 @@ async def test_deleting_what_an_agent_uses_rewrites_its_file(client, project):
     )
     file = config_dir(project) / agent["path"]
     assert (await client.delete(f"/api/projects/{project}/skills/pdf-tips")).status_code == 204
-    assert pc.parse_agent(file.read_text()).skills == []
+    assert config_formats.parse_agent(file.read_text()).skills == []
     assert (await client.delete(f"/api/secrets/{key['id']}")).status_code == 204
-    assert pc.parse_agent(file.read_text()).keys == []
+    assert config_formats.parse_agent(file.read_text()).keys == []
     assert (await client.delete(f"/api/mcp-servers/{server['id']}")).status_code == 204
-    assert pc.parse_agent(file.read_text()).tools == []
+    assert config_formats.parse_agent(file.read_text()).tools == []
     assert not (config_dir(project) / "mcp" / "files.yaml").exists()
     assert (await client.get(f"/api/agents/{agent['id']}")).json()["config_error"] == ""
 
@@ -266,7 +269,7 @@ async def test_renaming_a_tool_renames_its_file_and_the_agents_that_use_it(clien
     r = await client.put(f"/api/mcp-servers/{server['id']}", json={**body, "name": "disk"})
     assert r.status_code == 200 and r.json()["path"] == "mcp/disk.yaml"
     assert not (config_dir(project) / "mcp" / "files.yaml").exists()
-    assert pc.parse_agent((config_dir(project) / agent["path"]).read_text()).tools == ["disk"]
+    assert config_formats.parse_agent((config_dir(project) / agent["path"]).read_text()).tools == ["disk"]
 
 
 async def test_a_tool_file_edited_in_the_files_page_changes_the_tool(client, project):
@@ -338,7 +341,7 @@ async def test_a_command_tool_is_checked_against_the_image_and_the_result_is_rem
     ):  # the real one asks Docker, which a test machine may not have
         return answers.pop(0)
 
-    monkeypatch.setattr("app.routers.tools.missing_commands", fake_missing)
+    monkeypatch.setattr("app.features.tools.service.missing_commands", fake_missing)
     server = await make_server(client, project)
     worked = (await client.post(f"/api/mcp-servers/{server['id']}/test")).json()
     assert worked["ok"] is True and worked["tools"] == [] and "is available in" in worked["message"]
@@ -353,11 +356,11 @@ async def test_a_web_tool_is_tried_with_its_key_for_an_administrator_only(client
 
     async def fake_probe(url, bearer):
         seen.append((url, bearer))
-        from app.mcp import ProbeResult
+        from app.features.tools.mcp import ProbeResult
 
         return ProbeResult(True, "Connected to demo 1. It offers 2 tools.", ("a", "b"))
 
-    monkeypatch.setattr("app.routers.tools.probe_http", fake_probe)
+    monkeypatch.setattr("app.features.tools.service.probe_http", fake_probe)
     key = await make_key(client, value="sk-the-secret-value-1234")
     server = await make_server(
         client,
@@ -376,7 +379,7 @@ async def test_a_web_tool_is_tried_with_its_key_for_an_administrator_only(client
 
 
 async def test_the_probe_reads_json_and_event_stream_answers():
-    from app.mcp import _reply
+    from app.features.tools.mcp import _reply
 
     body = b'{"jsonrpc":"2.0","id":1,"result":{"ok":true}}'
     assert _reply("application/json", body, 1)["result"] == {"ok": True}

@@ -1,4 +1,4 @@
-from app.workflow_graph import MOUNT, Graph
+from app.features.workflows.graph import MOUNT, Graph
 from tests.conftest import make_project, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect

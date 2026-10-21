@@ -115,8 +115,8 @@ Hosted tools such as Notion do not take a key: they ask you to sign in on their 
 
 The numbers (how early a token is renewed, how long a token is assumed to last, how long unused sign ins are kept alive)
 are administrator settings under **Settings, Tool sign ins**. What a single service needs differently, such as a scope or
-a client id registered by hand, is in `backend/app/mcp_auth/servers.yaml`, read on every sign in. The standard way MCP
-servers sign people in is built in; another way of signing in is added as one class (`backend/app/mcp_auth/scheme.py`
+a client id registered by hand, is in `backend/app/features/tools/auth/servers.yaml`, read on every sign in. The standard way MCP
+servers sign people in is built in; another way of signing in is added as one class (`backend/app/features/tools/auth/scheme.py`
 describes what it must do).
 
 ### Adding a tool from the MCP registry
@@ -157,8 +157,8 @@ project's, the switches are the agent's own.
 Two files, both edited by hand, change what the browser shows. They are read again whenever they change, no restart
 needed:
 
-- `backend/app/featured_tools.yaml`: the featured tools, as registry names with an optional note.
-- `backend/app/registry_categories.yaml`: the categories and the keywords that put a tool in one. A tool goes where it
+- `backend/app/features/tools/featured_tools.yaml`: the featured tools, as registry names with an optional note.
+- `backend/app/features/tools/registry_categories.yaml`: the categories and the keywords that put a tool in one. A tool goes where it
   matches most keywords (a name counts three times a description).
 
 When an agent is saved, the commands of its tools are looked up in the image it runs in, and anything that is missing is

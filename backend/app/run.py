@@ -6,7 +6,7 @@ import os
 
 import uvicorn
 
-from .config import settings
+from app.config import settings
 
 
 def _remember_process_id() -> None:

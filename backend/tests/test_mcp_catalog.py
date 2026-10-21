@@ -8,9 +8,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app import mcp_catalog, mcp_registry
-from app.mcp_catalog import Row, catalog, icon_url, make_row
-from app.mcp_registry import RegistryUnavailable
+import app.features.tools.catalog as mcp_catalog
+import app.features.tools.registry as mcp_registry
+from app.features.tools.catalog import Row, catalog, icon_url, make_row
+from app.features.tools.registry import RegistryUnavailable
 from tests.conftest import login, make_project, register
 from tests.registry_fakes import entry, item
 

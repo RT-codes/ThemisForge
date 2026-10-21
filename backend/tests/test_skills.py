@@ -2,10 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from app import skills as store
-from app.cell_package import DEFAULT_SKILL
-from app.cells import CellSpec, DockerCellManager
+import app.features.agents.skills as store
 from app.config import settings
+from app.execution.cell_package import DEFAULT_SKILL
+from app.execution.cells.contract import CellSpec
+from app.execution.cells.docker import DockerCellManager
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect

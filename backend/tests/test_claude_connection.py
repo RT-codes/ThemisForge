@@ -1,5 +1,5 @@
-from app import connections
-from app.claude import API_KEY_ENV, SUBSCRIPTION_ENV
+import app.features.connections.service as connections
+from app.features.connections.providers.claude import API_KEY_ENV, SUBSCRIPTION_ENV
 from tests.conftest import API_KEY, SUBSCRIPTION, make_project, register
 
 

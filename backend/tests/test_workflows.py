@@ -3,8 +3,9 @@ import asyncio
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.codex import save_auth
-from app.models import (
+from app.features.connections.codex import save_auth
+from app.features.workflows.runner import WorkflowRunner
+from app.persistence.models import (
     Attempt,
     AttemptStatus,
     NodeStatus,
@@ -16,7 +17,6 @@ from app.models import (
     WorkflowRun,
     utcnow,
 )
-from app.workflows import WorkflowRunner
 from tests.conftest import login, make_project, make_task, register
 from tests.test_harness import fake_auth
 
@@ -190,7 +190,7 @@ async def test_cancelling_a_run_records_its_waiting_nodes_as_cancelled_not_faile
     )
     run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     async with asyncio.timeout(10):
-        while not scheduler._live:
+        while not scheduler.runs.live:
             await asyncio.sleep(0.02)
 
     stop_cell = scheduler.cancel
@@ -261,7 +261,7 @@ async def test_a_task_that_fails_between_two_reads_of_the_wait_still_reports_its
     monkeypatch.setattr(AsyncSession, "scalar", scalar)
     monkeypatch.setattr(AsyncSession, "get", get)
     try:
-        outcome = await asyncio.wait_for(runner._wait_for_task(0, task_id, 0), 10)
+        outcome = await asyncio.wait_for(runner.nodes._wait_for_task(0, task_id, 0), 10)
     finally:
         await runner.shutdown()
     assert outcome.status == NodeStatus.FAILED and outcome.error == "Folder 3 no longer exists."
@@ -547,13 +547,13 @@ async def test_cancel_stops_the_run_and_its_cell(client, runner, cells, schedule
     )
     run_id = (await client.post(f"/api/workflows/{wid}/runs")).json()["id"]
     async with asyncio.timeout(10):
-        while not scheduler._live:
+        while not scheduler.runs.live:
             await asyncio.sleep(0.02)
     r = await client.post(f"/api/workflow-runs/{run_id}/cancel")
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
     assert by_id(r.json())["t"]["status"] == "cancelled"
     assert (await client.post(f"/api/workflow-runs/{run_id}/cancel")).status_code == 409
-    assert not scheduler._live
+    assert not scheduler.runs.live
 
 
 async def test_a_restart_closes_dangling_runs(client, runner, maker):

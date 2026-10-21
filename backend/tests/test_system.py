@@ -2,8 +2,8 @@ import shutil
 
 from sqlalchemy import select
 
-from app import docker_check
-from app.models import Secret
+from app.features.system import docker_check
+from app.persistence.models import Secret
 from tests.conftest import register
 
 
@@ -61,7 +61,7 @@ async def test_docker_status_endpoint(client, monkeypatch):
         seen.append(host)
         return docker_check.DockerStatus(ok=True, installed=True, host=host or "local socket", version="99.0")
 
-    monkeypatch.setattr("app.routers.system.check_docker", fake_check)
+    monkeypatch.setattr("app.features.system.service.check_docker", fake_check)
     assert (await client.get("/api/system/docker")).json()["version"] == "99.0"
     assert (await client.get("/api/system/docker?host=tcp://x:2376")).json()["host"] == "tcp://x:2376"
     assert (await client.get("/api/system/docker?host=bogus")).status_code == 422

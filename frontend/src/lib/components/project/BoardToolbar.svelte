@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PropertyDef } from '$lib/api/tasks'
-	import { SORTS, filterCount, isDefaultColumn, isDefaultView } from '$lib/boardView'
+	import { SORTS, filterChips, filterCount, isDefaultColumn, isDefaultView, removeFilterChip } from '$lib/boardView'
 	import type { BoardViewStore } from '$lib/boardView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
@@ -20,6 +20,7 @@
 
 	const sorted = $derived(view.board.sort !== 'manual')
 	const filters = $derived(filterCount(view.board.filters))
+	const chips = $derived(filterChips(view.board.filters, defs))
 	const hiddenCount = $derived(columns.filter((s) => view.hidden.includes(s.id)).length)
 	const anything = $derived(!isDefaultView(view.board) || Object.values(view.columns).some((c) => !isDefaultColumn(c)))
 </script>
@@ -106,5 +107,24 @@
 
 	{#if anything}
 		<Button variant="ghost" size="sm" class="h-8 text-muted-foreground" onclick={() => view.reset()}>Reset</Button>
+	{/if}
+
+	{#if chips.length}
+		<ul aria-label="Active board filters" class="flex max-w-full flex-wrap items-center gap-2">
+			{#each chips as chip (JSON.stringify([chip.kind, chip.kind === 'property' ? chip.key : '', chip.value]))}
+				<li class="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-1 ps-2.5 pe-1 text-xs text-primary">
+					<span class="min-w-0 break-words [overflow-wrap:anywhere]">{chip.label}</span>
+					<button
+						type="button"
+						aria-label={`Remove ${chip.label} filter`}
+						title={`Remove ${chip.label} filter`}
+						class="flex size-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						onclick={() => view.setBoard({ filters: removeFilterChip(view.board.filters, chip) })}
+					>
+						<XIcon class="size-3.5" />
+					</button>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 </div>

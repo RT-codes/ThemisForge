@@ -108,7 +108,8 @@ async def upcoming_runs(
     session: SessionDep,
     user: CurrentUser,
     hours: Annotated[int, Query(ge=1, le=24 * 14)] = 24,
+    board_id: int | None = None,
 ) -> list[ScheduledRun]:
     """What is going to run in the next N hours (one-off and every occurrence of recurring tasks)."""
 
-    return await task_queries.upcoming_runs(project_id, session, user, hours)
+    return await task_queries.upcoming_runs(project_id, session, user, hours, board_id)

@@ -197,22 +197,22 @@ async def upcoming_runs(
     session: AsyncSession,
     user: User,
     hours: int = 24,
+    board_id: int | None = None,
 ) -> list[ScheduledRun]:
     """What is going to run in the next N hours (one-off and every occurrence of recurring tasks)."""
     await require_project(session, project_id, user)
     tz = (await load_settings(session)).timezone
     now = utcnow()
     end = now + timedelta(hours=hours)
-    tasks = (
-        await session.scalars(
-            select(Task).where(
-                Task.project_id == project_id,
-                Task.internal.is_(False),  # a workflow step runs at once: it is not "coming up"
-                (Task.status == TaskStatus.READY)
-                | ((Task.status == TaskStatus.RUNNING) & (Task.schedule_kind == ScheduleKind.CRON)),
-            )
-        )
-    ).all()
+    query = select(Task).where(
+        Task.project_id == project_id,
+        Task.internal.is_(False),  # a workflow step runs at once: it is not "coming up"
+        (Task.status == TaskStatus.READY)
+        | ((Task.status == TaskStatus.RUNNING) & (Task.schedule_kind == ScheduleKind.CRON)),
+    )
+    if board_id is not None:
+        query = query.where(Task.board_id == board_id)
+    tasks = (await session.scalars(query)).all()
     runs: list[ScheduledRun] = []
     for t in tasks:
         if t.schedule_kind == ScheduleKind.CRON and t.cron:

@@ -205,7 +205,7 @@
 				<TaskList {tasks} {board} {defs} view={view.board} now={desk.now} selectedId={desk.sheetOpen ? desk.sheetTaskId : null} onopen={(t) => desk.openTask(t)} />
 			</Tabs.Content>
 			<Tabs.Content value="schedule">
-				<ScheduleTimeline projectId={id} now={desk.now} timezone={desk.system?.timezone ?? 'UTC'} revision={desk.revision} />
+				<ScheduleTimeline projectId={id} boardId={boardId} now={desk.now} timezone={desk.system?.timezone ?? 'UTC'} revision={desk.revision} />
 			</Tabs.Content>
 			<Tabs.Content value="history">
 				<HistoryList projectId={id} scope={{ boardId: board.id }} {workspaces} tasks={desk.tasks} ontask={(t) => desk.openTask(t)} now={desk.now} revision={desk.revision} />

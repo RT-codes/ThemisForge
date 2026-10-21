@@ -5,7 +5,7 @@
 	import CalendarClockIcon from '@lucide/svelte/icons/calendar-clock'
 	import { onMount } from 'svelte'
 
-	let { projectId, now, timezone, revision }: { projectId: number; now: number; timezone: string; revision: number } = $props()
+	let { projectId, boardId, now, timezone, revision }: { projectId: number; boardId: number; now: number; timezone: string; revision: number } = $props()
 
 	let hours = $state(24)
 	let runs = $state<ScheduledRun[]>([])
@@ -13,7 +13,7 @@
 
 	async function load() {
 		try {
-			runs = await tasksApi.schedule(projectId, hours)
+			runs = await tasksApi.schedule(projectId, hours, boardId)
 		} finally {
 			loaded = true
 		}

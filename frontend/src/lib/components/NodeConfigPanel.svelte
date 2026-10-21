@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { api, type Workspace, type Agent, type CellDefaults, type HarnessInfo, type ProfileOverrides, type Project, type Volume } from '$lib/api'
+	import { agentsApi, type Agent, type HarnessInfo } from '$lib/api/agents'
+	import { projectsApi, type Project, type Workspace } from '$lib/api/projects'
+	import { settingsApi, type CellDefaults, type ProfileOverrides } from '$lib/api/settings'
+	import { volumesApi, type Volume } from '$lib/api/volumes'
 	import { boardChoices, customStatusChoices, whereChoices } from '$lib/boards'
 	import { effectiveCell } from '$lib/cell'
 	import CellChoice from '$lib/components/CellChoice.svelte'
@@ -60,20 +63,20 @@
 	let project = $state<Project | null>(null)
 	let defaults = $state<CellDefaults | null>(null)
 	let volumes = $state<Volume[]>([])
-	let harness = $state<HarnessInfo | null>(null) // the models and what an empty model means
+	let harnesses = $state<HarnessInfo[]>([]) // the models of each harness and what an empty model means
 	// Trigger and Task steps pick statuses and boards of the project: the seven built-in statuses plus the custom ones
 	// (each belongs to one board), and the boards themselves
 	let workspaces = $state<Workspace[]>([])
 	let boardsLoaded = $state(false)
 	onMount(async () => {
 		if (data.kind === 'trigger' || data.kind === 'task') {
-			api.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
+			projectsApi.workspaces(projectId).then((w) => ((workspaces = w), (boardsLoaded = true))).catch(() => {})
 		}
-		if (data.kind === 'agent' || data.kind === 'volume') api.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
+		if (data.kind === 'agent' || data.kind === 'volume') volumesApi.volumes(projectId).then((v) => (volumes = v)).catch(() => {})
 		if (data.kind !== 'agent') return
-		api.harnesses().then((h) => (harness = h.find((x) => x.id === 'codex') ?? null)).catch(() => {}) // without it the picker only knows the current model
+		agentsApi.harnesses().then((h) => (harnesses = h)).catch(() => {}) // without it the picker only knows the current model
 		try {
-			;[agents, project, defaults] = await Promise.all([api.agents(projectId), api.project(projectId), api.systemStatus().then((s) => s.cell_defaults)])
+			;[agents, project, defaults] = await Promise.all([agentsApi.agents(projectId), projectsApi.project(projectId), settingsApi.systemStatus().then((s) => s.cell_defaults)])
 		} catch {
 			// the picker then only offers "no agent", and the cell is described without numbers
 		} finally {
@@ -156,6 +159,8 @@
 		return isBoard && /^\d+$/.test(wanted) ? Number(wanted) : null
 	})
 	const chosenAgent = $derived(agents.find((a) => String(a.id) === data.config.agentId))
+	// the harness this step runs with: its agent's, else the one the node names (Codex when it names none)
+	const harness = $derived(harnesses.find((x) => x.id === (chosenAgent?.harness || data.config.harness || 'codex')) ?? null)
 	// what an empty model and effort resolve to here: the agent's, which falls back to the ones in Settings
 	const inheritedModel = $derived(chosenAgent?.model || harness?.default_model || '')
 	const inheritedEffort = $derived(chosenAgent?.reasoning_effort || harness?.default_effort || '')

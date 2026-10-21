@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type CellDefaults, type ProfileOverrides, type Project } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
+	import { settingsApi, type CellDefaults, type ProfileOverrides } from '$lib/api/settings'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import IconField from '$lib/components/IconField.svelte'
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban'
@@ -32,7 +34,7 @@
 			profile = null
 			untrack(() => formVersion++)
 			error = ''
-			api.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
+			settingsApi.systemStatus().then((s) => (defaults = s.cell_defaults)).catch(() => {}) // only fills the placeholders
 		}
 	})
 
@@ -41,7 +43,7 @@
 		error = ''
 		saving = true
 		try {
-			onsaved(await api.createProject({ name, purpose, description, icon, cell_profile: profile }))
+			onsaved(await projectsApi.createProject({ name, purpose, description, icon, cell_profile: profile }))
 			open = false
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not save the project'

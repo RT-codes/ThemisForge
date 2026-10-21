@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { ConnectionProvider } from './api.ts'
+import type { ConnectionProvider } from './api/connections.ts'
 import { catalog, filterCatalog, groupByCategory } from './connections.ts'
 
 const github = {

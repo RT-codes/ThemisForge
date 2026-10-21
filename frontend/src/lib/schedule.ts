@@ -1,4 +1,4 @@
-import type { ScheduledRun } from './api.ts'
+import type { ScheduledRun } from './api/tasks.ts'
 
 const DAY = 24 * 3600_000
 

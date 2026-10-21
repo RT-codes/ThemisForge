@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type PropertyDef, type PropertyType } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi } from '$lib/api/projects'
+	import type { PropertyDef, PropertyType } from '$lib/api/tasks'
 	import ColorPicker from '$lib/components/ColorPicker.svelte'
 	import { chipStyle } from '$lib/colors'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -71,7 +73,7 @@
 		}
 		saving = true
 		try {
-			await api.updateProject(projectId, { properties: out })
+			await projectsApi.updateProject(projectId, { properties: out })
 			onsaved()
 			open = false
 		} catch (err) {

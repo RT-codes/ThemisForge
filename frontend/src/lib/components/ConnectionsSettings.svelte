@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Connection, type ConnectionProvider, type ConnectionsList } from '$lib/api'
+	import { connectionsApi, type Connection, type ConnectionProvider, type ConnectionsList } from '$lib/api/connections'
+	import { ApiError } from '$lib/api/core'
 	import { catalog, filterCatalog, groupByCategory, METHOD_LABEL, type CatalogEntry } from '$lib/connections'
 	import { dateTime } from '$lib/format'
 	import { Badge } from '$lib/components/ui/badge/index.js'
@@ -34,7 +35,7 @@
 
 	async function load() {
 		try {
-			list = await api.connections()
+			list = await connectionsApi.connections()
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load connections'
@@ -120,8 +121,8 @@
 										{/if}
 									</span>
 								</span>
-								<Button variant="ghost" size="sm" disabled={busyId === conn.id} onclick={() => act(conn, () => api.testConnection(conn.id))}>Test</Button>
-								<Button variant="ghost" size="sm" disabled={busyId === conn.id} onclick={() => act(conn, () => api.disconnect(conn.id))}>Disconnect</Button>
+								<Button variant="ghost" size="sm" disabled={busyId === conn.id} onclick={() => act(conn, () => connectionsApi.testConnection(conn.id))}>Test</Button>
+								<Button variant="ghost" size="sm" disabled={busyId === conn.id} onclick={() => act(conn, () => connectionsApi.disconnect(conn.id))}>Disconnect</Button>
 							</div>
 						{/each}
 						{#if setup}{@render setup(entry.id)}{/if}

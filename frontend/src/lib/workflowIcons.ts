@@ -16,6 +16,7 @@ import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
 import LinkIcon from '@lucide/svelte/icons/link'
 import ListChecksIcon from '@lucide/svelte/icons/list-checks'
 import MergeIcon from '@lucide/svelte/icons/merge'
+import ShieldCheckIcon from '@lucide/svelte/icons/shield-check'
 import LockIcon from '@lucide/svelte/icons/lock'
 import MapPinIcon from '@lucide/svelte/icons/map-pin'
 import NotepadTextIcon from '@lucide/svelte/icons/notepad-text'
@@ -33,7 +34,7 @@ import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert'
 import ZapIcon from '@lucide/svelte/icons/zap'
 import type { NodeKind } from './workflow'
 
-export const nodeIcons = { start: RocketIcon, trigger: ZapIcon, task: ListChecksIcon, agent: BotIcon, condition: GitBranchIcon, end: FlagIcon, volume: FolderIcon, split: SplitIcon, merge: MergeIcon } satisfies Record<NodeKind, typeof ZapIcon>
+export const nodeIcons = { start: RocketIcon, trigger: ZapIcon, task: ListChecksIcon, agent: BotIcon, condition: GitBranchIcon, approval: ShieldCheckIcon, end: FlagIcon, volume: FolderIcon, split: SplitIcon, merge: MergeIcon } satisfies Record<NodeKind, typeof ZapIcon>
 
 /**
  * The icon in front of each setting in a node's window, by the setting's key (see NODE_FIELDS in workflow.ts). A key

@@ -9,7 +9,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play'
 	import XIcon from '@lucide/svelte/icons/x'
 	import Trash2Icon from '@lucide/svelte/icons/trash-2'
-	import { api, type NodePreset } from '$lib/api'
+	import { workflowsApi, type NodePreset } from '$lib/api/workflows'
 	import { CROWDED_LINES, DRAG_TYPE, MOUNT, NODE_KINDS, PRESET_DRAG_TYPE, branchPoints, canConnect, crowdedLines, defaultConfig, fromGraph, isSavedNode, kindInfo, mountsFromGraph, nextNodeNumber, presetNodeData, toGraph, type Graph, type NodeKind, type WorkflowNodeData } from '$lib/workflow'
 	import { onDestroy, onMount, setContext, untrack } from 'svelte'
 	import { router } from '$lib/router.svelte'
@@ -48,7 +48,7 @@
 	const nodeTypes = { workflow: WorkflowNode }
 	const edgeTypes = { workflow: WorkflowEdge }
 	// the minimap tells node types apart by colour
-	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', end: '#f87171', volume: '#2dd4bf', split: '#38bdf8', merge: '#38bdf8' }
+	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', approval: '#f472b6', end: '#f87171', volume: '#2dd4bf', split: '#38bdf8', merge: '#38bdf8' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	// the dotted background and the snapping share one grid, so a snapped node sits exactly on the dots (Svelte Flow
@@ -116,7 +116,7 @@
 		nodes = flow.nodes
 		edges = flow.edges
 		counter = nextNodeNumber(initialGraph.nodes.map((n) => n.id))
-		api.nodePresets(projectId).then((p) => (presets = p)).catch(() => (presetError = 'Could not load the saved nodes'))
+		workflowsApi.nodePresets(projectId).then((p) => (presets = p)).catch(() => (presetError = 'Could not load the saved nodes'))
 		lastSaved = JSON.stringify(toGraph(nodes, edges)) // the starting point: only a difference from it counts as a change
 		loaded = true
 		// a link from a ticket ("Edit step") names a node in the address: it is selected, so its panel is open
@@ -253,11 +253,11 @@
 		try {
 			if (activeSaved) {
 				const gone = activeSaved.id
-				await api.deleteNodePreset(gone)
+				await workflowsApi.deleteNodePreset(gone)
 				presets = presets.filter((p) => p.id !== gone)
 			} else {
 				const d = active.data as WorkflowNodeData
-				presets = [...presets, await api.createNodePreset(projectId, { kind: d.kind, label: d.label.trim(), config: d.config })]
+				presets = [...presets, await workflowsApi.createNodePreset(projectId, { kind: d.kind, label: d.label.trim(), config: d.config })]
 				setKindOpen(d.kind, true) // so the new one is seen
 			}
 		} catch (e) {
@@ -267,7 +267,7 @@
 	async function removeSaved(p: NodePreset) {
 		presetError = ''
 		try {
-			await api.deleteNodePreset(p.id)
+			await workflowsApi.deleteNodePreset(p.id)
 			presets = presets.filter((x) => x.id !== p.id)
 		} catch (e) {
 			presetError = e instanceof Error ? e.message : 'Could not remove the saved node'

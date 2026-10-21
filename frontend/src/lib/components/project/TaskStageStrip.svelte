@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TaskStage } from '$lib/api'
+	import type { TaskStage } from '$lib/api/tasks'
 	import { STAGE_LABEL, STAGE_TONE, cardStages } from '$lib/stageTrack'
 	import { cn } from '$lib/utils'
 	import RunTrack from './RunTrack.svelte'

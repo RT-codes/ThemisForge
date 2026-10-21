@@ -6,10 +6,11 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.cells import CellResult
-from app.codex import save_auth
-from app.harness import CODEX_AUTH, RETRY_NOTE, CodexRenderer, parse_blocked
-from app.models import Attempt, Task, TaskStatus
+from app.execution.cells.contract import CellResult
+from app.execution.harnesses.codex import CODEX_AUTH, CodexRenderer
+from app.execution.harnesses.prompts import RETRY_NOTE, parse_blocked
+from app.features.connections.codex import save_auth
+from app.persistence.models import Attempt, Task, TaskStatus
 from tests.conftest import drain, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect, fake_auth

@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { api, ApiError, type Agent, type DeliveryResult, type Harness, type TaskStatus, type Webhook, type WebhookCreated, type WebhookDelivery, type WorkflowSummary, type Workspace } from '$lib/api'
+	import { harnessLabel } from '$lib/boardView'
+	import { agentsApi, type Agent } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import type { Workspace } from '$lib/api/projects'
+	import type { Harness, TaskStatus } from '$lib/api/tasks'
+	import { webhooksApi, type DeliveryResult, type Webhook, type WebhookCreated, type WebhookDelivery } from '$lib/api/webhooks'
+	import { workflowsApi, type WorkflowSummary } from '$lib/api/workflows'
 	import { columnsOf, destinationLabel } from '$lib/boards'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
@@ -72,7 +78,7 @@
 	const harness = $derived<Harness>(runWith.startsWith('agent:') ? 'codex' : (runWith as Harness))
 	const agentId = $derived(runWith.startsWith('agent:') ? Number(runWith.slice(6)) : null)
 	const runLabel = $derived(
-		agentId !== null ? (agents.find((a) => a.id === agentId)?.name ?? 'An agent that was deleted') : ({ '': 'Placeholder program', codex: 'Codex agent', workflow: 'Workflow' } as Record<Harness, string>)[harness],
+		agentId !== null ? (agents.find((a) => a.id === agentId)?.name ?? 'An agent that was deleted') : harnessLabel(harness),
 	)
 	const workflowName = (id: string) => workflows.find((w) => String(w.id) === id)?.name ?? (id ? 'Workflow' : 'Choose a workflow')
 
@@ -94,8 +100,8 @@
 		tried = null
 		deliveries = []
 		sample = SAMPLE_MESSAGE
-		api.agents(projectId).then((a) => (agents = a), () => {})
-		api.workflows(projectId).then((w) => (workflows = w), () => {})
+		agentsApi.agents(projectId).then((a) => (agents = a), () => {})
+		workflowsApi.workflows(projectId).then((w) => (workflows = w), () => {})
 		if (w) loadDeliveries()
 	}
 	$effect(() => {
@@ -110,7 +116,7 @@
 	async function loadDeliveries() {
 		if (!webhook) return
 		try {
-			deliveries = await api.webhookDeliveries(webhook.id)
+			deliveries = await webhooksApi.webhookDeliveries(webhook.id)
 		} catch {
 			// the log is a help; the form works without it
 		}
@@ -148,10 +154,10 @@
 		}
 		try {
 			if (webhook) {
-				await api.updateWebhook(webhook.id, body)
+				await webhooksApi.updateWebhook(webhook.id, body)
 				open = false
 			} else {
-				revealed = await api.createWebhook(projectId, body)
+				revealed = await webhooksApi.createWebhook(projectId, body)
 			}
 			onchanged()
 		} catch (err) {
@@ -166,7 +172,7 @@
 		busy = true
 		error = ''
 		try {
-			revealed = await api.newWebhookSecret(webhook.id)
+			revealed = await webhooksApi.newWebhookSecret(webhook.id)
 			onchanged()
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not make a new address'
@@ -189,7 +195,7 @@
 		if (!webhook) return
 		busy = true
 		try {
-			await api.deleteWebhook(webhook.id)
+			await webhooksApi.deleteWebhook(webhook.id)
 			open = false
 			onchanged()
 		} catch (err) {
@@ -206,7 +212,7 @@
 		error = ''
 		tried = null
 		try {
-			tried = await api.testWebhook(webhook.id, { payload: sample, event: sampleEvent })
+			tried = await webhooksApi.testWebhook(webhook.id, { payload: sample, event: sampleEvent })
 			onchanged()
 			await loadDeliveries()
 		} catch (err) {
@@ -317,6 +323,7 @@
 								<Select.Content>
 									<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
 									<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+									<Select.Item value="claude" label="Claude Code agent">Claude Code agent</Select.Item>
 									<Select.Item value="workflow" label="Workflow">Workflow</Select.Item>
 									{#each agents as a (a.id)}<Select.Item value={`agent:${a.id}`} label={a.name}>{a.name}</Select.Item>{/each}
 								</Select.Content>

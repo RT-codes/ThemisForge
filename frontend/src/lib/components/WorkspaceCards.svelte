@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Task, Workspace } from '$lib/api'
+	import type { Workspace } from '$lib/api/projects'
+	import type { Task } from '$lib/api/tasks'
 	import { statusLabel, statusTone, taskTotal, workspaceTasks } from '$lib/boards'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
 	import IconTile from '$lib/components/IconTile.svelte'

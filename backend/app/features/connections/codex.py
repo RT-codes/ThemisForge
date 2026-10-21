@@ -1,0 +1,529 @@
+"""A user's Codex connection: sign in with ChatGPT once, so Codex usage is drawn from their plan (not API billing).
+
+Safety rules this module keeps:
+- The sign in runs in a throwaway CODEX_HOME in the system temp dir (never inside the repository) that is deleted
+  afterwards, so a login can never end up in a commit.
+- The resulting auth.json is encrypted (app/crypto.py) before it touches the database. Plaintext lives in memory only.
+- Tokens are never logged and never returned by the API; the UI only gets a status.
+- No file paths are involved in storing or handing out the login, so it behaves the same on Linux, macOS and Windows.
+"""
+
+import asyncio
+import base64
+import contextlib
+import json
+import logging
+import os
+import re
+import shlex
+import shutil
+import tempfile
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.config import DEFAULT_SECRET_KEY, settings
+from app.crypto import decrypt, encrypt
+from app.features.system.docker_check import docker_bin, docker_env
+from app.features.system.settings import load_settings
+from app.persistence.models import CodexConnection, utcnow
+
+log = logging.getLogger("themis.codex")
+
+LOGIN_TIMEOUT_SECONDS = 15 * 60  # the one-time code expires after 15 minutes
+CODE_WAIT_SECONDS = 20  # how long starting a sign in waits for Codex to print its code
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+_URL = re.compile(r"https://\S+")
+_CODE = re.compile(r"^[A-Za-z0-9-]{4,24}$")
+
+
+class CodexError(Exception):
+    """Something the user can act on (CLI missing, not connected, unusable login)."""
+
+
+def codex_executable() -> str | None:
+    return shutil.which(settings.codex_bin)
+
+
+def key_is_secure() -> bool:
+    return settings.secret_key != DEFAULT_SECRET_KEY
+
+
+def parse_auth(text: str) -> dict:
+    """The decoded auth.json, or CodexError when it is not a ChatGPT sign in."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise CodexError("The Codex login could not be read") from None
+    tokens = data.get("tokens") if isinstance(data, dict) else None
+    if not isinstance(tokens, dict) or not tokens.get("refresh_token") or not tokens.get("access_token"):
+        raise CodexError("That was not a ChatGPT sign in, so it would not use your plan's Codex usage")
+    return data
+
+
+def _account_label(auth: dict) -> str:
+    """The email shown in the UI, read from the (unverified, display-only) id token."""
+    try:
+        payload = auth["tokens"]["id_token"].split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return str(claims.get("email") or "")[:320]
+    except (KeyError, IndexError, AttributeError, ValueError):
+        return ""
+
+
+def _parse_time(value: object) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+async def get_connection(session: AsyncSession, user_id: int) -> CodexConnection | None:
+    return await session.scalar(select(CodexConnection).where(CodexConnection.user_id == user_id))
+
+
+async def save_auth(
+    session: AsyncSession, user_id: int, text: str, *, fresh: bool = False
+) -> CodexConnection:
+    """Encrypt and store a login. `fresh` marks a new sign in (as opposed to a token refresh written back)."""
+    auth = parse_auth(text)
+    conn = await get_connection(session, user_id)
+    if conn is None:
+        conn = CodexConnection(user_id=user_id)
+        session.add(conn)
+        fresh = True
+    if fresh:
+        conn.connected_at = utcnow()
+    conn.auth_encrypted = encrypt(text)
+    conn.account = _account_label(auth) or conn.account or ""
+    conn.refreshed_at = _parse_time(auth.get("last_refresh")) or utcnow()
+    await session.commit()
+    return conn
+
+
+# ----- using the login (cells) -----
+
+# Codex refreshes its login when `last_refresh` is about 8 days old and when a request is rejected (OpenAI's CI/CD auth
+# guide). Refresh tokens rotate: the first copy to refresh invalidates every other copy of the old login, which then
+# fails with "refresh token already used" until someone signs in again. Every cell gets its own copy, so what has to
+# be kept apart is the refreshing, not the running (the way the Codex CLI and pi share one file and lock the refresh).
+CODEX_REFRESH_AFTER = timedelta(days=8)
+REFRESH_SLACK = timedelta(
+    minutes=5
+)  # on top of the run's own time limit, for clock differences and slow starts
+
+
+def _token_expiry(token: object) -> datetime | None:
+    """When an access token (a JWT) says it ends. Only the unverified, non-secret claims are read."""
+    try:
+        payload = str(token).split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return datetime.fromtimestamp(float(claims["exp"]), UTC)
+    except (IndexError, KeyError, TypeError, ValueError, OverflowError):
+        return None
+
+
+def _refreshed_at(auth: dict) -> datetime | None:
+    when = _parse_time(auth.get("last_refresh"))
+    return when if when is None or when.tzinfo else when.replace(tzinfo=UTC)
+
+
+def login_needs_refresh(auth: dict, run_seconds: int, now: datetime | None = None) -> bool:
+    """Whether a run of up to `run_seconds` might make Codex refresh this login. Unknown counts as yes: the only
+    cost of a false yes is that this run takes its turn alone, which is how every run used to go."""
+    horizon = (now or utcnow()) + timedelta(seconds=run_seconds) + REFRESH_SLACK
+    last = _refreshed_at(auth)
+    if last is None or last + CODEX_REFRESH_AFTER <= horizon:
+        return True
+    expires = _token_expiry(auth["tokens"].get("access_token"))
+    return expires is not None and expires <= horizon
+
+
+class _Gate:
+    """Who is using one user's login right now. Runs share it side by side, a run that may refresh it is alone with
+    it. Plain counters, no awaits between checking and claiming, so the single event loop makes them atomic."""
+
+    def __init__(self) -> None:
+        self.sharing = 0  # runs using the login in parallel
+        self.alone = False  # a run that may refresh it has it to itself
+        self.refreshers_waiting = 0  # these hold back new sharers, or a refresh would starve behind them
+        self._waiters: set[asyncio.Future[None]] = set()
+
+    def busy_for(self, max_parallel: int) -> bool:
+        return self.alone or self.refreshers_waiting > 0 or self.sharing >= max_parallel
+
+    async def wait(self) -> None:
+        future = asyncio.get_running_loop().create_future()
+        self._waiters.add(future)
+        try:
+            await future
+        finally:
+            self._waiters.discard(future)
+
+    def wake(self) -> None:
+        for future in self._waiters:
+            if not future.done():
+                future.set_result(None)
+
+
+_gates: dict[int, _Gate] = {}
+
+
+def _newer(candidate: dict, stored: dict) -> bool:
+    """Whether `candidate` is a later refresh than `stored`: the write-back of a run that began before another run
+    refreshed would otherwise put back a login whose refresh token is already used up."""
+    a, b = _refreshed_at(candidate), _refreshed_at(stored)
+    return a is not None and (b is None or a > b)
+
+
+class CodexLease:
+    """The decrypted login, as one run holds it. Write the refreshed login back with save_back()."""
+
+    def __init__(self, maker: async_sessionmaker[AsyncSession], user_id: int, auth_json: str) -> None:
+        self._maker = maker
+        self._user_id = user_id
+        self.auth_json = auth_json
+
+    async def save_back(self, text: str) -> bool:
+        """Store a refreshed login if it is newer than the stored one, and say whether it was. It must belong to
+        the same ChatGPT account (a cell is not trusted to swap it). When another run refreshed first, this lease
+        takes over that newer login instead, so a retry starts from a login that still works."""
+        old = parse_auth(self.auth_json)["tokens"].get("account_id")
+        new = parse_auth(text)
+        if old and old != new["tokens"].get("account_id"):
+            raise CodexError("The refreshed login belongs to a different account, so it was not stored")
+        async with self._maker() as session:
+            conn = await get_connection(session, self._user_id)
+            stored = decrypt(conn.auth_encrypted) if conn else None
+            if stored is not None and not _newer(new, parse_auth(stored)):
+                await self.adopt_newer()
+                return False
+            await save_auth(session, self._user_id, text)
+        self.auth_json = text
+        return True
+
+    async def adopt_newer(self) -> bool:
+        """Take over the stored login when another run refreshed it after this lease took it. Whether it did."""
+        try:
+            stored = await _stored_login(self._maker, self._user_id)
+        except CodexError:
+            return False
+        if not _newer(parse_auth(stored), parse_auth(self.auth_json)):
+            return False
+        self.auth_json = stored
+        return True
+
+
+def lease_is_busy(user_id: int, max_parallel: int = 1) -> bool:
+    gate = _gates.get(user_id)
+    return gate is not None and gate.busy_for(max_parallel)
+
+
+async def _stored_login(maker: async_sessionmaker[AsyncSession], user_id: int) -> str:
+    async with maker() as session:
+        conn = await get_connection(session, user_id)
+        text = decrypt(conn.auth_encrypted) if conn else None
+    if text is None:
+        raise CodexError(
+            "Codex is not connected for the project owner (or needs reconnecting). Connect it in Settings."
+        )
+    return text
+
+
+@asynccontextmanager
+async def lease_codex(
+    maker: async_sessionmaker[AsyncSession], user_id: int, *, max_parallel: int = 1, run_seconds: int = 3600
+) -> AsyncIterator[CodexLease]:
+    """Use one user's login for a run of at most `run_seconds`.
+
+    While the login is fresh enough that Codex will not refresh it, up to `max_parallel` runs hold it at once. A
+    run that may trigger a refresh waits for the others to finish and has the login alone; the runs after it
+    find the refreshed login in the database and share again. With `max_parallel=1` runs simply take turns."""
+    gate = _gates.setdefault(user_id, _Gate())
+    refresher = alone = False  # whether this run is waiting for / holds the login by itself
+    try:
+        while True:
+            text = await _stored_login(maker, user_id)
+            needs_refresh = login_needs_refresh(parse_auth(text), run_seconds)
+            # the login may have been refreshed by someone else while this run waited
+            if refresher != needs_refresh:
+                gate.refreshers_waiting += 1 if needs_refresh else -1
+                refresher = needs_refresh
+                if not needs_refresh:
+                    gate.wake()  # runs held back by this one as a refresher can look again
+            if needs_refresh and gate.sharing == 0 and not gate.alone:
+                gate.alone = alone = True
+                break
+            if (
+                not needs_refresh
+                and not gate.alone
+                and not gate.refreshers_waiting
+                and gate.sharing < max_parallel
+            ):
+                gate.sharing += 1
+                break
+            await gate.wait()
+    finally:
+        if refresher:
+            gate.refreshers_waiting -= 1
+            gate.wake()  # sharers held back by this run may go ahead
+    try:
+        yield CodexLease(maker, user_id, text)
+    finally:
+        if alone:
+            gate.alone = False
+        else:
+            gate.sharing -= 1
+        gate.wake()
+
+
+# ----- signing in -----
+
+
+@dataclass
+class LoginFlow:
+    status: str = "starting"  # starting | waiting | connected | failed | cancelled
+    verification_url: str = ""
+    code: str = ""
+    expires_at: datetime | None = None
+    error: str = ""
+    ready: asyncio.Event = field(default_factory=asyncio.Event)
+    task: asyncio.Task | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.status in ("starting", "waiting")
+
+
+class _Launch:
+    """One run of Codex's sign in: what to start, how to fetch the login it produced, and how to clean up after it."""
+
+    argv: list[str]
+    env: dict[str, str]
+
+    def explain(self, last_line: str) -> str:
+        return ""
+
+    async def collect(self) -> str:
+        raise NotImplementedError
+
+    async def cleanup(self) -> None:
+        raise NotImplementedError
+
+
+SIGN_IN_ARGS = [
+    "login",
+    "-c",
+    'cli_auth_credentials_store="file"',
+    "--device-auth",
+]  # a login file, not the OS keychain
+
+
+class _HostLogin(_Launch):
+    """Runs a Codex CLI installed on this machine (development)."""
+
+    def __init__(self, exe: str) -> None:
+        self._home = tempfile.mkdtemp(
+            prefix="themis-codex-"
+        )  # private to this user and outside the repository
+        self.argv = [exe, *SIGN_IN_ARGS]
+        self.env = {**os.environ, "CODEX_HOME": self._home}
+
+    async def collect(self) -> str:
+        auth_file = Path(self._home) / "auth.json"
+        if not auth_file.is_file():
+            raise CodexError("The sign in did not finish. Start again to get a new code.")
+        return auth_file.read_text(encoding="utf-8")
+
+    async def cleanup(self) -> None:
+        shutil.rmtree(self._home, ignore_errors=True)
+
+
+class _ContainerLogin(_Launch):
+    """Runs Codex's sign in inside a throwaway container of the cell image, which already has Codex in it, so nothing has
+    to be installed on this machine. The person sees the same code and link; the login file is copied out of the
+    container when it is done (which also works when Docker is on another machine), and the container is removed."""
+
+    HOME = "/tmp/codex-login"  # inside the container
+
+    def __init__(self, user_id: int, image: str, docker_host: str) -> None:
+        self._name = f"themis-login-{user_id}-{uuid.uuid4().hex[:8]}"
+        self._env = docker_env(docker_host)
+        self.env = self._env
+        self.argv = [
+            docker_bin(),
+            "run",
+            "--name",
+            self._name,
+            "--label",
+            "themis.login=1",
+            "-e",
+            f"CODEX_HOME={self.HOME}",
+            image,
+            # Codex wants its home folder to exist, and an image has none for it: make it, then become Codex
+            "sh",
+            "-c",
+            f'mkdir -p "$CODEX_HOME" && exec codex {" ".join(shlex.quote(a) for a in SIGN_IN_ARGS)}',
+        ]
+
+    def explain(self, last_line: str) -> str:
+        # Docker's own complaint (no such image, cannot connect) is more useful than "did not finish"
+        low = last_line.lower()
+        return (
+            f" ({last_line[:200]})"
+            if last_line and ("docker" in low or "image" in low or "daemon" in low)
+            else ""
+        )
+
+    async def _docker(self, *args: str) -> tuple[int, bytes]:
+        proc = await asyncio.create_subprocess_exec(
+            docker_bin(),
+            *args,
+            env=self._env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), 30)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return 124, b""
+        return proc.returncode or 0, out
+
+    async def collect(self) -> str:
+        folder = tempfile.mkdtemp(prefix="themis-codex-")
+        try:
+            code, _ = await self._docker("cp", f"{self._name}:{self.HOME}/auth.json", f"{folder}/auth.json")
+            file = Path(folder) / "auth.json"
+            if code != 0 or not file.is_file():
+                raise CodexError("The sign in did not finish. Start again to get a new code.")
+            return file.read_text(encoding="utf-8")
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    async def cleanup(self) -> None:
+        with contextlib.suppress(Exception):
+            await self._docker(
+                "rm", "-f", self._name
+            )  # also when cancelled or timed out: nothing is left running
+
+
+class CodexLogins:
+    """Runs `codex login --device-auth` for users: they get a code and a link, sign in on any device, done.
+    The server never needs a browser callback, which also makes it work behind a reverse proxy."""
+
+    def __init__(self, maker: async_sessionmaker[AsyncSession]) -> None:
+        self._maker = maker
+        self._flows: dict[int, LoginFlow] = {}
+
+    def get(self, user_id: int) -> LoginFlow | None:
+        return self._flows.get(user_id)
+
+    async def unavailable_reason(self) -> str | None:
+        """Why nobody can sign in to Codex on this server right now, or None when it works."""
+        if settings.codex_login == "host":
+            if codex_executable() is None:
+                return "The Codex CLI was not found on this machine. Install it, or set THEMIS_CODEX_BIN."
+            return None
+        if shutil.which("docker") is None:
+            return "Docker was not found on this server. Themis signs in to Codex inside a Docker container, so it needs Docker."
+        return None
+
+    async def _launch(self, user_id: int) -> "_Launch":
+        async with self._maker() as session:
+            cfg = await load_settings(session)
+        if settings.codex_login == "host":
+            return _HostLogin(codex_executable() or settings.codex_bin)
+        return _ContainerLogin(user_id, cfg.codex_image, cfg.docker_host)
+
+    async def start(self, user_id: int) -> LoginFlow:
+        if (reason := await self.unavailable_reason()) is not None:
+            raise CodexError(reason)
+        await self.cancel(user_id)
+        flow = LoginFlow()
+        self._flows[user_id] = flow
+        launch = await self._launch(user_id)
+        flow.task = asyncio.create_task(self._run(user_id, flow, launch))
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(flow.ready.wait(), CODE_WAIT_SECONDS)
+        return flow
+
+    async def cancel(self, user_id: int) -> None:
+        flow = self._flows.get(user_id)
+        if flow is None or not flow.active or flow.task is None:
+            return
+        flow.status = "cancelled"
+        flow.task.cancel()
+        await asyncio.gather(flow.task, return_exceptions=True)
+
+    async def shutdown(self) -> None:
+        for user_id in list(self._flows):
+            await self.cancel(user_id)
+
+    async def _run(self, user_id: int, flow: LoginFlow, launch: "_Launch") -> None:
+        proc: asyncio.subprocess.Process | None = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *launch.argv,
+                env=launch.env,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )  # fmt: skip
+            async with asyncio.timeout(LOGIN_TIMEOUT_SECONDS):
+                last = await self._read_prompt(proc, flow)
+                exit_code = await proc.wait()
+            if exit_code != 0:
+                raise CodexError(
+                    "The sign in did not finish. Start again to get a new code." + launch.explain(last)
+                )
+            text = await launch.collect()
+            async with self._maker() as session:
+                await save_auth(session, user_id, text, fresh=True)
+            flow.status = "connected"
+        except asyncio.CancelledError:
+            flow.status = "cancelled"
+            raise
+        except TimeoutError:
+            flow.status, flow.error = "failed", "The code expired. Start again to get a new one."
+        except CodexError as e:
+            flow.status, flow.error = "failed", str(e)
+        except Exception:
+            log.exception("Codex sign in failed")  # the message can never contain the login itself
+            flow.status, flow.error = "failed", "Could not complete the sign in"
+        finally:
+            flow.ready.set()
+            if proc is not None and proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+            await launch.cleanup()
+
+    @staticmethod
+    async def _read_prompt(proc: asyncio.subprocess.Process, flow: LoginFlow) -> str:
+        """Read Codex's instructions (a link, then a one-time code) and keep draining until it exits."""
+        assert proc.stdout is not None
+        want_code = False
+        last = ""
+        while raw := await proc.stdout.readline():
+            line = _ANSI.sub("", raw.decode(errors="replace")).strip()
+            last = line or last
+            if not flow.verification_url and (url := _URL.search(line)):
+                flow.verification_url = url.group(0)
+            elif want_code and not flow.code and _CODE.match(line):
+                flow.code = line
+            if "one-time code" in line.lower():
+                want_code = True
+            if flow.status == "starting" and flow.verification_url and flow.code:
+                flow.status = "waiting"
+                flow.expires_at = utcnow() + timedelta(seconds=LOGIN_TIMEOUT_SECONDS)
+                flow.ready.set()
+        return last

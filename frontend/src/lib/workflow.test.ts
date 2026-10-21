@@ -292,3 +292,10 @@ test('lines that share a connection point are the ones the editor warns about', 
   ])
   assert.deepEqual([...crowded].sort(), ['a', 'b'])
 })
+
+test('a step with no agent is named after the harness it runs with', () => {
+  const node = (harness: string) => ({ id: 'n1', kind: 'agent' as const, label: 'A', config: { harness }, position: { x: 0, y: 0 } })
+  const names = (harness: string) => agentSteps({ nodes: [node(harness)], edges: [] }, []).map((s) => s.agent)
+  assert.deepEqual(names('claude'), ['Plain Claude Code'])
+  assert.deepEqual(names(''), ['Plain Codex'])
+})

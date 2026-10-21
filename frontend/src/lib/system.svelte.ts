@@ -1,4 +1,4 @@
-import { api, type SystemStatus } from './api'
+import { settingsApi, type SystemStatus } from './api/settings'
 
 /** What the server says about itself, polled for every signed-in user: what waits for the administrator (a badge in the
  * sidebar), and whether runs are paused because Docker is not working (a banner on every page). */
@@ -13,7 +13,7 @@ class System {
 
   async refresh() {
     try {
-      this.status = await api.systemStatus()
+      this.status = await settingsApi.systemStatus()
     } catch {
       // transient: the next poll retries
     }

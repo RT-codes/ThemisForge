@@ -1,4 +1,8 @@
-import { api, ApiError, type Project, type SystemStatus, type Task, type TaskStatus, type WorkflowSummary } from './api'
+import { ApiError } from './api/core'
+import { projectsApi, type Project } from './api/projects'
+import { settingsApi, type SystemStatus } from './api/settings'
+import { tasksApi, type Task, type TaskStatus } from './api/tasks'
+import { workflowsApi, type WorkflowSummary } from './api/workflows'
 import { projects } from './projects.svelte'
 import { router } from './router.svelte'
 import type { TaskTab } from './routes'
@@ -68,27 +72,27 @@ export class ProjectDesk {
       if (document.hidden) return
       this.refreshTasks()
       // a halt may have been made (or lifted) from another tab or by the API: the banners follow it
-      api.project(this.projectId).then((p) => (this.project = p)).catch(() => {})
+      projectsApi.project(this.projectId).then((p) => (this.project = p)).catch(() => {})
       structure.refresh(this.projectId).catch(() => {})
-      api.workflows(this.projectId).then((w) => (this.workflows = w)).catch(() => {})
-      api.systemStatus().then((s) => (this.system = s)).catch(() => {})
+      workflowsApi.workflows(this.projectId).then((w) => (this.workflows = w)).catch(() => {})
+      settingsApi.systemStatus().then((s) => (this.system = s)).catch(() => {})
     }, 3000)
     const clock = setInterval(() => (this.now = Date.now()), 20_000)
     return () => (clearInterval(poll), clearInterval(clock))
   }
 
   private refreshTasks() {
-    return api.tasks(this.projectId, this.showSteps).then((t) => (this.tasks = t)).catch(() => {})
+    return tasksApi.tasks(this.projectId, this.showSteps).then((t) => (this.tasks = t)).catch(() => {})
   }
 
   async load() {
     try {
       const [project, , tasks, workflows, system] = await Promise.all([
-        api.project(this.projectId),
+        projectsApi.project(this.projectId),
         structure.refresh(this.projectId),
-        api.tasks(this.projectId, this.showSteps),
-        api.workflows(this.projectId),
-        api.systemStatus(),
+        tasksApi.tasks(this.projectId, this.showSteps),
+        workflowsApi.workflows(this.projectId),
+        settingsApi.systemStatus(),
       ])
       Object.assign(this, { project, tasks, workflows, system, loadError: '' })
       this.revision++
@@ -140,7 +144,7 @@ export class ProjectDesk {
   /** Stops one running task: its agent is cancelled, and it ends as any cancelled task does (see the docs). */
   async stopTask(task: Task) {
     try {
-      await api.cancelTask(task.id)
+      await tasksApi.cancelTask(task.id)
     } catch {
       // it finished (or was stopped) in the meantime: the reload below shows where it is
     }
@@ -149,7 +153,7 @@ export class ProjectDesk {
 
   /** Copies a task into the Backlog of its board and opens the copy. Throws when it could not be made. */
   async duplicateTask(task: Task) {
-    const copy = await api.duplicateTask(task.id)
+    const copy = await tasksApi.duplicateTask(task.id)
     await this.reload() // the copy has to be among the tasks before its panel can show it
     this.openTask(copy)
   }
@@ -196,8 +200,8 @@ export class ProjectDesk {
     const before = this.tasks
     this.tasks = this.tasks.map((t) => (t.id === task.id ? { ...t, status, position, board_id: boardId } : t)) // optimistic
     try {
-      if (boardId === task.board_id) await api.updateTask(task.id, { status, position })
-      else await api.moveTask(task.id, { board_id: boardId, status, position })
+      if (boardId === task.board_id) await tasksApi.updateTask(task.id, { status, position })
+      else await tasksApi.moveTask(task.id, { board_id: boardId, status, position })
       await this.load()
     } catch (e) {
       this.tasks = before
@@ -214,7 +218,7 @@ export class ProjectDesk {
     let reason = ''
     for (const { task, position: p } of moves) {
       try {
-        await api.updateTask(task.id, { status, position: p })
+        await tasksApi.updateTask(task.id, { status, position: p })
       } catch (e) {
         failed++
         reason = e instanceof Error ? e.message : 'Could not move the task'
@@ -236,7 +240,7 @@ export class ProjectDesk {
     let reason = ''
     for (const task of this.tasksToDelete) {
       try {
-        await api.deleteTask(task.id)
+        await tasksApi.deleteTask(task.id)
         if (this.sheetTaskId === task.id) this.sheetOpen = false
       } catch (e) {
         failed.push(task)

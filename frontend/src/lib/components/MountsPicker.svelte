@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type MountRef, type Volume } from '$lib/api'
+	import { volumesApi, type MountRef, type Volume } from '$lib/api/volumes'
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
 	import FolderIcon from '@lucide/svelte/icons/folder'
@@ -15,7 +15,7 @@
 
 	onMount(async () => {
 		try {
-			volumes = await api.volumes(projectId)
+			volumes = await volumesApi.volumes(projectId)
 		} catch {
 			// the list only fills the picker
 		} finally {

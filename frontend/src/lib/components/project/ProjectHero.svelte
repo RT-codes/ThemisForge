@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Project } from '$lib/api'
+	import type { Project } from '$lib/api/projects'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
 	import IconTile from '$lib/components/IconTile.svelte'
 	import SectionBanner from '$lib/components/SectionBanner.svelte'

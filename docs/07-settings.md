@@ -61,6 +61,12 @@ number is turned into the same number of cells of the configured size.
 Defaults for every cell: image, CPUs, memory, time limit and how long working folders are kept. See
 [Cells and work folders](/docs/cells). Saving applies the change to the next cell that starts.
 
+## Claude Code agents
+
+The image, model and reasoning effort tasks use when they run with a Claude Code agent and the agent does not choose its
+own. Build the default image with `./themis build-images`. The account comes from your
+[Claude Code connection](/docs/claude-code).
+
 ## Cell package
 
 What Themis itself adds to every Codex run, on top of the agent's own instructions, so you can read it, change it or switch

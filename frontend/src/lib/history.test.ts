@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { ProjectEvent } from './api.ts'
+import type { ProjectEvent } from './api/projects.ts'
 import { describeEvent, historyQuery } from './history.ts'
 
 const event = (kind: string, title: string, data: Record<string, unknown> = {}): ProjectEvent => ({ id: 1, kind, title, actor: 'Ada', workspace_id: null, board_id: null, task_id: null, data, created_at: '' })

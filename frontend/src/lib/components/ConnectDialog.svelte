@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type ConnectionLogin, type ConnectionProvider } from '$lib/api'
+	import { connectionsApi, type ConnectionLogin, type ConnectionProvider } from '$lib/api/connections'
+	import { ApiError } from '$lib/api/core'
 	import { METHOD_HINT, METHOD_LABEL } from '$lib/connections'
 	import { dateTime } from '$lib/format'
 	import { cn } from '$lib/utils'
@@ -42,7 +43,7 @@
 		const timer = setInterval(async () => {
 			if (document.hidden) return
 			try {
-				login = await api.connectionLogin(id)
+				login = await connectionsApi.connectionLogin(id)
 			} catch {
 				return // a hiccup: ask again on the next beat
 			}
@@ -64,7 +65,7 @@
 		error = ''
 		busy = true
 		try {
-			await api.connectWithToken(provider.id, token)
+			await connectionsApi.connectWithToken(provider.id, token)
 			token = ''
 			onconnected()
 			open = false
@@ -80,7 +81,7 @@
 		error = ''
 		busy = true
 		try {
-			login = await api.startConnectionLogin(provider.id)
+			login = await connectionsApi.startConnectionLogin(provider.id)
 		} catch (err) {
 			error = message(err, 'Could not start the sign in')
 		} finally {
@@ -90,7 +91,7 @@
 
 	async function cancelSignIn() {
 		if (!provider) return
-		await api.cancelConnectionLogin(provider.id).catch(() => {})
+		await connectionsApi.cancelConnectionLogin(provider.id).catch(() => {})
 		login = null
 	}
 

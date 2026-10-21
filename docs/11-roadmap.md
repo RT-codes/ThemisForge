@@ -46,14 +46,24 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Model and reasoning effort** chosen from lists, per agent and per workflow step.
 - **Webhooks**: an address that turns a message from outside into a task, with templates for its title and text, rules for
   which messages count, and a log of everything that arrived.
+- **Approval gates**: an Approval node in a workflow parks the run until a person approves or rejects it, survives a
+  restart, and announces itself with a toast, a button in the top bar and an entry under Needs attention.
+- **Notifications**: a project sends a message to a Discord channel when a task fails, waits for review or an approval, or
+  finishes, with a test button and the reason a message did not arrive.
+- **Usage per run**: every run records the harness and model it used and the tokens it spent, the base for usage views and
+  spending limits.
+- **Connect an agent (MCP)**: an outside agent such as Claude Code can look at one project, or at all of your projects and
+  the global settings, through MCP with a key made in Settings. It can read an overview, boards, tasks, runs, how agents
+  and workflows are set up, files and usage; a key can also be allowed to run work (make, move, run and cancel tasks,
+  run workflows, answer approvals, halt or resume), and a stronger one to set things up (agents, skills, workflows, files).
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next
 
 1. **Tasks from agents**, using the same task path as everything else: an agent lists follow-ups and the run turns them into
    tasks. Workflows can already make and move tasks, and [webhooks](/docs/webhooks) make them from outside.
-2. **Notifications and email.** Tell the administrator about new access requests, and tell people when work needs
-   review or fails. Email the invite link.
+2. **More notifications.** Telegram and push (ntfy) beside Discord, a link back to the task in each message, and email.
+   Tell the administrator about new access requests, and email the invite link.
 3. **Live updates** instead of polling.
 4. **Password reset.**
 5. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { PropertyDef, Task } from '$lib/api'
+	import type { PropertyDef, Task } from '$lib/api/tasks'
+	import { harnessLabel } from '$lib/boardView'
 	import { chipStyle } from '$lib/colors'
 	import { attemptLabel, dateTime, relative } from '$lib/format'
 	import { describeSchedule } from '$lib/recurrence'
@@ -88,11 +89,11 @@
 	})
 	const picking = (e: MouseEvent | KeyboardEvent) => e.ctrlKey || e.metaKey || e.shiftKey
 	const runWithLabel = $derived(
-		task.agent_id !== null ? 'An agent' : { '': 'Placeholder program', codex: 'Codex agent', workflow: 'Workflow' }[task.harness] ?? task.harness
+		task.agent_id !== null ? 'An agent' : harnessLabel(task.harness)
 	)
 	const running = $derived(task.status === 'running')
 	// a task that plays workflows says so with its stages below, so the badge is only for the ones without any
-	const showHarness = $derived(task.harness === 'codex' || (task.harness === 'workflow' && task.stages.length === 0))
+	const showHarness = $derived(task.harness === 'codex' || task.harness === 'claude' || (task.harness === 'workflow' && task.stages.length === 0))
 </script>
 
 <div
@@ -196,8 +197,8 @@
 			{/if}
 			{#if task.harness === 'workflow'}
 				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary"><WorkflowIcon class="size-3" />Workflow</span>
-			{:else if task.harness === 'codex'}
-				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary"><BotIcon class="size-3" />Codex</span>
+			{:else if task.harness === 'codex' || task.harness === 'claude'}
+				<span class="inline-flex items-center gap-1 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary"><BotIcon class="size-3" />{task.harness === 'claude' ? 'Claude Code' : 'Codex'}</span>
 			{/if}
 			{#each chips as chip (chip.key)}
 				<span class="rounded-md border border-transparent bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground" style={chip.style}>{chip.text}</span>

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type Board, type Task, type TaskStatus } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Board } from '$lib/api/projects'
+	import type { Task, TaskStatus } from '$lib/api/tasks'
 	import { columnsOf, customId } from '$lib/boards'
 	import ColorPicker from '$lib/components/ColorPicker.svelte'
 	import StatusIcon from '$lib/components/StatusIcon.svelte'
@@ -67,23 +69,23 @@
 		const name = newName.trim()
 		if (!name) return
 		// right after Backlog, where a status for work that has not started yet usually belongs; it can be moved from here
-		if (await run(() => api.addStatus(board.id, { name, index: 1 }))) newName = ''
+		if (await run(() => projectsApi.addStatus(board.id, { name, index: 1 }))) newName = ''
 	}
 
 	function rename(key: TaskStatus, name: string, current: string) {
 		const id = customId(key)
-		if (id !== null && name.trim() && name.trim() !== current) run(() => api.updateStatus(board.id, id, { name: name.trim() }))
+		if (id !== null && name.trim() && name.trim() !== current) run(() => projectsApi.updateStatus(board.id, id, { name: name.trim() }))
 	}
 
 	const recolor = (key: TaskStatus, color: string | undefined) => {
 		const id = customId(key)
-		if (id !== null) run(() => api.updateStatus(board.id, id, { color: color ?? null }))
+		if (id !== null) run(() => projectsApi.updateStatus(board.id, id, { color: color ?? null }))
 	}
 
 	// the server counts the index without the status itself, so one step up is the slot above it and one step down the slot below
 	const shift = (key: TaskStatus, from: number, step: -1 | 1) => {
 		const id = customId(key)
-		if (id !== null) run(() => api.updateStatus(board.id, id, { index: from + step }))
+		if (id !== null) run(() => projectsApi.updateStatus(board.id, id, { index: from + step }))
 	}
 
 	function askRemove(key: TaskStatus) {
@@ -94,7 +96,7 @@
 	async function remove() {
 		const id = removing === null ? null : customId(removing)
 		if (id === null) return
-		if (await run(() => api.removeStatus(board.id, id, moveTo))) removing = null
+		if (await run(() => projectsApi.removeStatus(board.id, id, moveTo))) removing = null
 	}
 </script>
 

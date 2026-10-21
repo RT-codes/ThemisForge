@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Board, PropertyDef, Task } from '$lib/api'
+	import type { Board } from '$lib/api/projects'
+	import type { PropertyDef, Task } from '$lib/api/tasks'
 	import StatusBadge from '$lib/components/StatusBadge.svelte'
 	import { chipStyle } from '$lib/colors'
 	import { dateTime, relative } from '$lib/format'

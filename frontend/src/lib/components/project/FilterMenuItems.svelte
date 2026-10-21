@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PropertyDef } from '$lib/api'
+	import type { PropertyDef } from '$lib/api/tasks'
 	import { HARNESS_CHOICES, NO_VALUE, SCHEDULE_CHOICES, filterCount, selectProperties, toggled, type Filters } from '$lib/boardView'
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js'
 

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi } from '$lib/api/projects'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js'
@@ -50,8 +51,8 @@
 		}
 	}
 
-	const halt = () => act(() => (scope === 'project' ? api.haltProject(id, stopRunning) : api.haltBoard(id, stopRunning)))
-	const resume = () => act(() => (scope === 'project' ? api.resumeProject(id) : api.resumeBoard(id)))
+	const halt = () => act(() => (scope === 'project' ? projectsApi.haltProject(id, stopRunning) : projectsApi.haltBoard(id, stopRunning)))
+	const resume = () => act(() => (scope === 'project' ? projectsApi.resumeProject(id) : projectsApi.resumeBoard(id)))
 </script>
 
 {#if haltedAt}

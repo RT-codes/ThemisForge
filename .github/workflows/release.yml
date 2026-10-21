@@ -11,9 +11,6 @@ permissions:
   contents: write
   packages: write
 
-env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/themis-cell-codex
-
 jobs:
   test:
     name: Tests
@@ -69,9 +66,14 @@ jobs:
             --title "Themis ${GITHUB_REF_NAME#v}" --generate-notes $flags
 
   cell-image:
-    name: Cell image
+    name: Cell image (${{ matrix.agent }})
     needs: test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        agent: [codex, claude]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/themis-cell-${{ matrix.agent }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -91,7 +93,8 @@ jobs:
       # amd64 for most computers and servers, arm64 for Apple silicon, Windows on ARM and Raspberry Pi
       - uses: docker/build-push-action@v6
         with:
-          context: docker/cell-codex
+          context: docker/cell
+          build-args: AGENT=${{ matrix.agent }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError } from '$lib/api'
+	import { authApi } from '$lib/api/auth'
+	import { ApiError } from '$lib/api/core'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -19,7 +20,7 @@
 
 	onMount(async () => {
 		try {
-			email = (await api.checkInvite(token)).email
+			email = (await authApi.checkInvite(token)).email
 		} catch (e) {
 			invalid = e instanceof ApiError && e.status === 404 ? e.message : 'Could not check this invite link'
 		}
@@ -30,7 +31,7 @@
 		error = ''
 		busy = true
 		try {
-			auth.signedIn(await api.acceptInvite(token, name, password))
+			auth.signedIn(await authApi.acceptInvite(token, name, password))
 			router.navigate('/')
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Something went wrong'

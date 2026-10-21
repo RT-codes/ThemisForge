@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { createServer, type ViteDevServer } from 'vite'
-import type { Board, Task } from '../../api.ts'
+import type { Board } from '../../api/projects'
+import type { Task } from '../../api/tasks'
 import { emptyView, type BoardView } from '../../boardView.ts'
 
 const task = (overrides: Partial<Task> = {}): Task => ({

@@ -58,7 +58,7 @@ then fails with that reason, whatever the exit code.
 | `attempts` | One row per execution: status, times, exit code, log and result, and why it failed when it did. |
 | `project_events` | A project's history: one line for each thing done to it. Kept when the thing itself is gone. |
 | `agents` | A project's agents: role, instructions, model, cell settings and the folders, tools and services each may use. The agent's file in the project's config folder is the source of truth; the row keeps its identity and a parsed copy. |
-| `mcp_servers` and `mcp_logins` | A project's tool servers (MCP), written into the Codex config of each run, and a user's sign ins to the tool servers that ask for one (encrypted). |
+| `mcp_servers` and `mcp_logins` | A project's tool servers (MCP), written into the Codex or Claude Code config of each run, and a user's sign ins to the tool servers that ask for one (encrypted). |
 | `workflows` | A project's workflow library: the nodes and lines of each flowchart. |
 | `workflow_runs` and `workflow_node_runs` | One execution of a workflow, with the graph as it was when it began, and what happened at each node: when, how it ended, its log, result and error. |
 | `node_presets` | The configured nodes a project keeps in the workflow editor's palette ("saved nodes"). |

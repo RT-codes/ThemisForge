@@ -24,8 +24,8 @@ to the Overview, and leaving with unsaved changes asks first.
 | **Name** | Unique within the project. This is what you pick in a task or a workflow. |
 | **Role** | One line on what it is responsible for, shown in lists so it is clear what each agent is for. |
 | **Description** | For people: a longer note on what the agent does. The agent never sees it. |
-| **Harness** | The program that runs inside the cell. Codex today (see [Connecting Codex](/docs/codex)). |
-| **Model** and **reasoning effort** | Pick them from the lists. Empty means the ones in **Settings, Codex agents**. The efforts offered depend on the model. A [workflow step](/docs/workflows) can override both for one run. |
+| **Harness** | The program that runs inside the cell: Codex (see [Connecting Codex](/docs/codex)) or Claude Code (see [Connecting Claude Code](/docs/claude-code)). |
+| **Model** and **reasoning effort** | Pick them from the lists. Empty means the ones of the harness in **Settings, Codex agents** or **Claude Code agents**. The efforts offered depend on the model. A [workflow step](/docs/workflows) can override both for one run. |
 | **Instructions** | For the agent: always put in front of whatever task it is given. How to work, what to produce, what to avoid. |
 | **Cell** | The size of its container. **Automatic** by default (the project's cell, which uses the defaults in Settings); press **Customise** only if this agent needs something different. |
 | **Folders** | The [shared folders](/docs/cells#shared-folders) mounted in its work folder, and whether it may write to them. |
@@ -74,8 +74,8 @@ editing one changes it for every agent that has it. The project's Settings lists
 
 - A skill folder can hold more than `SKILL.md`: scripts or reference files are given to the agent too, and show as tabs
   above the file in the editor.
-- Each run gets its own copy of only the skills the agent has, mounted **read only** at `/workspace/.agents/skills`, where
-  Codex looks for them. An agent cannot change a skill, and does not see the ones it was not given.
+- Each run gets its own copy of only the skills the agent has, mounted **read only** where the harness looks for them (`/workspace/.agents/skills` for Codex,
+  `/workspace/.claude/skills` for Claude Code). An agent cannot change a skill, and does not see the ones it was not given.
 - Deleting a skill takes it away from the agents that had it, and rewrites their files.
 
 ## Tools
@@ -187,7 +187,7 @@ variables named after the key in capitals, shown on the page: a key called "GitH
 - **In a workflow**: pick it in an Agent node. The node's instructions are the task it is given for that step, and the
   node can change the cell or add folders for that step only. See [Workflows](/docs/workflows).
 
-Both use the project owner's Codex connection, and both take part in the [resource budget](/docs/settings#resources) like
+Both use the project owner's connection for the agent's harness (Codex or Claude Code), and both take part in the [resource budget](/docs/settings#resources) like
 any other cell.
 
 ## Cells, from default to step
@@ -203,13 +203,13 @@ Everywhere a cell is chosen (a project, an agent, a workflow step) it starts on 
 means, for example "Uses the project's cell: 1 CPU, 1024 MB, 1 h". **Customise** shows the fields, and **Back to automatic**
 takes the overrides away again. Fields left empty while customising still use the layer above.
 
-An image is only worth setting if it has what the agent needs (such as the Codex CLI). By default a Codex agent uses the
-Codex image from Settings.
+An image is only worth setting if it has what the agent needs (such as the Codex or Claude Code CLI). By default an agent uses the
+image of its harness from Settings.
 
 ## Good to know
 
 - Names are unique per project, so two agents in different projects can share a name.
-- Deleting an agent does not delete the tasks it did. A task keeps running as a plain Codex task; workflow nodes that
+- Deleting an agent does not delete the tasks it did. A task keeps running as a plain task of the same harness; workflow nodes that
   used the agent fail with a note until you pick another one. An agent that is running a task cannot be deleted.
 - Removing a shared folder, skill, tool or key also removes it from the agents that had it, and their files are rewritten.
 - Agent settings are saved with the **Save changes** button; leaving the editor without saving asks first. Skill and tool

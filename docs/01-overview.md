@@ -51,10 +51,10 @@ See [Projects and tasks](/docs/tasks) and [Scheduling](/docs/scheduling).
 
 ## What works today, and what is next
 
-A task can be done by an **agent**: a role and instructions, run by **Codex** inside the cell, in a private working
+A task can be done by an **agent**: a role and instructions, run by **Codex** or **Claude Code** inside the cell, in a private working
 folder, with the skills, tools and keys you gave it. Tasks can be chained into **workflows** (a flowchart where one
 agent's result feeds the next step), and agents hand files to each other through shared folders. See
-[Agents](/docs/agents), [Workflows](/docs/workflows) and [Codex](/docs/codex).
+[Agents](/docs/agents), [Workflows](/docs/workflows), [Codex](/docs/codex) and [Claude Code](/docs/claude-code).
 
 A task with no agent runs a small **placeholder program** instead: it reads the task, prints it, and writes a result
 file. It needs nothing installed, which makes it a quick way to try the board, the schedule and the cells.

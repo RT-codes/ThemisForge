@@ -121,7 +121,7 @@
 	<div bind:this={el} onscroll={() => !moving && !query && (stick = atBottom())} class="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
 		{#if rows.length}
 			{#each rows as row, i (i)}
-				<div class={cn('break-words whitespace-pre-wrap', tone[row.kind])}>{#each search.rows[i] as part}{#if part.match !== null}<mark data-log-match={part.match} aria-current={part.match === current ? 'true' : undefined} class={cn('rounded-sm bg-yellow-300/25 text-yellow-100', part.match === current && 'bg-amber-300 text-black outline outline-1 outline-amber-100')}>{part.text}</mark>{:else}{part.text || ' '}{/if}{/each}</div>
+				<div class={cn('break-words whitespace-pre-wrap', tone[row.kind])}>{#each search.rows[i] as part}{#if part.match !== null}<mark data-log-match={part.match} aria-current={part.match === current ? 'true' : undefined} class={cn('rounded-sm', part.match === current ? 'bg-amber-300 text-black outline outline-1 outline-amber-100' : 'bg-yellow-300/40 text-yellow-950 dark:bg-yellow-300/25 dark:text-yellow-100')}>{part.text}</mark>{:else}{part.text || ' '}{/if}{/each}</div>
 			{/each}
 		{:else}
 			<span class="text-muted-foreground">{empty}</span>

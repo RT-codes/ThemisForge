@@ -2,12 +2,12 @@ import asyncio
 
 import pytest
 
-from app.app_settings import AppSettings, load_settings
-from app.budget import Cost, admit, cells_that_fit, never_fits, recommend_budget
-from app.cells import CellResult, CellSpec
-from app.docker_check import DockerStatus
-from app.models import AppSetting
-from app.routers import system as system_router
+import app.features.system.service as system_router
+from app.execution.budget import Cost, admit, cells_that_fit, never_fits, recommend_budget
+from app.execution.cells.contract import CellResult, CellSpec
+from app.features.system.docker_check import DockerStatus
+from app.features.system.settings import AppSettings, load_settings
+from app.persistence.models import AppSetting
 from tests.conftest import drain, make_project, make_task, register
 
 SMALL, BIG = Cost(1, 1024), Cost(4, 4096)
@@ -87,6 +87,7 @@ async def test_the_budget_limits_how_many_cells_run_at_once(client, scheduler, c
     gate.set()
     await drain(scheduler)
     assert await scheduler.tick() == 1
+    await drain(scheduler)
 
 
 async def test_memory_can_be_the_limit(client, scheduler, cells, monkeypatch):
@@ -97,7 +98,8 @@ async def test_memory_can_be_the_limit(client, scheduler, cells, monkeypatch):
     await make_task(client, pid, title="b", status="ready")
     monkeypatch.setattr(cells, "run", lambda spec, on_log: asyncio.Event().wait())
     assert await scheduler.tick() == 1
-    scheduler._live[next(iter(scheduler._live))].task.cancel()
+    scheduler.runs.live[next(iter(scheduler.runs.live))].task.cancel()
+    await drain(scheduler)
 
 
 async def test_a_task_that_cannot_fit_the_whole_budget_fails_with_a_reason(client, scheduler):

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type ScheduledRun } from '$lib/api'
+	import { tasksApi, type ScheduledRun } from '$lib/api/tasks'
 	import { relative, timeOnly } from '$lib/format'
 	import { cn } from '$lib/utils'
 	import CalendarClockIcon from '@lucide/svelte/icons/calendar-clock'
@@ -13,7 +13,7 @@
 
 	async function load() {
 		try {
-			runs = await api.schedule(projectId, hours)
+			runs = await tasksApi.schedule(projectId, hours)
 		} finally {
 			loaded = true
 		}

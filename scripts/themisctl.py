@@ -49,8 +49,12 @@ from pathlib import Path
 
 REPO = "RT-codes/ThemisForge"
 API = os.environ.get("THEMIS_RELEASE_API", f"https://api.github.com/repos/{REPO}").rstrip("/")
-IMAGE = "ghcr.io/rt-codes/themis-cell-codex"  # published by the release workflow, one tag per version
-LOCAL_IMAGE = "themisforge/cell-codex:latest"  # the name the app uses by default, so no setting has to change
+# One image per agent harness, published by the release workflow (one tag per version). The local name is the one the
+# app uses by default, so no setting has to change.
+CELL_IMAGES = {
+    "codex": ("ghcr.io/rt-codes/themis-cell-codex", "themisforge/cell-codex:latest"),
+    "claude": ("ghcr.io/rt-codes/themis-cell-claude", "themisforge/cell-claude:latest"),
+}
 UNIT = "themis.service"
 UNIT_PATH = f"/etc/systemd/system/{UNIT}"
 KEEP_RELEASES = 2  # the one that runs and the one before it, for a quick rollback
@@ -986,16 +990,17 @@ def docker_run(args: list[str], *, check: bool = True) -> subprocess.CompletedPr
     return run(["sg", "docker", "-c", shlex.join(["docker", *args])], check=check, capture=True)
 
 
-def get_cell_image(home: Home, release: Path, version: str) -> None:
-    """The box agents run in: pulled from the registry (seconds), or built from the release's Dockerfile (minutes) when the
-    registry cannot be reached. It is tagged with the name the app uses by default, so no setting has to change."""
-    remote = f"{IMAGE}:{version}"
-    info(f"getting the agent image {remote}")
-    if docker_run(["pull", remote], check=False).returncode == 0:
-        docker_run(["tag", remote, LOCAL_IMAGE])
-        return
-    info("it could not be pulled, so it is built here instead (a few minutes)")
-    docker_run(["build", "-t", LOCAL_IMAGE, str(release / "docker" / "cell-codex")])
+def get_cell_images(home: Home, release: Path, version: str) -> None:
+    """The boxes agents run in, one per harness: pulled from the registry (seconds), or built from the release's
+    Dockerfile (minutes) when the registry cannot be reached. Each is tagged with the name the app uses by default."""
+    for agent, (image, local) in CELL_IMAGES.items():
+        remote = f"{image}:{version}"
+        info(f"getting the {agent} agent image {remote}")
+        if docker_run(["pull", remote], check=False).returncode == 0:
+            docker_run(["tag", remote, local])
+            continue
+        info("it could not be pulled, so it is built here instead (a few minutes)")
+        docker_run(["build", "--build-arg", f"AGENT={agent}", "-t", local, str(release / "docker" / "cell")])
 
 
 # ----- backups -----
@@ -1121,7 +1126,7 @@ def cmd_install(args: argparse.Namespace, home: Home) -> None:
     say("Docker")
     ensure_docker(home, release_dir, yes=args.yes)
     if not args.skip_image:
-        get_cell_image(home, release_dir, version)
+        get_cell_images(home, release_dir, version)
     say("Settings")
     made = write_config_env(home, host=args.host, port=port, https=args.https)
     info("wrote a new secret key to config.env" if made else "kept the secret key you already have")
@@ -1210,7 +1215,7 @@ def cmd_upgrade(args: argparse.Namespace, home: Home) -> None:
     say("Switching")
     try:
         if not args.skip_image:
-            get_cell_image(home, new_dir, target)
+            get_cell_images(home, new_dir, target)
         if service_installed():
             service_action(home, "stop")
         link_current(home, target)

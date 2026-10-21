@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type KeyInfo, type McpInput, type McpServer } from '$lib/api'
+	import type { KeyInfo } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import { toolsApi, type McpInput, type McpServer } from '$lib/api/tools'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -84,7 +86,7 @@
 		}
 		saving = true
 		try {
-			onsaved(server ? await api.updateMcpServer(server.id, body) : await api.createMcpServer(projectId, body))
+			onsaved(server ? await toolsApi.updateMcpServer(server.id, body) : await toolsApi.createMcpServer(projectId, body))
 		} catch (err) {
 			formError = err instanceof ApiError || err instanceof Error ? err.message : 'Could not save the tool'
 		} finally {

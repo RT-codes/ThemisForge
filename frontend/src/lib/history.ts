@@ -1,6 +1,6 @@
 // The project's history: what each kind of event says, how events are grouped for filtering, and the address of a scope.
 
-import type { ProjectEvent } from './api'
+import type { ProjectEvent } from './api/projects'
 
 /** Where in the project to look: everything, or only what concerns one workspace, board or task. */
 export type HistoryScope = { workspaceId?: number; boardId?: number; taskId?: number }

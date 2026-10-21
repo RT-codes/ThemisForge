@@ -1,4 +1,4 @@
-export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'end' | 'volume'
+export type NodeKind = 'start' | 'trigger' | 'task' | 'agent' | 'condition' | 'approval' | 'end' | 'volume' | 'split' | 'merge'
 
 export type NodeKindInfo = {
   kind: NodeKind
@@ -14,6 +14,9 @@ export type NodeKindInfo = {
   mountOut?: boolean
   /** an agent takes folders at this point */
   mountIn?: boolean
+  /** the number of connection points on this side comes from the node's settings (see branchPoints): a Splitter sends
+   *  branches out at the bottom, a Merger takes them in at the top */
+  branching?: 'out' | 'in'
 }
 
 export const NODE_KINDS: NodeKindInfo[] = [
@@ -22,6 +25,9 @@ export const NODE_KINDS: NodeKindInfo[] = [
   { kind: 'task', label: 'Task', description: 'Creates, moves or runs a task', hasInput: true, hasOutput: true },
   { kind: 'agent', label: 'Agent', description: 'Runs an agent', hasInput: true, hasOutput: true, mountIn: true },
   { kind: 'condition', label: 'Condition', description: 'Branches on a check: yes or no', hasInput: true, hasOutput: true, outputs: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] },
+  { kind: 'approval', label: 'Approval', description: 'Waits for a person to approve or reject before the run goes on', hasInput: true, hasOutput: true },
+  { kind: 'split', label: 'Splitter', description: 'Sends the run down several branches that run at the same time', hasInput: true, hasOutput: true, branching: 'out' },
+  { kind: 'merge', label: 'Merger', description: 'Waits for its branches, then carries on with all of them together', hasInput: true, hasOutput: true, branching: 'in' },
   { kind: 'end', label: 'End', description: 'Finishes the workflow', hasInput: true, hasOutput: false },
   { kind: 'volume', label: 'Folder', description: 'A shared folder to hand to an Agent node', hasInput: false, hasOutput: false, mountOut: true },
 ]
@@ -35,7 +41,8 @@ export type WorkflowNodeData = { kind: NodeKind; label: string; config: NodeConf
 export type FieldDef = {
   key: string
   label: string
-  type: 'text' | 'textarea' | 'select' | 'time' | 'mounts'
+  /** a toggle is on while its value is empty and off while it is 'off' (so a node saved when it was a select keeps meaning) */
+  type: 'text' | 'textarea' | 'select' | 'time' | 'mounts' | 'toggle'
   options?: { value: string; label: string }[]
   placeholder?: string
   hint?: string
@@ -47,6 +54,12 @@ export type FieldDef = {
 
 const opts = (...pairs: [string, string][]) => pairs.map(([value, label]) => ({ value, label }))
 const STATUSES = opts(['backlog', 'Backlog'], ['ready', 'Ready'], ['review', 'Review'], ['done', 'Done'], ['failed', 'Failed'])
+
+// a Splitter and a Merger have 2 to MAX_BRANCHES branches: their settings are listed for every number, and shown for those in use
+export const MAX_BRANCHES = 4
+const BRANCH_COUNTS = opts(['2', '2 branches'], ['3', '3 branches'], ['4', '4 branches'])
+const branchNumbers = Array.from({ length: MAX_BRANCHES }, (_, i) => i + 1)
+const forBranch = (n: number): FieldDef['when'] => ({ key: 'branches', oneOf: BRANCH_COUNTS.map((o) => o.value).filter((v) => Number(v) >= n) })
 
 export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
   start: [],
@@ -71,12 +84,16 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
   ],
   agent: [
     // the options of agentId are the project's agents: the panel fills them in, this one is always there
-    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: plain Codex']) },
-    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent']), when: { key: 'agentId', oneOf: [''] } },
+    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: a plain one, chosen below']) },
+    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent'], ['claude', 'Claude Code agent']), when: { key: 'agentId', oneOf: [''] } },
     { key: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'What should the agent do?' },
-    { key: 'brief', label: "Task goal", type: 'select', options: opts(['', "Tell this step the task's goal"], ['off', "Don't tell it"]), hint: "Adds the task's title and description (for example \"Improve Themis\") to this step's instructions. Keep it on for steps that research or build. Turn it off for housekeeping steps, like syncing or publishing, so they do not try to do the whole task themselves." },
+    { key: 'brief', label: 'Include task title and description', type: 'toggle', hint: "Added to this step's instructions. Turn it off for housekeeping steps, like syncing or publishing." },
     { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue works in the folder of the step before this one (or of the stage before this workflow), and is told what that step changed. Without anything before it, the agent gets a fresh folder.' },
-    { key: 'onFailure', label: 'If it fails', type: 'select', options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on'])},
+    // the Advanced tab: most steps should simply stop the workflow
+    { key: 'onFailure', label: 'If it fails', type: 'select', advanced: true, options: opts(['stop', 'Stop the workflow'], ['continue', 'Carry on']) },
+    // the model and effort are drawn as one picker whose efforts follow the model (see ModelPicker.svelte); empty means the agent's own
+    { key: 'model', label: 'Model', type: 'text', advanced: true },
+    { key: 'reasoningEffort', label: 'Reasoning effort', type: 'text', advanced: true },
     { key: 'cellCpus', label: 'CPUs', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellMemory', label: 'Memory (MB)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
     { key: 'cellTimeout', label: 'Time limit (seconds)', type: 'text', advanced: true, placeholder: 'From the agent or project' },
@@ -88,10 +105,40 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'operator', label: 'Is', type: 'select', options: opts(['contains', 'contains'], ['equals', 'equal to'], ['not_equals', 'not equal to'], ['empty', 'empty']) },
     { key: 'value', label: 'Value', type: 'text', when: { key: 'operator', oneOf: ['contains', 'equals', 'not_equals'] } },
   ],
+  approval: [
+    { key: 'prompt', label: 'What to approve', type: 'textarea', placeholder: 'Publish this listing?', hint: 'Shown with the result of the step before, which passes on unchanged when someone approves. Rejecting stops this branch and fails the run, with their note as the reason.' },
+  ],
   volume: [
     // the options of volumeId are the project's folders: the panel fills them in
     { key: 'volumeId', label: 'Folder', type: 'select', options: opts(['', 'Choose a folder']) },
     { key: 'mode', label: 'The agent may', type: 'select', options: opts(['rw', 'Read and write'], ['ro', 'Read only']) },
+  ],
+  split: [
+    { key: 'branches', label: 'Branches', type: 'select', options: BRANCH_COUNTS, hint: 'They run at the same time. Each gets the result of the step before, and a copy of the working folder when it continues in it.' },
+    ...branchNumbers.flatMap((n): FieldDef[] => [
+      { key: `name${n}`, label: `Branch ${n} name`, type: 'text', placeholder: `Branch ${n}`, when: forBranch(n) },
+      { key: `contains${n}`, label: `Branch ${n}: only when the result contains`, type: 'text', placeholder: 'Always sent', when: forBranch(n) },
+      {
+        key: `files${n}`,
+        label: `Branch ${n}: only these files`,
+        type: 'text',
+        placeholder: 'All files. For example src, docs/**, *.md',
+        hint: n === 1 ? 'Paths in the working folder, separated by commas. A folder name means everything in it.' : undefined,
+        when: forBranch(n),
+      },
+    ]),
+  ],
+  merge: [
+    { key: 'branches', label: 'Branches', type: 'select', options: BRANCH_COUNTS, hint: 'Waits until every branch has finished or can no longer arrive, then carries on once.' },
+    ...branchNumbers.map((n): FieldDef => ({
+      key: `name${n}`,
+      label: `Folder name for branch ${n}`,
+      type: 'text',
+      placeholder: 'Named after the node that sends it',
+      hint: n === 1 ? "Each branch's files are put in a folder of this name, next to the others." : undefined,
+      when: forBranch(n),
+    })),
+    { key: 'onFailure', label: 'If a branch fails', type: 'select', options: opts(['stop', 'Fail the merge'], ['continue', 'Merge the ones that worked']) },
   ],
   end: [
     { key: 'outcome', label: 'Finishes as', type: 'select', options: opts(['success', 'Success'], ['failed', 'Failed'], ['review', 'Needs review']) },
@@ -127,10 +174,16 @@ export function summary(kind: NodeKind, c: NodeConfig): string {
       return c.instructions.trim() ? c.instructions.trim().split('\n')[0] : 'No instructions yet'
     case 'condition':
       return c.operator === 'empty' ? `${optionLabel('condition', 'source', c)} is empty` : `${optionLabel('condition', 'source', c)} ${optionLabel('condition', 'operator', c)} ${c.value || '...'}`
+    case 'approval':
+      return c.prompt?.trim() ? c.prompt.trim().split('\n')[0] : 'Waits for a person'
     case 'end':
       return `Ends as ${c.outcome}`
     case 'volume':
       return c.volumeId ? (c.mode === 'ro' ? 'Read only' : 'Read and write') : 'No folder chosen'
+    case 'split':
+      return `${branchCount(c)} branches at the same time`
+    case 'merge':
+      return `Waits for ${branchCount(c)} branches`
   }
 }
 
@@ -154,12 +207,48 @@ export const formatMounts = (mounts: MountChoice[]): string => mounts.map((m) =>
 /** the connection point a Folder uses on both ends of the line that hands a folder to an agent */
 export const MOUNT = 'mount'
 
+/** the editor tells its lines which of them share a connection point (see crowdedLines) through this context */
+export const CROWDED_LINES = Symbol('crowded-lines')
+
 export const isMountEdge = (e: { sourceHandle?: string | null }) => e.sourceHandle === MOUNT
 
 /** what may be joined to what: a Folder to an Agent through the folder points, and every other line only between steps */
 export function canConnect(source: NodeKind | undefined, target: NodeKind | undefined, sourceHandle?: string | null, targetHandle?: string | null): boolean {
   if (sourceHandle === MOUNT || targetHandle === MOUNT) return sourceHandle === MOUNT && targetHandle === MOUNT && source === 'volume' && target === 'agent'
+  // the branch points are only on a Splitter (out) and a Merger (in), and those two have nothing else to connect at
+  if ((source === 'split') !== /^o\d$/.test(sourceHandle ?? '')) return false
+  if ((target === 'merge') !== /^i\d$/.test(targetHandle ?? '')) return false
   return source !== 'volume' && target !== 'volume'
+}
+
+// ----- branches: a Splitter sends a run down several, a Merger waits for several -----
+
+/** how many branches a Splitter or Merger has: its setting, 2 to MAX_BRANCHES */
+export function branchCount(config: NodeConfig): number {
+  const n = Number(config.branches)
+  return Number.isInteger(n) ? Math.min(MAX_BRANCHES, Math.max(2, n)) : 2
+}
+
+/** the connection points a node's settings give it on its branching side, in order: "o1"... out of a Splitter,
+ *  "i1"... into a Merger. A branch is called what the person named it. */
+export function branchPoints(kind: NodeKind, config: NodeConfig): { id: string; label: string }[] {
+  if (kindInfo(kind).branching === undefined) return []
+  const out = kind === 'split'
+  return Array.from({ length: branchCount(config) }, (_, i) => {
+    const named = config[`name${i + 1}`]?.trim()
+    return { id: `${out ? 'o' : 'i'}${i + 1}`, label: named || (out ? `Branch ${i + 1}` : String(i + 1)) }
+  })
+}
+
+/** The lines that share a connection point with another line. The editor lets a point hold one line, so these come from
+ *  workflows made before that rule. They still run, one after the other; they are marked so a Splitter or Merger can
+ *  take their place. A folder may feed several agents, and an agent take several folders, so those do not count. */
+export function crowdedLines(edges: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }[]): Set<string> {
+  const steps = edges.filter((e) => !isMountEdge(e))
+  const ends = (e: (typeof steps)[number]) => [`out:${e.source}:${e.sourceHandle ?? ''}`, `in:${e.target}:${e.targetHandle ?? ''}`]
+  const count = new Map<string, number>()
+  for (const e of steps) for (const k of ends(e)) count.set(k, (count.get(k) ?? 0) + 1)
+  return new Set(steps.filter((e) => ends(e).some((k) => (count.get(k) ?? 0) > 1)).map((e) => e.id))
 }
 
 type MountNodeLike = { id: string; data: Record<string, unknown> }
@@ -270,14 +359,14 @@ export const nextNodeNumber = (ids: string[]) => ids.reduce((max, id) => Math.ma
 
 /** the graph a new workflow starts with: just where a run begins */
 /** The steps of a graph that are given instructions (its Agent nodes), with who does each: for a ticket to show what its
- * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs plain Codex. */
+ * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs a plain agent of the harness it names (Codex by default). */
 export function agentSteps(graph: Graph, agents: { id: number; name: string }[]) {
   return graph.nodes
     .filter((n) => n.kind === 'agent')
     .map((n) => ({
       nodeId: n.id,
       label: n.label.trim() || 'Agent',
-      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? 'Plain Codex',
+      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? (n.config.harness === 'claude' ? 'Plain Claude Code' : 'Plain Codex'),
       instructions: (n.config.instructions ?? '').trim(),
     }))
 }

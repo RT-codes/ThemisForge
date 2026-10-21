@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PropertyDef } from '$lib/api'
+	import type { PropertyDef } from '$lib/api/tasks'
 	import { SORTS, filterCount, isDefaultColumn } from '$lib/boardView'
 	import type { BoardViewStore } from '$lib/boardView.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type McpAuthPolicy, type McpLogin } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import type { McpAuthPolicy } from '$lib/api/settings'
+	import { toolsApi, type McpLogin } from '$lib/api/tools'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -19,7 +21,7 @@
 
 	async function load() {
 		try {
-			logins = await api.mcpLogins()
+			logins = await toolsApi.mcpLogins()
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the sign ins'
@@ -31,7 +33,7 @@
 
 	async function signOut(login: McpLogin) {
 		try {
-			await api.mcpSignOut(login.id)
+			await toolsApi.mcpSignOut(login.id)
 			await load()
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not sign out'

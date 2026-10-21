@@ -39,10 +39,15 @@ move them all together. **Esc** lets go of the selection.
 | **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). It can work on a chosen **board**: create the task there, or send the moved task there. A created task can be a **follow-up** of the task that started the run. A task that becomes **Ready** runs like any other task and the node waits for it. |
 | **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task behind the run: the task that started it, or the task it is a stage of (its title and description). That is how a ticket steers a workflow, see [Steering a run from the task](#steering-a-run-from-the-task). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
+| **Approval** | Parks the run until a person approves or rejects. See [Approvals](#approvals-waiting-for-a-person). |
+| **Splitter** | Sends the run down 2 to 4 **branches** that run at the same time. Each branch can have a rule: only when the result contains some text, and only some of the files. See [Branches](#branches-running-side-by-side). |
+| **Merger** | Waits for its branches, then carries on once with all of them: their results in one text and their working folders side by side. See [Branches](#branches-running-side-by-side). |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
 | **Folder** | Not a step: hands a [shared folder](/docs/cells#shared-folders) to an Agent node (see below). |
 
-Select a node to configure it in the panel on the right.
+Select a node to configure it in a window that opens beside it, over the canvas. The canvas does not move or resize, and
+the window follows the node when you drag it or pan the canvas. Drag the window by its title bar to pin it where you want
+it: it then stays put while you select other nodes, until you close it (the **x**, **Esc**, or a click on empty canvas).
 
 Select a connection (click the line) to choose how it is drawn: **Organic**, a smooth curve, or **Angular**, a line that
 only runs straight up, down or sideways. The choice belongs to that one connection and is saved with the workflow. It
@@ -53,7 +58,7 @@ you drag land on the dotted grid; switch it off to place nodes freely. It is rem
 
 ### Saved nodes
 
-A node you set up once can be kept for reuse. Select the node and press the **star** next to its title in the panel: the
+A node you set up once can be kept for reuse. Select the node and press the **star** next to its title in the window: the
 node, with its name and every setting, is kept under the built-in node of its kind in the palette. A kind that has saved
 nodes shows how many, with a chevron: unfold the Agent node, for example, to see the saved agents. Click a saved node or
 drag it onto the canvas to get a copy. The star stays lit while the node is exactly what was saved; press it again to
@@ -71,9 +76,17 @@ remove it from the saved nodes. A saved node also has a small **x** when you poi
 Pick an **agent** and write the **instructions** for this step. The agent's own instructions, model, cell and folders apply,
 and what you write here is the task it is given. With **No agent** the node runs a plain Codex agent, as before.
 
-Under **Cell and folders** a step can change the cell size or mount extra [shared folders](/docs/cells#shared-folders) (or join Folder nodes to it, see below) for
-this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press **Customise**. If an agent is deleted, the nodes that
-used it fail with a note that says so until you pick another.
+The window of an Agent node has two tabs. **Settings** holds the name, the agent and what it should do. **Advanced** holds
+**If it fails** (stop the whole workflow, the default, or carry on to the next step), **Model** and **Cell and folders**.
+**Model** picks another model and reasoning effort for this one step; left on the default, the step uses the agent's own
+(or the ones in Settings when no agent is chosen). The efforts offered follow the model. If the agent asks for an effort the
+step's model does not have, the model's own default effort is used instead. A step can
+change the cell size or mount extra [shared folders](/docs/cells#shared-folders) (or join Folder nodes to it, see below) for
+this one run, on top of what the agent has. The cell stays on **Automatic** (the agent's cell) until you press
+**Customise**. A dot on the Advanced tab tells you something in there is not at its default. Nodes with nothing advanced
+to set show no tabs.
+
+If an agent is deleted, the nodes that used it fail with a note that says so until you pick another.
 
 ### Working folders in a workflow
 
@@ -104,11 +117,88 @@ dashed and teal and has no arrow, because it is not a step: it only says "this a
   was removed from the project, the agent's run fails with a note too.
 - The agent's panel lists the folders handed over on the canvas, read only. Change them on the Folder nodes.
 
+## Branches: running side by side
+
+A connection point holds **one line**. Dropping a new line on a point that already has one replaces the old line. So what
+happens next is never a guess: to run two things after a step, use a Splitter; to wait for two, use a Merger. (A Folder may
+still feed several agents, and an agent take several folders.)
+
+**Splitter.** One input at the top, 2 to 4 branch points along the bottom. Name the branches in its window; the names show
+under the points. Every branch is sent the result of the step before it, and the branches run **at the same time**.
+
+- **Only when the result contains**: a branch whose rule is not met is not sent anything, so a Splitter can also choose
+  between ways. Nothing running after it waits for a branch that was not sent.
+- **Only these files**: the branch works on just those paths of the working folder (`src`, `docs/**`, `*.md`, separated by
+  commas; a folder name means everything in it).
+- **Working folders.** A step in a branch that is set to **Continue in the previous folder** works on a **copy** of the
+  folder of its own, so branches never write into the same files. The copy is only made when a step asks to continue; a
+  branch that does not use the folder costs nothing. The copy shows in the workflow steps as "copy of the folder".
+
+**Merger.** 2 to 4 branch points along the top, one output at the bottom. It runs once, when **every** branch has either
+arrived or can no longer arrive: a Condition that went the other way, or a branch that was not sent anything, never holds
+it up. It then carries on with:
+
+- **The results**, in one text with a heading per branch (so the next agent knows which is which).
+- **The folders**, side by side: every branch that worked in a folder is copied into a folder of the Merger's new working
+  folder, named after the branch: the **Folder name** you gave that point, or else the name of the node that sent it
+  (`research-a/`). The next agent is told what is in there. Only the private working folder is combined; shared folders
+  stay shared.
+- **If a branch fails**, the Merger fails and says which branch and why, and the ticket is blocked with that reason. Set
+  **Merge the ones that worked** to carry on with the others (the run is still marked as failed, as a failed step is).
+
+**Limits and good to know**
+
+- Branches that need a cell wait for a free one like any task. The resource budget decides how many run at once; the
+  rest are queued, and the time limit only starts when a cell starts, so a branch is never failed for waiting its turn.
+  A Merger waiting holds no cell.
+- When a branch fails, the other branches finish what they are doing and **start nothing new**.
+- Stopping a run stops every branch and the cells they started.
+- Workflows made before this rule can have several lines on one point. They keep running as they did, one line after the
+  other, and are drawn **in amber** with a note; put a Splitter or a Merger there to say what you mean.
+- A workflow that nests other workflows (a Task node that runs a task that plays a workflow) counts against the same
+  limit of workflows playing at once as before; many parallel branches that each start one use it up faster.
+
+## Approvals: waiting for a person
+
+An **Approval** node stops the run at that point and waits for you. It is how a workflow can be allowed to do something
+that matters, such as publishing a listing or sending a message, without doing it unseen.
+
+- **What to approve** is the question you write in the node. Next to it you are shown what the step before produced, so
+  you decide on the real thing.
+- **Approve** carries on down the line. What the step before produced passes on unchanged.
+- **Reject** fails the node, and the run with it, with your note as the reason. Nothing after the Approval node runs.
+- The first answer stands. Whatever the note says is kept in the node's log, with who answered.
+
+A run that waits is not stuck. It holds no cell and costs no budget, and other branches go on meanwhile.
+
+### Where you answer
+
+- A **toast** appears in the corner of the page when a run reaches an Approval node. Click it to open that approval
+  straight away. It goes away by itself after a while (and waits while the pointer is on it), but the approval is still
+  there.
+- The **Approvals** button in the top bar shows how many are waiting. It is there whenever something waits, and opens the
+  list. Each entry unfolds to show the question, the result to approve, and a note field.
+- A project's **Needs attention** card lists its waiting approvals first.
+- On the **Runs** tab the waiting node unfolds on its own, with a button that opens the same answer panel. On the canvas of
+  a test run the node holds a steady amber ring.
+
+### Restarts
+
+A run waiting at an Approval node **survives a restart** of Themis, and an answer given before or after one counts. What
+does not survive is anything else that was in motion: a step that was running next to it fails with "Themis restarted",
+the run ends as failed in the end, and only the part of the workflow **below** the Approval node carries on.
+
+This holds for runs started by a trigger or by hand. A workflow that a **task plays** (a stage, or a Task node that runs a
+task) ends with that task's attempt when Themis restarts, waiting approval included, so keep an Approval node in workflows
+that start from a trigger.
+
 ## How a run works
 
-- Nodes run **one at a time**, in the order the lines lead.
+- Nodes run **one at a time**, in the order the lines lead, until a [Splitter](#branches-running-side-by-side) sends the
+  run down several branches: those run side by side.
 - A node that fails stops its path. An agent can be told to **carry on** instead.
-- A node that more than one path leads to runs once.
+- A node that more than one path leads to runs once, when the first of them arrives. To wait for all of them, put a
+  [Merger](#branches-running-side-by-side) in front of it.
 - A **Task** node creates a real task in the project, which shows on its board like any other. An **Agent** node also makes
   a task to run its step (so the budget, the cell and the history work as for any task), but it is marked as a **workflow
   step** and kept off the boards and out of the counts. Show them with the small workflow button in a board's taskbar
@@ -143,11 +233,11 @@ ticket, and the workflow's instructions can stay general ("improve the game towa
 
 - A task with no description still tells its agents its title.
 - A step that only does housekeeping (syncing a clone, publishing a change) should not take the task's focus as its own
-  job. Set its **Task goal** to **Don't tell it** and it is given nothing from the task. The default is **Tell this
-  step the task's goal**, so a step that thinks about the work needs nothing set.
+  job. Turn off its **Include task title and description** switch and it is given nothing from the task. The switch
+  is on by default, so a step that thinks about the work needs nothing set.
 - A test run from the editor has no task, so nothing is added.
 - Under each stage in the task's panel, **Step instructions** shows what its agents are told (the workflow's instructions
-  as they are now, and who does each). **Edit step** opens the workflow editor with that node selected and its panel open.
+  as they are now, and who does each). **Edit step** opens the workflow editor with that node selected and its window open.
   Changing instructions there changes the workflow for every task that plays it.
 
 ### Stages on a task
@@ -196,8 +286,10 @@ Nodes that failed unfold on their own. Nodes the run never reached are listed un
 reason: a failed node before it, the other side of a condition, or no line leading to it.
 
 Node results open as formatted Markdown, with clickable web links and **Copy** buttons on code blocks. Switch to
-**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Selecting
-another run opens its results in Rendered view.
+**Raw** for the original text, or **Rendered** for the report. Long results scroll inside the viewer. Use **Enlarge result**
+for a wide reading window with more room for reports, tables and code. You can switch views there too; closing the window
+keeps your chosen view. Press **Esc** or the close button to return to the node. Selecting another run opens its results
+in Rendered view.
 
 A run that is still going can be cancelled; this also stops the container its current task is running in.
 

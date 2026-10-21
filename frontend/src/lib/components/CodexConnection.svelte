@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils'
-	import { api, ApiError, type CodexStatus } from '$lib/api'
+	import { connectionsApi, type CodexStatus } from '$lib/api/connections'
+	import { ApiError } from '$lib/api/core'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Card from '$lib/components/ui/card/index.js'
 	import { dateTime } from '$lib/format'
@@ -21,7 +22,7 @@
 
 	async function refresh() {
 		try {
-			codex = await api.codex()
+			codex = await connectionsApi.codex()
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load'
 		}
@@ -78,7 +79,7 @@
 						<LoaderCircleIcon class="size-3.5 animate-spin" />
 						Waiting for you to finish{login.expires_at ? ` (the code expires at ${dateTime(login.expires_at)})` : ''}. Only continue if you started this yourself.
 					</p>
-					<Button type="button" variant="ghost" class="justify-self-start" disabled={busy} onclick={() => run(api.codexCancelLogin)}>Cancel</Button>
+					<Button type="button" variant="ghost" class="justify-self-start" disabled={busy} onclick={() => run(connectionsApi.codexCancelLogin)}>Cancel</Button>
 				</div>
 			{:else if codex.connected}
 				<div class="flex items-center gap-3 rounded-lg border px-3 py-2.5">
@@ -89,7 +90,7 @@
 							Since {dateTime(codex.connected_at ?? '')}{codex.refreshed_at ? ` · last refreshed ${dateTime(codex.refreshed_at)}` : ''}
 						</p>
 					</div>
-					<Button type="button" variant="outline" class="ms-auto" disabled={busy} onclick={() => run(api.codexDisconnect)}>Disconnect</Button>
+					<Button type="button" variant="outline" class="ms-auto" disabled={busy} onclick={() => run(connectionsApi.codexDisconnect)}>Disconnect</Button>
 				</div>
 				<p class="text-xs text-muted-foreground">
 					Disconnecting removes the login from Themis. To also revoke it at OpenAI, sign out of Codex in your ChatGPT security settings.
@@ -103,7 +104,7 @@
 				{#if login?.status === 'failed'}
 					<p class="text-sm text-destructive" role="alert">{login.error}</p>
 				{/if}
-				<Button type="button" class="justify-self-start" disabled={busy || !codex.secret_key_secure || !codex.can_sign_in} onclick={() => run(api.codexStartLogin)}>
+				<Button type="button" class="justify-self-start" disabled={busy || !codex.secret_key_secure || !codex.can_sign_in} onclick={() => run(connectionsApi.codexStartLogin)}>
 					{codex.needs_reconnect ? 'Reconnect Codex' : 'Connect Codex'}
 				</Button>
 			{/if}

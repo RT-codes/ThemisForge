@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Connection, type ConnectionProvider, type ProjectConnection } from '$lib/api'
+	import { connectionsApi, type Connection, type ConnectionProvider, type ProjectConnection } from '$lib/api/connections'
+	import { ApiError } from '$lib/api/core'
 	import { METHOD_LABEL } from '$lib/connections'
 	import { router } from '$lib/router.svelte'
 	import { cn } from '$lib/utils'
@@ -39,7 +40,7 @@
 		error = ''
 		chosen = current?.connection_id ?? null
 		config = { ...(current?.config ?? {}) }
-		api.connections().then(
+		connectionsApi.connections().then(
 			(list) => {
 				mine = list.connections.filter((c) => c.provider === id && !c.needs_reconnect)
 				chosen = chosen ?? mine[0]?.id ?? null
@@ -68,7 +69,7 @@
 
 	const save = (e: SubmitEvent) => {
 		e.preventDefault()
-		if (provider && chosen !== null) void run(() => api.useConnection(projectId, provider.id, chosen!, config))
+		if (provider && chosen !== null) void run(() => connectionsApi.useConnection(projectId, provider.id, chosen!, config))
 	}
 </script>
 
@@ -113,7 +114,7 @@
 					{#if error}<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>{/if}
 					<Dialog.Footer>
 						{#if current}
-							<Button type="button" variant="ghost" class="me-auto" disabled={busy} onclick={() => run(() => api.stopUsingConnection(projectId, provider.id))}>Stop using</Button>
+							<Button type="button" variant="ghost" class="me-auto" disabled={busy} onclick={() => run(() => connectionsApi.stopUsingConnection(projectId, provider.id))}>Stop using</Button>
 						{/if}
 						<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
 						<Button type="submit" disabled={busy || chosen === null}>

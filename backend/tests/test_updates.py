@@ -3,10 +3,10 @@
 import httpx
 import pytest
 
-from app import updates
-from app.app_settings import AppSettings
+from app.features.system import updates
+from app.features.system.settings import AppSettings
+from app.features.system.version import BuildInfo
 from app.main import app
-from app.version import BuildInfo
 from tests.conftest import login, register
 
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { NodeRun, NodeRunStatus } from './api.ts'
+import type { NodeRun, NodeRunStatus } from './api/workflows.ts'
 import { cardStages, stageTrack } from './stageTrack.ts'
 import type { Graph, NodeKind } from './workflow.ts'
 
@@ -80,4 +80,15 @@ test('a card folds finished stages into a count and lists only the first few tha
   assert.equal(c.more, 2)
   assert.deepEqual(cardStages([stage('succeeded'), stage('succeeded')]), { done: 2, shown: [], more: 0 })
   assert.deepEqual(cardStages([stage('failed'), stage('pending')]).shown.map((s) => s.status), ['failed', 'pending'])
+})
+
+test('a Splitter lists its branches by the names they were given', () => {
+  seq = 0
+  const split = { ...node('sp', 'split', 'Split'), config: { branches: '2', name2: 'Docs' } }
+  const g: Graph = {
+    nodes: [node('s', 'start'), split, node('a', 'agent', 'Code'), node('b', 'agent', 'Write')],
+    edges: [edge('s', 'sp'), edge('sp', 'a', 'o1'), edge('sp', 'b', 'o2')],
+  }
+  const t = stageTrack(g, [ran('s', 'succeeded'), ran('sp', 'running')], 'running')
+  assert.deepEqual(t.next.map((o) => o.via), ['Branch 1', 'Docs'])
 })

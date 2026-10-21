@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type WorkflowDetail, type WorkflowSummary } from '$lib/api'
+	import { workflowsApi, type WorkflowDetail, type WorkflowSummary } from '$lib/api/workflows'
 	import { SvelteFlowProvider } from '@xyflow/svelte'
 	import FlowCanvas from '$lib/components/FlowCanvas.svelte'
 	import LoadWorkflowDialog from '$lib/components/LoadWorkflowDialog.svelte'
@@ -56,14 +56,14 @@
 		loading = true
 		error = ''
 		try {
-			all = await api.workflows(projectId)
+			all = await workflowsApi.workflows(projectId)
 			if (id === null) {
 				workflow = null
 				initialGraph = seedGraph()
 				name = nextWorkflowName(all.map((w) => w.name))
 				nameEdited = false
 			} else {
-				const loaded = await api.workflow(id)
+				const loaded = await workflowsApi.workflow(id)
 				if (loaded.project_id !== projectId) throw new Error('Workflow not found')
 				workflow = loaded
 				initialGraph = loaded.graph
@@ -101,7 +101,7 @@
 	/** creates the workflow the first time it is needed; everyone who asks meanwhile gets the same one */
 	function ensureCreated(graph: Graph): Promise<WorkflowDetail> {
 		if (workflow) return Promise.resolve(workflow)
-		creating ??= api
+		creating ??= workflowsApi
 			.createWorkflow(projectId, { name: nameEdited ? name.trim() : undefined, graph })
 			.then((created) => {
 				workflow = created
@@ -122,7 +122,7 @@
 			await ensureCreated(graph)
 			return
 		}
-		workflow = { ...existing, ...(await api.updateWorkflow(existing.id, { graph })) }
+		workflow = { ...existing, ...(await workflowsApi.updateWorkflow(existing.id, { graph })) }
 	}
 
 	/** the Save button: save what is there, and keep a new workflow even if it is still untouched */
@@ -153,7 +153,7 @@
 				await ensureCreated(canvas?.graph() ?? seedGraph())
 				return
 			}
-			const updated = await api.updateWorkflow(workflow.id, { name: wanted })
+			const updated = await workflowsApi.updateWorkflow(workflow.id, { name: wanted })
 			workflow = { ...workflow, ...updated }
 			name = updated.name
 			all = all.map((w) => (w.id === updated.id ? { ...w, name: updated.name, updated_at: updated.updated_at } : w))
@@ -166,14 +166,14 @@
 	async function test() {
 		const created = await ensureCreated(canvas?.graph() ?? seedGraph())
 		await canvas?.flush()
-		const started = await api.startWorkflowRun(created.id)
+		const started = await workflowsApi.startWorkflowRun(created.id)
 		selectedRun = started.id
 		testRun = started.id // the canvas plays it; the Runs tab has the details
 	}
 
 	const open = (id: number) => router.navigate(`/projects/${projectId}/workflows/${id}`)
 	const startNew = () => router.navigate(`/projects/${projectId}/workflows/new`)
-	const refreshRecent = (isOpen: boolean) => isOpen && api.workflows(projectId).then((list) => (all = list)).catch(() => {})
+	const refreshRecent = (isOpen: boolean) => isOpen && workflowsApi.workflows(projectId).then((list) => (all = list)).catch(() => {})
 
 	const saveLabel = $derived(
 		saving || saveState === 'saving' ? 'Saving' : saveState === 'error' ? 'Retry save' : workflow ? 'Saved' : 'Save'

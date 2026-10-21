@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type AttemptFailure } from '$lib/api'
+	import { tasksApi, type AttemptFailure } from '$lib/api/tasks'
 	import FailureNote from './FailureNote.svelte'
 
 	// Why the task's latest attempt failed, shown above the tabs of the details so it is the first thing seen on a failed
@@ -14,8 +14,8 @@
 		failure = null
 		if (attemptStatus !== 'failed') return
 		let current = true
-		api.attempts(taskId)
-			.then((list) => (list.length ? api.attempt(list[0].id) : null))
+		tasksApi.attempts(taskId)
+			.then((list) => (list.length ? tasksApi.attempt(list[0].id) : null))
 			.then((detail) => {
 				if (current && detail?.status === 'failed') failure = detail.failure
 			})

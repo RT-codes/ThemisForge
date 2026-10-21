@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, type ProjectEvent, type Task, type Workspace } from '$lib/api'
+	import { projectsApi, type ProjectEvent, type Workspace } from '$lib/api/projects'
+	import type { Task } from '$lib/api/tasks'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
 	import { dateTime, relative } from '$lib/format'
@@ -64,7 +65,7 @@
 	$effect(() => {
 		revision // reload when tasks change, so a change made a moment ago is listed
 		const query = historyQuery(scope, kinds, null, compact ? 8 : PAGE)
-		api
+		projectsApi
 			.projectHistory(projectId, query)
 			.then((e) => ((events = e), (more = !compact && e.length === PAGE), (error = '')))
 			.catch((e) => (error = e instanceof Error ? e.message : 'Could not load the history'))
@@ -74,7 +75,7 @@
 		if (!events?.length) return
 		loadingMore = true
 		try {
-			const next = await api.projectHistory(projectId, historyQuery(scope, kinds, events[events.length - 1].id, PAGE))
+			const next = await projectsApi.projectHistory(projectId, historyQuery(scope, kinds, events[events.length - 1].id, PAGE))
 			events = [...events, ...next]
 			more = next.length === PAGE
 		} catch (e) {

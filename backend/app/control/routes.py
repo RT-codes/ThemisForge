@@ -1,0 +1,163 @@
+import json
+import re
+from datetime import datetime
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import security
+from app.api.dependencies import CurrentUser, SessionDep
+from app.crypto import decrypt, encrypt
+from app.persistence.models import ControlToken, Project
+
+
+class ControlTokenIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    scope: Literal["read", "write", "manage"] = (
+        "read"  # each includes the one before (see app/control/server.py)
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("A token needs a name")
+        return v.strip()
+
+
+class ControlTokenOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int | None  # None: reaches all of the owner's projects
+    name: str
+    scope: Literal["read", "write", "manage"]
+    token_hint: str  # the last characters, to tell tokens apart
+    last_used_at: datetime | None
+    created_at: datetime
+
+
+class ControlConnect(BaseModel):
+    """Everything an owner pastes into an agent to connect it, with the secret in it."""
+
+    url: str
+    token: str
+    claude_code: str  # the command that adds this project to Claude Code
+    config_json: str  # the same for clients that read an mcpServers file
+
+
+# The tokens an owner hands to outside agents so they can use a project through MCP (see app/control/server.py)
+router = APIRouter(tags=["control"])
+
+
+async def _project(session: AsyncSession, project_id: int, user: CurrentUser) -> Project:
+    project = await session.get(Project, project_id)
+    if project is None or project.owner_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+    return project
+
+
+async def _token(
+    session: AsyncSession, token_id: int, user: CurrentUser
+) -> tuple[ControlToken, Project | None]:
+    token = await session.get(ControlToken, token_id)
+    if token is None or token.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Token not found")
+    return token, await session.get(Project, token.project_id) if token.project_id else None
+
+
+@router.get("/projects/{project_id}/control/tokens", response_model=list[ControlTokenOut])
+async def list_tokens(project_id: int, session: SessionDep, user: CurrentUser) -> list[ControlToken]:
+    """The keys that reach this one project."""
+    await _project(session, project_id, user)
+    rows = await session.scalars(
+        select(ControlToken).where(ControlToken.project_id == project_id).order_by(ControlToken.id)
+    )
+    return list(rows)
+
+
+@router.post(
+    "/projects/{project_id}/control/tokens",
+    response_model=ControlTokenOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_token(
+    project_id: int, body: ControlTokenIn, session: SessionDep, user: CurrentUser
+) -> ControlToken:
+    await _project(session, project_id, user)
+    return await _make(session, user, body, project_id)
+
+
+@router.get("/control/tokens", response_model=list[ControlTokenOut])
+async def list_account_tokens(session: SessionDep, user: CurrentUser) -> list[ControlToken]:
+    """The keys that reach all of the user's projects (and the global settings, when the user is an administrator)."""
+    rows = await session.scalars(
+        select(ControlToken)
+        .where(ControlToken.user_id == user.id, ControlToken.project_id.is_(None))
+        .order_by(ControlToken.id)
+    )
+    return list(rows)
+
+
+@router.post("/control/tokens", response_model=ControlTokenOut, status_code=status.HTTP_201_CREATED)
+async def create_account_token(body: ControlTokenIn, session: SessionDep, user: CurrentUser) -> ControlToken:
+    return await _make(session, user, body, None)
+
+
+async def _make(
+    session: AsyncSession, user: CurrentUser, body: ControlTokenIn, project_id: int | None
+) -> ControlToken:
+    secret, secret_hash, hint = security.new_secret()
+    token = ControlToken(
+        user_id=user.id,
+        project_id=project_id,
+        name=body.name,
+        scope=body.scope,
+        token_hash=secret_hash,
+        token_encrypted=encrypt(secret),
+        token_hint=hint,
+    )
+    session.add(token)
+    await session.commit()
+    return token
+
+
+@router.get("/control/tokens/{token_id}/connect", response_model=ControlConnect)
+async def connect(token_id: int, request: Request, session: SessionDep, user: CurrentUser) -> ControlConnect:
+    """The command and config that connect an agent with this token. The secret is in them, so it is only given to the
+    project's owner, who can ask again whenever they need it."""
+    token, project = await _token(session, token_id, user)
+    secret = decrypt(token.token_encrypted)
+    if secret is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This token cannot be read any more because THEMIS_SECRET_KEY changed. Delete it and make a new one.",
+        )
+    url = f"{str(request.base_url).rstrip('/')}/mcp"
+    # one name per project, so several projects can be connected to the same agent side by side
+    name = "themis"
+    if project is not None:
+        name += "-" + (re.sub(r"[^a-z0-9]+", "-", project.name.lower()).strip("-") or str(project.id))
+    return ControlConnect(
+        url=url,
+        token=secret,
+        claude_code=f'claude mcp add --transport http {name} {url} --header "Authorization: Bearer {secret}"',
+        config_json=json.dumps(
+            {
+                "mcpServers": {
+                    name: {"type": "http", "url": url, "headers": {"Authorization": f"Bearer {secret}"}}
+                }
+            },
+            indent=2,
+        ),
+    )
+
+
+@router.delete("/control/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_token(token_id: int, session: SessionDep, user: CurrentUser) -> None:
+    token, _ = await _token(session, token_id, user)
+    await session.delete(token)
+    await session.commit()

@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.models import AccessRequest, Invite, utcnow
+from app.persistence.models import AccessRequest, Invite, utcnow
 from tests.conftest import login, register
 
 ASK = {"name": "Grace", "email": "Grace@Example.com", "reason": "I would like to collaborate on project X"}

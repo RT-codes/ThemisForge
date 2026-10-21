@@ -19,12 +19,12 @@ from pathlib import Path
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from .app_settings import AppSettings, load_settings
-from .config import settings
-from .docker_check import check_docker
-from .preflight import FAIL, OK, WARN, Check, cells_can_run, run_checks
-from .runlog import Run, read_runs
-from .version import build_info
+from app.config import settings
+from app.features.system.docker_check import check_docker
+from app.features.system.preflight import FAIL, OK, WARN, Check, cells_can_run, run_checks
+from app.features.system.runlog import Run, read_runs
+from app.features.system.settings import AppSettings, load_settings
+from app.features.system.version import build_info
 
 _MARK = {OK: "\033[32m✓\033[0m", WARN: "\033[33m!\033[0m", FAIL: "\033[31m✗\033[0m"}
 _PLAIN = {OK: "[ok]", WARN: "[warn]", FAIL: "[FAIL]"}
@@ -32,7 +32,7 @@ _PLAIN = {OK: "[ok]", WARN: "[warn]", FAIL: "[FAIL]"}
 
 def _app_settings() -> AppSettings:
     """The Docker host the operator saved in the Settings page, if the database exists."""
-    from .db import make_engine
+    from app.persistence.db import make_engine
 
     async def read() -> AppSettings:
         engine = make_engine(settings.database_url)

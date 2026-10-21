@@ -1,6 +1,14 @@
 <script lang="ts">
-	import { api, ApiError, type Project, type ScheduledRun, type Task } from '$lib/api'
+	import { agentsApi } from '$lib/api/agents'
+	import { connectionsApi } from '$lib/api/connections'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
+	import { tasksApi, type ScheduledRun, type Task } from '$lib/api/tasks'
+	import { toolsApi } from '$lib/api/tools'
 	import { attentionTasks } from '$lib/attention'
+	import { headline } from '$lib/approvals'
+	import { approvals } from '$lib/approvals.svelte'
+	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check'
 	import { destinationLabel, findBoard } from '$lib/boards'
 	import HaltBanner from '$lib/components/project/HaltBanner.svelte'
 	import HaltControl from '$lib/components/project/HaltControl.svelte'
@@ -51,11 +59,13 @@
 	let revision = $state(0)
 	let allActivity = $state(false)
 	const workspaces = $derived(structure.get(id) ?? [])
+	// runs of this project parked at an Approval node: a person's decision comes before any task's result
+	const pendingApprovals = $derived(approvals.list.filter((a) => a.project_id === id))
 	const attention = $derived(attentionTasks(tasks ?? [], allAttention ? tasks?.length : 5))
 
 	async function loadAttention() {
 		try {
-			tasks = await api.tasks(id)
+			tasks = await tasksApi.tasks(id)
 			attentionError = ''
 		} catch (e) {
 			attentionError = e instanceof ApiError ? e.message : 'Could not load tasks needing attention'
@@ -64,7 +74,7 @@
 
 	async function load() {
 		try {
-			const [loaded, upcoming] = await Promise.all([api.project(id), api.schedule(id, 168), structure.refresh(id), loadAttention()])
+			const [loaded, upcoming] = await Promise.all([projectsApi.project(id), tasksApi.schedule(id, 168), structure.refresh(id), loadAttention()])
 			project = loaded
 			runs = upcoming
 			revision++
@@ -79,10 +89,10 @@
 	async function loadSetup() {
 		try {
 			const [agents, tools, bound, catalog] = await Promise.all([
-				api.agents(id),
-				api.mcpServers(id),
-				api.projectConnections(id),
-				api.connections(),
+				agentsApi.agents(id),
+				toolsApi.mcpServers(id),
+				connectionsApi.projectConnections(id),
+				connectionsApi.connections(),
 			])
 			agentCount = agents.length
 			issues = setupIssues({
@@ -154,7 +164,7 @@
 
 {#if project}
 	<div class="px-6 pt-6 pb-8" in:fade={{ duration: 350 }}>
-		<ProjectHero {project} title={project.name} lead={project.purpose} detail={project.description} art="overview" actions={heroActions}>
+		<ProjectHero {project} title={project.name} lead={project.purpose} detail={project.description} actions={heroActions}>
 			{#if project.halted_at}<div class="mb-3"><HaltBanner scope="project" name={project.name} /></div>{/if}
 			<div class="flex flex-wrap gap-2 text-xs">
 				<span class="inline-flex items-center gap-1.5 rounded-full border bg-background/50 px-3 py-1">
@@ -188,7 +198,7 @@
 		<GroupHeading icon={GaugeIcon}>Status</GroupHeading>
 		<div class="mt-3 grid gap-4">
 		<div class="@container overflow-hidden glow-card rounded-xl border bg-card">
-			<SectionBanner art="tasks" icon={ListChecksIcon} tone="amber">
+			<SectionBanner icon={ListChecksIcon} tone="amber">
 				<h3 class="text-base font-semibold tracking-tight">Tasks</h3>
 				<p class="text-xs text-muted-foreground">A quick pulse on work in this project</p>
 			</SectionBanner>
@@ -209,24 +219,42 @@
 
 		<div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
 			<section class="overflow-hidden glow-card rounded-xl border bg-card lg:col-span-7" aria-labelledby="attention-title">
-				<SectionBanner art="attention" icon={TriangleAlertIcon} tone="amber" actions={!attentionError && attention.total > 5 ? attentionToggle : undefined}>
+				<SectionBanner icon={TriangleAlertIcon} tone="amber" actions={!attentionError && attention.total > 5 ? attentionToggle : undefined}>
 					<h3 id="attention-title" class="flex items-center gap-2 text-base font-semibold tracking-tight">
 						Needs attention
 						{#if !attentionError && tasks !== null}
-							<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">{attention.total}</span>
+							<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">{attention.total + pendingApprovals.length}</span>
 						{/if}
 					</h3>
-					<p class="text-xs text-muted-foreground">Review results and check failures across all boards.</p>
+					<p class="text-xs text-muted-foreground">Approve waiting runs, review results and check failures across all boards.</p>
 				</SectionBanner>
 				<div class="p-5">
+					{#if pendingApprovals.length}
+						<ul class="divide-y" aria-label="Waiting for approval">
+							{#each pendingApprovals as a (a.id)}
+								<li>
+									<button type="button" class="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md px-2 py-3 text-start text-sm transition-colors hover:bg-accent/50" onclick={() => approvals.show(a.id)}>
+										<div class="min-w-0 flex-1">
+											<p class="truncate font-medium" title={headline(a)}>{headline(a)}</p>
+											<p class="truncate text-xs text-muted-foreground">{a.workflow_name} · {a.label}</p>
+										</div>
+										<span class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"><ShieldCheckIcon class="size-3.5" /> Waiting for approval</span>
+										<span class="shrink-0 font-medium text-primary">Review</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
 					{#if attentionError}
 						<p class="text-sm text-destructive" role="alert">Could not refresh tasks needing attention: {attentionError}. Retrying automatically.</p>
 					{:else if tasks === null}
 						<p class="text-sm text-muted-foreground">Loading tasks needing attention...</p>
 					{:else if attention.total === 0}
-						<p class="flex items-center gap-2 text-sm text-muted-foreground">
-							<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" /> No tasks need attention.
-						</p>
+						{#if !pendingApprovals.length}
+							<p class="flex items-center gap-2 text-sm text-muted-foreground">
+								<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" /> No tasks need attention.
+							</p>
+						{/if}
 					{:else}
 						<ul class="divide-y">
 							{#each attention.items as { task, reason } (task.id)}
@@ -251,7 +279,7 @@
 			</section>
 
 			<section class="overflow-hidden glow-card rounded-xl border bg-card lg:col-span-5" aria-labelledby="upcoming-title">
-				<SectionBanner art="upcoming" icon={CalendarClockIcon} tone="violet">
+				<SectionBanner icon={CalendarClockIcon} tone="violet">
 					<h3 id="upcoming-title" class="text-base font-semibold tracking-tight">Upcoming runs</h3>
 					<p class="text-xs text-muted-foreground">What is scheduled to start in the next 7 days.</p>
 				</SectionBanner>
@@ -288,7 +316,7 @@
 		<section class="mt-8">
 		<GroupHeading icon={HistoryIcon}>Timeline</GroupHeading>
 		<div class="mt-3 overflow-hidden glow-card rounded-xl border bg-card">
-			<SectionBanner art="activity" icon={ClockIcon} tone="amber">
+			<SectionBanner icon={ClockIcon} tone="amber">
 				<h3 class="text-base font-semibold tracking-tight">Recent activity</h3>
 				<p class="text-xs text-muted-foreground">What was done across all workspaces and boards. Each board and workspace has its own history too.</p>
 			</SectionBanner>

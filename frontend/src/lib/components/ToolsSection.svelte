@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type KeyInfo, type McpServer } from '$lib/api'
+	import { agentsApi, type KeyInfo } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import { toolsApi, type McpServer } from '$lib/api/tools'
 	import { auth } from '$lib/auth.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -36,7 +38,7 @@
 
 	async function load() {
 		try {
-			;[servers, keys] = await Promise.all([api.mcpServers(projectId), api.keys()])
+			;[servers, keys] = await Promise.all([toolsApi.mcpServers(projectId), agentsApi.keys()])
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the tools'
@@ -74,7 +76,7 @@
 		signingIn = server.id
 		error = ''
 		try {
-			const { url } = await api.mcpSignIn(server.id, `${window.location.pathname}#tools`)
+			const { url } = await toolsApi.mcpSignIn(server.id, `${window.location.pathname}#tools`)
 			window.location.assign(url)
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not start the sign in'
@@ -87,7 +89,7 @@
 		confirmOpen = false
 		if (!target) return
 		try {
-			await api.deleteMcpServer(target.id)
+			await toolsApi.deleteMcpServer(target.id)
 			await load()
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not delete the tool'

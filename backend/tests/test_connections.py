@@ -4,14 +4,14 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app import connections
-from app.app_settings import AppSettings, save_settings
+import app.features.connections.service as connections
 from app.config import settings
-from app.connections import DeviceLogins
-from app.github import CREDENTIAL_HELPER, GitHub
-from app.keys import HIDDEN
+from app.features.connections.providers.github import CREDENTIAL_HELPER, GitHub
+from app.features.connections.service import DeviceLogins
+from app.features.system.settings import AppSettings, save_settings
+from app.features.tools.keys import HIDDEN
 from app.main import app
-from app.models import Connection
+from app.persistence.models import Connection
 from tests.conftest import drain, login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_harness import connect
@@ -94,7 +94,7 @@ async def use_github(client, pid: int, conn_id: int, repo: str = "") -> dict:
 async def test_the_list_offers_github_and_a_sign_in_only_once_the_app_id_is_set(client, maker, github):
     await register(client)
     body = (await client.get("/api/connections")).json()
-    (gh,) = body["providers"]
+    gh = next(p for p in body["providers"] if p["id"] == "github")
     assert (gh["id"], gh["category"], gh["name"]) == ("github", "service", "GitHub")
     methods = {m["id"]: m for m in gh["methods"]}
     assert methods["token"]["available"] and not methods["oauth"]["available"]
@@ -102,8 +102,8 @@ async def test_the_list_offers_github_and_a_sign_in_only_once_the_app_id_is_set(
     assert gh["config_fields"][0]["key"] == "repo"
     async with maker() as s:
         await save_settings(s, AppSettings(github_client_id="Iv1.abc123"))
-    methods = {m["id"]: m for m in (await client.get("/api/connections")).json()["providers"][0]["methods"]}
-    assert methods["oauth"]["available"]
+    providers = {p["id"]: p for p in (await client.get("/api/connections")).json()["providers"]}
+    assert {m["id"]: m for m in providers["github"]["methods"]}["oauth"]["available"]
 
 
 # ----- connecting with a token -----

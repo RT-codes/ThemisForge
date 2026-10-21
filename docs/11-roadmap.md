@@ -31,13 +31,39 @@ summary: What is built, what comes next and what is deliberately left for later.
 - **Cell profiles**: the cell size layered from Settings, to the project, to the agent, to a single workflow step.
 - **Invite only** access with requests, invite links and an administrator.
 - **Update notice**: administrators are told when a newer release exists, with a daily check that can be switched off.
+- **Workspaces and boards**: a project holds workspaces, a workspace holds boards, and each board has statuses of its own.
+  Tasks move between boards, and a task can make linked follow-ups.
+- **Task stages**: a task plays an ordered list of workflows, with working folders carried from one stage to the next.
+- **Connected automation**: workflows start from a status change, and move and make tasks across boards, with a guard
+  against loops. **Halt** stops all work of a project or a board at once.
+- **Branches**: a Splitter and a Merger run workflow branches side by side, and Codex runs of one user share their login
+  in parallel.
+- **A sturdier workflow editor**: a vertical flow, line styles, snapping and saved nodes.
+- **Project history and Needs attention**: what was done at every level, and what waits for a person, with results
+  readable in an enlarged view.
+- **Tools from the MCP registry**, including hosted tools you sign in to, and a Themis cell package of skills for
+  agents, with Chromium and the GitHub CLI in the Codex image.
+- **Model and reasoning effort** chosen from lists, per agent and per workflow step.
+- **Webhooks**: an address that turns a message from outside into a task, with templates for its title and text, rules for
+  which messages count, and a log of everything that arrived.
+- **Approval gates**: an Approval node in a workflow parks the run until a person approves or rejects it, survives a
+  restart, and announces itself with a toast, a button in the top bar and an entry under Needs attention.
+- **Notifications**: a project sends a message to a Discord channel when a task fails, waits for review or an approval, or
+  finishes, with a test button and the reason a message did not arrive.
+- **Usage per run**: every run records the harness and model it used and the tokens it spent, the base for usage views and
+  spending limits.
+- **Connect an agent (MCP)**: an outside agent such as Claude Code can look at one project, or at all of your projects and
+  the global settings, through MCP with a key made in Settings. It can read an overview, boards, tasks, runs, how agents
+  and workflows are set up, files and usage; a key can also be allowed to run work (make, move, run and cancel tasks,
+  run workflows, answer approvals, halt or resume), and a stronger one to set things up (agents, skills, workflows, files).
 - **Install and upgrade** with one command on Linux and Windows (`themis install`, `themis upgrade` with a backup and an automatic rollback), `doctor` with a trail of recent runs, a systemd service and migrations.
 
 ## Next
 
-1. **Tasks from agents, webhooks and workflows**, using the same task path as everything else.
-2. **Notifications and email.** Tell the administrator about new access requests, and tell people when work needs
-   review or fails. Email the invite link.
+1. **Tasks from agents**, using the same task path as everything else: an agent lists follow-ups and the run turns them into
+   tasks. Workflows can already make and move tasks, and [webhooks](/docs/webhooks) make them from outside.
+2. **More notifications.** Telegram and push (ntfy) beside Discord, a link back to the task in each message, and email.
+   Tell the administrator about new access requests, and email the invite link.
 3. **Live updates** instead of polling.
 4. **Password reset.**
 5. **Usage on the project overview.** AI usage per project, with tokens per model as horizontal bars and a day,

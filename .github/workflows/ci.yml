@@ -1,11 +1,13 @@
 name: CI
 
-# Every push to main and every pull request: lint and test the backend (on Linux, and on Windows without blocking
-# until Windows is supported), then check, test and build the web interface.
+# Every pull request: lint and test the backend on Linux, then check, test and build the web interface and the release
+# bundle. Windows is not supported yet and cannot block a merge, so its two jobs (about 11 minutes of the 15) run only
+# when something lands on main, or when started by hand from the Actions tab (do that before a release).
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -19,15 +21,12 @@ jobs:
     name: Backend (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Windows is not supported yet: its results are shown, but a failure there does not block a merge
-    continue-on-error: ${{ matrix.experimental }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            experimental: false
-          - os: windows-latest
-            experimental: true
+        # a pull request only gets Linux (see the top of this file)
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     defaults:
       run:
         working-directory: backend
@@ -94,6 +93,7 @@ jobs:
   windows-install:
     name: Install on Windows
     needs: frontend
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     # Windows is new: its install is shown here, but a failure does not block a merge until it has been green for a while.
     continue-on-error: true

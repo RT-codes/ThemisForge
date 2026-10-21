@@ -1,12 +1,13 @@
-import type { NodeRun, RunStatus } from './api'
+import type { NodeRun, RunStatus } from './api/workflows'
 import type { Graph, NodeKind } from './workflow'
 
 // What the task panel shows for the workflow a stage is playing: the node before, the node now, and what comes next.
 // This is only the shape; the panel draws it. It works from the graph the run began with and the nodes that have run
 // so far, so the same function serves a run in progress and one that has ended.
 
-/** done/running/failed/cancelled are nodes that ran; upcoming may still run; skipped will not (or did not) */
-export type TrackState = 'done' | 'running' | 'failed' | 'cancelled' | 'upcoming' | 'skipped'
+/** done/running/failed/cancelled are nodes that ran; waiting is an approval gate nobody has answered yet; upcoming may
+ *  still run; skipped will not (or did not) */
+export type TrackState = 'done' | 'running' | 'waiting' | 'failed' | 'cancelled' | 'upcoming' | 'skipped'
 
 export interface TrackNode {
   id: string
@@ -32,6 +33,12 @@ export interface Track {
 const MOUNT = 'mount'
 const START_KINDS: NodeKind[] = ['start', 'trigger']
 
+/** a Splitter branch ("o2") by the name the person gave it, or "Branch 2" */
+const branchLabel = (config: Record<string, string>, handle: string | null | undefined) => {
+  const n = /^o(\d)$/.exec(handle ?? '')?.[1]
+  return n ? config[`name${n}`]?.trim() || `Branch ${n}` : null
+}
+
 const FINISHED: Record<string, TrackState> = { succeeded: 'done', failed: 'failed', cancelled: 'cancelled' }
 
 export function stageTrack(graph: Graph, runs: NodeRun[], runStatus: RunStatus): Track {
@@ -43,6 +50,7 @@ export function stageTrack(graph: Graph, runs: NodeRun[], runStatus: RunStatus):
   const stateOf = (id: string): TrackState => {
     const record = records.get(id)
     if (record?.status === 'running') return 'running'
+    if (record?.status === 'waiting') return 'waiting'
     if (record && record.status !== 'skipped') return FINISHED[record.status] ?? 'done'
     return record || runStatus !== 'running' ? 'skipped' : 'upcoming'
   }
@@ -52,7 +60,7 @@ export function stageTrack(graph: Graph, runs: NodeRun[], runStatus: RunStatus):
   }
 
   // the node playing now; between two nodes (or once the run has ended) the last one that ran
-  const live = [...ran].reverse().find((r) => r.status === 'running') ?? ran[ran.length - 1]
+  const live = [...ran].reverse().find((r) => r.status === 'running' || r.status === 'waiting') ?? ran[ran.length - 1]
   if (!live || !steps.has(live.node_id)) {
     // nothing has run yet: the way in is the Start (or Trigger) nodes
     const starts = [...steps.values()].filter((n) => START_KINDS.includes(n.kind) || !edges.some((e) => e.target === n.id))
@@ -79,8 +87,10 @@ export function stageTrack(graph: Graph, runs: NodeRun[], runStatus: RunStatus):
     const wrongBranch = answered !== null && handle !== answered
     const ranAlready = records.get(e.target) && records.get(e.target)!.status !== 'skipped'
     const state = ranAlready ? stateOf(e.target) : wrongBranch || stopped ? 'skipped' : stateOf(e.target)
-    const branches = steps.get(live.node_id)!.kind === 'condition'
-    next.push({ node: trackNode(e.target, state), via: branches ? (handle === 'no' ? 'No' : 'Yes') : null })
+    const kind = steps.get(live.node_id)!.kind
+    // the line says which way it leaves: a condition's Yes or No, or the name of a Splitter's branch
+    const via = kind === 'condition' ? (handle === 'no' ? 'No' : 'Yes') : kind === 'split' ? branchLabel(steps.get(live.node_id)!.config, e.sourceHandle) : null
+    next.push({ node: trackNode(e.target, state), via })
   }
   return { previous: feeder ? trackNode(feeder.node_id) : null, current, next }
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type AttemptStatus } from '$lib/api'
+	import { tasksApi, type Attempt, type AttemptDetail, type AttemptStatus } from '$lib/api/tasks'
 	import { attemptLabel, dateTime, duration } from '$lib/format'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import FailureNote from './FailureNote.svelte'
@@ -10,16 +10,14 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import WorkflowIcon from '@lucide/svelte/icons/workflow'
 	import BanIcon from '@lucide/svelte/icons/ban'
-	import { createAttemptHistory, emptyAttemptHistory } from '$lib/attemptHistory'
-	import Button from '$lib/components/ui/button/button.svelte'
+	import { onMount } from 'svelte'
 
 	let { taskId, taskStatus, projectId }: { taskId: number; taskStatus: string; projectId: number } = $props()
 
-	let history = $state(emptyAttemptHistory())
-	let loader: ReturnType<typeof createAttemptHistory> | undefined
-	const attempts = $derived(history.attempts)
-	const selectedId = $derived(history.selectedId)
-	const detail = $derived(history.detail)
+	let attempts = $state<Attempt[]>([])
+	let loaded = $state(false)
+	let selectedId = $state<number | null>(null)
+	let detail = $state<AttemptDetail | null>(null)
 	let tick = $state(Date.now())
 
 	const icons: Record<AttemptStatus, typeof CircleCheckIcon> = {
@@ -35,53 +33,49 @@
 		cancelled: 'text-muted-foreground',
 	}
 
-	$effect(() => {
-		const id = taskId
-		history = emptyAttemptHistory()
-		const current = createAttemptHistory(id, api, (state) => {
-			history = state
+	async function load() {
+		try {
+			attempts = await tasksApi.attempts(taskId)
+			if (selectedId === null && attempts.length) selectedId = attempts[0].id
+			if (selectedId !== null) detail = await tasksApi.attempt(selectedId)
+		} catch {
+			// transient: the next poll retries
+		} finally {
+			loaded = true
 			tick = Date.now()
-		})
-		loader = current
-		current.load()
-		const timer = setInterval(() => {
-			if (!document.hidden && (taskStatus === 'running' || attempts[0]?.status === 'running')) current.load()
-		}, 1500)
-		return () => {
-			clearInterval(timer)
-			current.dispose()
 		}
+	}
+
+	onMount(() => {
+		load()
+		const timer = setInterval(() => {
+			if (!document.hidden && (taskStatus === 'running' || attempts[0]?.status === 'running')) load()
+		}, 1500)
+		return () => clearInterval(timer)
 	})
 
 	// a finished run: fetch once more so the final status and log show up
 	let lastStatus: string | undefined
 	$effect(() => {
 		const status = taskStatus
-		if (lastStatus !== undefined && status !== lastStatus) loader?.load()
+		if (lastStatus !== undefined && status !== lastStatus) load()
 		lastStatus = status
 	})
+
+	async function select(id: number) {
+		selectedId = id
+		detail = await tasksApi.attempt(id)
+	}
 </script>
 
-{#if history.error}
-	<div class="mx-4 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3">
-		<div class="min-w-0 flex-1" role="alert">
-			<p class="text-sm font-medium">Could not load history</p>
-			<p class="mt-1 text-xs text-muted-foreground">Try again to see this task's attempts.</p>
-		</div>
-		<Button variant="outline" size="sm" disabled={history.loading} onclick={() => loader?.load()}>
-			{history.loading ? 'Retrying...' : 'Retry'}
-		</Button>
-	</div>
-{/if}
-
-{#if !history.loaded && !history.error}
+{#if !loaded}
 	<p class="px-4 py-6 text-sm text-muted-foreground">Loading...</p>
-{:else if history.loaded && !history.error && attempts.length === 0}
+{:else if attempts.length === 0}
 	<div class="px-4 py-10 text-center">
 		<p class="text-sm font-medium">No attempts yet</p>
 		<p class="mt-1 text-xs text-muted-foreground">Each time a cell works on this task, it is recorded here with its log and result.</p>
 	</div>
-{:else if attempts.length}
+{:else}
 	<div class="grid gap-3 px-4 pb-4">
 		<ul class="grid gap-1">
 			{#each attempts as a (a.id)}
@@ -89,8 +83,7 @@
 				<li>
 					<button
 						type="button"
-						onclick={() => loader?.select(a.id)}
-						aria-pressed={selectedId === a.id}
+						onclick={() => select(a.id)}
 						class={cn(
 							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm transition-colors hover:bg-accent',
 							selectedId === a.id && 'bg-accent'
@@ -107,16 +100,7 @@
 			{/each}
 		</ul>
 
-		{#if history.detailLoading}
-			<p class="flex items-center gap-2 py-4 text-sm text-muted-foreground" role="status">
-				<LoaderCircleIcon class="size-4 animate-spin" /> Loading attempt...
-			</p>
-		{:else if history.detailError}
-			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3">
-				<p class="min-w-0 flex-1 text-sm font-medium" role="alert">Could not load this attempt's result and log</p>
-				<Button variant="outline" size="sm" onclick={() => selectedId !== null && loader?.select(selectedId)}>Retry</Button>
-			</div>
-		{:else if detail}
+		{#if detail}
 			{#if detail.workflow_run_id && detail.workflow_id}
 				<a
 					href="/projects/{projectId}/workflows/{detail.workflow_id}/runs/{detail.workflow_run_id}"

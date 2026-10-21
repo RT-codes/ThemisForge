@@ -3,9 +3,9 @@ import asyncio
 from alembic import context
 from sqlalchemy.engine import Connection
 
-from app import models  # noqa: F401  (registers the tables on Base.metadata)
 from app.config import settings
-from app.db import Base, make_engine
+from app.persistence import models  # noqa: F401  (registers the tables on Base.metadata)
+from app.persistence.db import Base, make_engine
 
 target_metadata = Base.metadata
 

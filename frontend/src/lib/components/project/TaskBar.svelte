@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Board, Task, TaskStatus, Workspace } from '$lib/api'
+	import type { Board, Workspace } from '$lib/api/projects'
+	import type { Task, TaskStatus } from '$lib/api/tasks'
 	import { columnsOf, destinationLabel, lineage, statusLabel, statusTone } from '$lib/boards'
 	import StatusIcon from '$lib/components/StatusIcon.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'

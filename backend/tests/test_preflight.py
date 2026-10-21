@@ -6,10 +6,11 @@ import logging.handlers
 
 import pytest
 
-from app import docker_check, doctor, preflight, runlog
-from app.app_settings import AppSettings
+from app import doctor
 from app.config import settings
-from app.docker_check import DockerStatus, parse_version
+from app.features.system import docker_check, preflight, runlog
+from app.features.system.docker_check import DockerStatus, parse_version
+from app.features.system.settings import AppSettings
 from app.main import app
 from tests.conftest import drain, make_project, make_task, register
 
@@ -195,7 +196,7 @@ async def test_the_status_tells_everyone_cells_are_paused_but_only_administrator
 
 
 def test_each_run_leaves_a_trail_and_only_the_last_runs_are_kept(tmp_path):
-    for n in range(runlog.RUN_LIMIT + 5):
+    for _ in range(runlog.RUN_LIMIT + 5):
         trail = runlog.Trail(tmp_path)
         trail.begin()
         trail.event("ready")

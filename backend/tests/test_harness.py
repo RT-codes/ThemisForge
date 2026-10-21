@@ -4,17 +4,21 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.app_settings import AppSettings
-from app.cells import WritebackFilter
-from app.codex import get_connection, save_auth
 from app.config import settings
 from app.crypto import decrypt
-from app.harness import CODEX_AUTH, CodexRenderer, build_prompt, plan_for
-from app.models import Attempt, AttemptStatus, utcnow
+from app.execution.cells.secrets import WritebackFilter
+from app.execution.harnesses.codex import CODEX_AUTH, CodexRenderer
+from app.execution.harnesses.prompts import build_prompt
+from app.execution.harnesses.service import plan_for
+from app.execution.harnesses.types import TokenUsage
+from app.features.connections.codex import get_connection, save_auth
+from app.features.system.settings import AppSettings
+from app.persistence.models import Attempt, AttemptStatus, utcnow
 from tests.conftest import drain, make_project, make_task, register
 
 
-def fake_auth(refresh: str = "R1", account: str = "acct-1") -> str:
+def fake_auth(refresh: str = "R1", account: str = "acct-1", age: timedelta = timedelta(0)) -> str:
+    """A login refreshed `age` ago (negative: that long from now), so tests do not depend on today's date."""
     return json.dumps(
         {
             "auth_mode": "chatgpt",
@@ -25,7 +29,7 @@ def fake_auth(refresh: str = "R1", account: str = "acct-1") -> str:
                 "refresh_token": refresh,
                 "account_id": account,
             },
-            "last_refresh": "2026-10-05T12:00:00Z",
+            "last_refresh": (utcnow() - age).isoformat(),
         }
     )
 
@@ -51,7 +55,7 @@ async def stored_auth(maker, user_id: int) -> dict:
 def test_plan_for_codex_and_placeholder():
     cfg = AppSettings(codex_image="my/codex:1")
     plan = plan_for("codex", cfg)
-    assert plan and plan.image == "my/codex:1" and plan.uses_codex and plan.writeback == (CODEX_AUTH,)
+    assert plan and plan.image == "my/codex:1" and plan.writeback == (CODEX_AUTH,)
     assert "codex exec" in plan.script and "--json" in plan.script and "dangerously-bypass" in plan.script
     assert "show_raw_agent_reasoning=true" in plan.script
     assert plan_for("", cfg) is None
@@ -62,6 +66,15 @@ def test_codex_uses_luna_with_high_effort_by_default():
     assert "-m gpt-6-luna" in plan.script and "model_reasoning_effort=high" in plan.script
     custom = plan_for("codex", AppSettings(codex_model="gpt-6-sol", codex_reasoning_effort="low"))
     assert "-m gpt-6-sol" in custom.script and "model_reasoning_effort=low" in custom.script
+
+
+def test_an_effort_the_model_does_not_accept_falls_back_to_the_models_own():
+    cfg = AppSettings(codex_model="gpt-6-luna", codex_reasoning_effort="high")
+    # luna has no "ultra"; its own default is medium
+    assert "model_reasoning_effort=medium" in plan_for("codex", cfg, effort="ultra").script
+    assert "model_reasoning_effort=ultra" in plan_for("codex", cfg, model="gpt-6-sol", effort="ultra").script
+    # a model that is not in the list is trusted with whatever was asked
+    assert "model_reasoning_effort=ultra" in plan_for("codex", cfg, model="gpt-9-new", effort="ultra").script
 
 
 def test_model_name_cannot_inject_shell():
@@ -119,7 +132,7 @@ def test_renderer_makes_codex_events_readable():
         "",
         "[codex] done - 100 tokens in, 7 out",
     ]
-    assert r.usage == {"input_tokens": 100, "output_tokens": 7}
+    assert r.usage == TokenUsage(input_tokens=100, output_tokens=7)
 
 
 def test_renderer_handles_split_chunks_and_non_json():

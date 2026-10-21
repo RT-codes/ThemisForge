@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CellDefaults, ProfileOverrides } from '$lib/api'
+	import type { CellDefaults, ProfileOverrides } from '$lib/api/settings'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
 

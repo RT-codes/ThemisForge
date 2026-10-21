@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Board, type Workspace } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Board, type Workspace } from '$lib/api/projects'
 	import { destinationLabel, survivingBoards, taskTotal } from '$lib/boards'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import * as Select from '$lib/components/ui/select/index.js'
@@ -41,8 +42,8 @@
 		error = ''
 		try {
 			const to = tasks > 0 ? Number(moveTo) : undefined
-			if (target.kind === 'board') await api.deleteBoard(target.board.id, to)
-			else await api.deleteWorkspace(target.workspace.id, to)
+			if (target.kind === 'board') await projectsApi.deleteBoard(target.board.id, to)
+			else await projectsApi.deleteWorkspace(target.workspace.id, to)
 			target = null
 			ondeleted()
 		} catch (e) {

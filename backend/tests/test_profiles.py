@@ -1,7 +1,7 @@
 import pytest
 
-from app.app_settings import AppSettings
-from app.profiles import ProfileOverrides, resolve_profile
+from app.execution.profiles import ProfileOverrides, resolve_profile
+from app.features.system.settings import AppSettings
 from tests.conftest import drain, make_project, make_task, register
 
 CFG = AppSettings(cell_cpus=1, cell_memory_mb=1024, cell_timeout_seconds=600, cell_image="alpine:3")

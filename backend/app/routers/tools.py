@@ -120,6 +120,7 @@ async def _save(session, server: McpServer) -> None:
     try:
         await project_config.write_mcp(session, server)
         await session.commit()
+    # BaseException on purpose: a cancelled request must not leave a half-written config
     except BaseException:
         await session.rollback()
         raise

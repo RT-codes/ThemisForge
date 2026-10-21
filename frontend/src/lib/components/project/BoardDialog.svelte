@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Board } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Board } from '$lib/api/projects'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -31,7 +32,7 @@
 		error = ''
 		saving = true
 		try {
-			onsaved(board ? await api.updateBoard(board.id, { name, purpose }) : await api.createBoard(workspaceId, { name, purpose }))
+			onsaved(board ? await projectsApi.updateBoard(board.id, { name, purpose }) : await projectsApi.createBoard(workspaceId, { name, purpose }))
 			open = false
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not save the board'

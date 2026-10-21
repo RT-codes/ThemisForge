@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Attempt, type AttemptDetail, type AttemptStatus } from '$lib/api'
+	import { tasksApi, type Attempt, type AttemptDetail, type AttemptStatus } from '$lib/api/tasks'
 	import { attemptLabel, dateTime, duration } from '$lib/format'
 	import LogPanel from '$lib/components/LogPanel.svelte'
 	import FailureNote from './FailureNote.svelte'
@@ -35,9 +35,9 @@
 
 	async function load() {
 		try {
-			attempts = await api.attempts(taskId)
+			attempts = await tasksApi.attempts(taskId)
 			if (selectedId === null && attempts.length) selectedId = attempts[0].id
-			if (selectedId !== null) detail = await api.attempt(selectedId)
+			if (selectedId !== null) detail = await tasksApi.attempt(selectedId)
 		} catch {
 			// transient: the next poll retries
 		} finally {
@@ -64,7 +64,7 @@
 
 	async function select(id: number) {
 		selectedId = id
-		detail = await api.attempt(id)
+		detail = await tasksApi.attempt(id)
 	}
 </script>
 

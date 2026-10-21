@@ -257,5 +257,5 @@ class Preflight:
             self._wake.clear()
             try:
                 await self.refresh(maker, scheduler, trail)
-            except Exception:
+            except Exception:  # a failed check is logged and retried next round, never fatal to the watcher
                 log.exception("The background check failed")

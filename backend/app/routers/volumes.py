@@ -242,7 +242,8 @@ async def update_volume(
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "This project already has a folder with that name"
             ) from None
-        except Exception:
+        # BaseException on purpose: a cancelled request must not leave the files renamed
+        except BaseException:
             if old_dir is not None and new_dir is not None:
                 new_dir.rename(old_dir)
             raise

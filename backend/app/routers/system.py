@@ -1,10 +1,11 @@
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -18,9 +19,25 @@ from ..crypto import encrypt, hint_for
 from ..deps import AdminUser, CurrentUser, SessionDep
 from ..docker_check import check_docker
 from ..models import AccessRequest, Agent, McpServer, Secret
-from ..schemas import SecretIn, SecretOut
 from ..skills import SkillError, parse_frontmatter
 from ..version import build_info
+
+
+class SecretIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    kind: str = Field(default="custom", min_length=1, max_length=50)
+    value: str = Field(min_length=1, max_length=10_000)
+
+
+class SecretOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    kind: str
+    hint: str
+    created_at: datetime
+
 
 router = APIRouter(tags=["system"])
 

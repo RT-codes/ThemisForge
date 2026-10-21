@@ -140,6 +140,7 @@ class UpdateChecker:
             try:
                 async with maker() as session:
                     await self.check(await load_settings(session), force=True)
+            # offline or GitHub down is normal: try again next round, never fatal to the watcher
             except Exception:
                 log.exception("The update check failed")
             with contextlib.suppress(TimeoutError):

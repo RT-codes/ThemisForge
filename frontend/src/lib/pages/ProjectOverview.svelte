@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { api, ApiError, type Project, type ScheduledRun, type Task } from '$lib/api'
+	import { agentsApi } from '$lib/api/agents'
+	import { connectionsApi } from '$lib/api/connections'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
+	import { tasksApi, type ScheduledRun, type Task } from '$lib/api/tasks'
+	import { toolsApi } from '$lib/api/tools'
 	import { attentionTasks } from '$lib/attention'
 	import { headline } from '$lib/approvals'
 	import { approvals } from '$lib/approvals.svelte'
@@ -60,7 +65,7 @@
 
 	async function loadAttention() {
 		try {
-			tasks = await api.tasks(id)
+			tasks = await tasksApi.tasks(id)
 			attentionError = ''
 		} catch (e) {
 			attentionError = e instanceof ApiError ? e.message : 'Could not load tasks needing attention'
@@ -69,7 +74,7 @@
 
 	async function load() {
 		try {
-			const [loaded, upcoming] = await Promise.all([api.project(id), api.schedule(id, 168), structure.refresh(id), loadAttention()])
+			const [loaded, upcoming] = await Promise.all([projectsApi.project(id), tasksApi.schedule(id, 168), structure.refresh(id), loadAttention()])
 			project = loaded
 			runs = upcoming
 			revision++
@@ -84,10 +89,10 @@
 	async function loadSetup() {
 		try {
 			const [agents, tools, bound, catalog] = await Promise.all([
-				api.agents(id),
-				api.mcpServers(id),
-				api.projectConnections(id),
-				api.connections(),
+				agentsApi.agents(id),
+				toolsApi.mcpServers(id),
+				connectionsApi.projectConnections(id),
+				connectionsApi.connections(),
 			])
 			agentCount = agents.length
 			issues = setupIssues({

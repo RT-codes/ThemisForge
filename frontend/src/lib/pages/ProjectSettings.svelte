@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Project } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
 	import SettingsSection from '$lib/components/SettingsSection.svelte'
@@ -40,7 +41,7 @@
 
 	async function load() {
 		try {
-			project = await api.project(id)
+			project = await projectsApi.project(id)
 			loadError = ''
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.message : 'Could not load the project'

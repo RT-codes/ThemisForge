@@ -1,7 +1,7 @@
 """Workflows: a graph of nodes drawn in the editor, and the engine that runs it.
 
 A run starts from every Start (or Trigger) node and follows the edges. Nodes run one at a time, in order, until a
-Splitter sends the run down several branches: those run side by side (each branch is a lane, see `_Lane`), and a Merger
+Splitter sends the run down several branches: those run side by side (each branch is a lane, see `Lane`), and a Merger
 waits for all its branches before it carries on:
 
 - Start / Trigger: begin the run. A Trigger set to "a task moves into a status" starts a run by itself, whenever a task
@@ -29,13 +29,12 @@ import os
 import re
 import shutil
 import time
-from collections import defaultdict, deque
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Literal, get_args
+from typing import get_args
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import ValidationError
 from sqlalchemy import and_, event, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, selectinload
@@ -63,232 +62,30 @@ from .models import (
 from .notifications import notify
 from .profiles import ProfileOverrides
 from .volumes import MountRef
+from .workflow_graph import (
+    MOUNT,
+    START_KINDS,
+    Graph,
+    GraphNode,
+    LoopError,
+    NodeError,
+    branch_count,
+    branch_name,
+)
+from .workflow_walk import Gate, Lane, MergeIn, Outcome, Prev, Resume, Walk, prev_from
 
 log = logging.getLogger("themis.workflows")
 
 MAX_NESTING = 5  # workflows playing tasks that play workflows...
 
-Kind = Literal[
-    "start", "trigger", "task", "agent", "condition", "approval", "end", "volume", "split", "merge"
-]
 
-MAX_BRANCHES = (
-    4  # the branch points of a Splitter (its outputs, "o1"...) and of a Merger (its inputs, "i1"...)
-)
 QUEUE_PATIENCE_SECONDS = 6 * 3600  # how long a node waits for a task that no cell has picked up yet
-
-
-def branch_count(config: dict[str, str]) -> int:
-    """How many branches a Splitter sends out or a Merger waits for: its "branches" setting, 2 to MAX_BRANCHES."""
-    raw = config.get("branches", "2")
-    return min(MAX_BRANCHES, max(2, int(raw))) if raw.isdigit() else 2
-
-
-def branch_name(config: dict[str, str], number: int) -> str:
-    return config.get(f"name{number}", "").strip() or f"Branch {number}"
-
-
-# A "mount" line joins a Folder (volume) node to an Agent node: it hands that folder to the agent. It is not a step, so
-# the run never follows it.
-MOUNT = "mount"
-START_KINDS = ("start", "trigger")
-
-
-# a node's settings: plain text values, whatever the kind (the editor's fields are defined in the frontend)
-NodeConfig = dict[str, Annotated[str, Field(max_length=20_000)]]
-
-
-class Position(BaseModel):
-    x: float = 0
-    y: float = 0
-
-
-class GraphNode(BaseModel):
-    id: str = Field(min_length=1, max_length=64, pattern=r"^[\w-]+$")
-    kind: Kind
-    label: str = Field(default="", max_length=100)
-    config: NodeConfig = Field(default_factory=dict)
-    position: Position = Field(default_factory=Position)
-
-
-class GraphEdge(BaseModel):
-    id: str = Field(min_length=1, max_length=100)
-    source: str
-    target: str
-    sourceHandle: str | None = Field(
-        default=None, max_length=20
-    )  # "yes" / "no" on a condition, "mount" on a folder
-    targetHandle: str | None = Field(default=None, max_length=20)  # "mount" where a folder joins an agent
-    # how the editor draws the line; only the canvas cares, a run ignores it. None is the editor's default (organic)
-    curve: Literal["organic", "angular"] | None = None
-
-
-class Graph(BaseModel):
-    nodes: list[GraphNode] = Field(default_factory=list, max_length=200)
-    edges: list[GraphEdge] = Field(default_factory=list, max_length=500)
-
-    @model_validator(mode="after")
-    def consistent(self) -> "Graph":
-        ids = [n.id for n in self.nodes]
-        if len(set(ids)) != len(ids):
-            raise ValueError("Node ids must be unique")
-        known = {n.id: n for n in self.nodes}
-        for e in self.edges:
-            if e.source not in known or e.target not in known:
-                raise ValueError("An edge points at a node that does not exist")
-            source, target = known[e.source], known[e.target]
-            if source.kind == "split" and not re.fullmatch(rf"o[1-{MAX_BRANCHES}]", e.sourceHandle or ""):
-                raise ValueError("A line out of a Splitter must leave from one of its branch points")
-            if target.kind == "merge" and not re.fullmatch(rf"i[1-{MAX_BRANCHES}]", e.targetHandle or ""):
-                raise ValueError("A line into a Merger must arrive at one of its branch points")
-            if e.sourceHandle == MOUNT:
-                if source.kind != "volume" or target.kind != "agent":
-                    raise ValueError("A folder can only be handed to an Agent node")
-            elif "volume" in (source.kind, target.kind):
-                raise ValueError("A Folder node is not a step: join it to an Agent node's folder point")
-        return self
-
-    def mounts_for(self, node_id: str) -> list[dict]:
-        """The folders handed to an agent node by lines from Folder nodes, as {"volume_id", "mode"}."""
-        nodes = {n.id: n for n in self.nodes}
-        out = []
-        for e in self.edges:
-            if e.target != node_id or e.sourceHandle != MOUNT:
-                continue
-            folder = nodes[e.source]
-            raw = folder.config.get("volumeId", "").strip()
-            if not raw.isdigit():
-                raise NodeError(
-                    f"The folder '{folder.label or 'Folder'}' has no folder chosen. Open it and pick one."
-                )
-            mode = folder.config.get("mode", "rw")
-            out.append({"volume_id": int(raw), "mode": mode if mode in ("ro", "rw") else "rw"})
-        return out
-
-    def status_triggers(self, status: str | None = None, board: Board | None = None) -> list[GraphNode]:
-        """The Trigger nodes that start a run when a task moves into a status (into `status`, or any when None). With
-        a `board`, only those whose "where" covers it: anywhere (empty), one workspace ("w:<id>") or one board ("b:<id>")."""
-        return [
-            n
-            for n in self.nodes
-            if n.kind == "trigger"
-            and n.config.get("type") == "task_status"
-            and (status is None or n.config.get("status") == status)
-            and (board is None or _covers(n.config.get("where", ""), board))
-        ]
-
-    @property
-    def start_nodes(self) -> list[GraphNode]:
-        return [n for n in self.nodes if n.kind in START_KINDS]
-
-
-class NodeError(Exception):
-    """A node could not do its job; the message is shown to the user as the reason."""
-
-
-class LoopError(Exception):
-    """A workflow would start itself again through the tasks it plays, or nests too deep."""
-
-
-@dataclass
-class Prev:
-    """What the node before this one produced (what a Condition checks)."""
-
-    label: str
-    status: str
-    result: str
-    # The working folder (an attempt id, see Attempt.workdir_id) the run is in after that node. Steps that do not work
-    # in a folder (a condition, an end) hand on the one they were given, so a later step can still continue in it.
-    workdir_id: int | None = None
-    # The folder is shared with the sibling branches of a Splitter: a step that continues in it works on a copy of its
-    # own instead (see `_continue_in`), so parallel branches never write into the same files.
-    fork: bool = False
-    # The paths of that copy (a branch's file rule); empty means everything.
-    only: tuple[str, ...] = ()
-
-
-@dataclass
-class Outcome:
-    status: str  # NodeStatus.SUCCEEDED or FAILED
-    result: str = ""
-    log: str = ""
-    error: str = ""
-    branch: str | None = None  # a Condition's answer, "yes" or "no"
-    workdir_id: int | None = None  # the working folder the node's cell used, when it ran one
-    taken: frozenset[str] | None = None  # a Splitter's branch points that send something on ("o1"...)
-
-
-@dataclass
-class _Lane:
-    """A row of nodes that run one after another. The run starts in one lane; every branch a Splitter sends out is a lane
-    of its own, and lanes run at the same time. Nothing else runs in parallel, so a workflow with no Splitter runs
-    exactly one node at a time, in the order its lines lead."""
-
-    id: int
-    parent: int | None = None
-    queue: deque = field(default_factory=deque)  # of (node id, Prev | None, merge inputs | None)
-    busy: bool = False
-
-
-@dataclass
-class _Mark:
-    """What reached one line into a node: a result, or the news that nothing will come."""
-
-    state: str  # "delivered", "dead" (not taken, or its node can no longer run) or "failed"
-    prev: Prev | None = None
-    lane: int = 0
-    error: str = ""
-    source: str = ""  # the label of the node the line comes from
-
-
-@dataclass
-class _MergeIn:
-    """One branch arriving at a Merger."""
-
-    number: int  # which branch point of the Merger it came in at
-    name: str  # what the branch is called: the Merger's setting for that point, or the node that sent it
-    mark: _Mark
-
-
-@dataclass
-class _Gate:
-    """An approval gate that was waiting when Themis stopped."""
-
-    node_id: str
-    nr_id: int  # its WorkflowNodeRun row, which the resumed gate keeps using
-    prev: Prev | None
-
-
-@dataclass
-class _Resume:
-    """What it takes to pick a run up again at its approval gates after a restart (see WorkflowRunner.resume_parked).
-    Only the path below the gates carries on: the walker's other state lived in memory and is gone."""
-
-    gates: list[_Gate]
-    ran: set[str]  # the nodes that already ran in this run, so nothing runs twice
-    seq: int  # the last sequence number of the run's records
-    failure: str  # why the run is bound to end as failed, when something in it already failed ("" if not)
-
-
-def _prev_from(data: dict | None) -> Prev | None:
-    """A Prev read back from the JSON an approval gate stored it as (`asdict`, with the paths as a list)."""
-    return Prev(**{**data, "only": tuple(data.get("only", ()))}) if data else None
 
 
 def _slug(text: str, fallback: str) -> str:
     """A name that is safe and easy to read as a folder name: "Research A" becomes "research-a"."""
     slug = re.sub(r"[^a-z0-9._-]+", "-", text.casefold()).strip("-._")
     return slug[:40] or fallback
-
-
-def _file_patterns(text: str) -> tuple[str, ...]:
-    """A Splitter's file rule ("src, docs/**, *.md") as patterns: a bare folder name means everything in it."""
-    out = []
-    for part in re.split(r"[,\n]", text):
-        part = part.strip().lstrip("./").strip("/")
-        if part:
-            out.append(part)
-    return tuple(out)
 
 
 def _copy_folder(source: Path, target: Path, only: tuple[str, ...] = ()) -> None:
@@ -311,168 +108,6 @@ def _copy_folder(source: Path, target: Path, only: tuple[str, ...] = ()) -> None
                 os.symlink(os.readlink(source / rel), dest)
             else:
                 shutil.copy2(source / rel, dest)
-
-
-class _Walk:
-    """Where a run has got to: which lines carried a result into each node, which can carry nothing any more, and the
-    lanes the nodes run in. It only decides what runs next; `WorkflowRunner._run` runs it.
-
-    A node runs when a line carries a result into it; the first to arrive wins, and later ones are ignored (which is
-    also what stops a loop). A Merger is the exception: it waits until every line into it is settled. A line is settled
-    when its node finished (carrying a result, or failed), or when it is certain that node will never run: the
-    condition went the other way, or every line into that node is itself dead. That is what lets a Merger sit behind
-    the two sides of a Condition without waiting for the side that was never taken."""
-
-    def __init__(self, graph: Graph, starts: list[str] | None, resume: _Resume | None = None) -> None:
-        self.nodes = {n.id: n for n in graph.nodes}
-        self.edges = [e for e in graph.edges if e.sourceHandle != MOUNT]  # a folder handed over is not a step
-        self.into: dict[str, list[int]] = defaultdict(list)
-        self.out: dict[str, list[int]] = defaultdict(list)
-        for i, e in enumerate(self.edges):
-            self.into[e.target].append(i)
-            self.out[e.source].append(i)
-        self.lanes: dict[int, _Lane] = {0: _Lane(0)}
-        self._branch_lanes: dict[tuple[str, str], int] = {}
-        self.marks: dict[str, dict[int, _Mark]] = defaultdict(dict)
-        self.queued: set[str] = set()
-        self.dead: set[str] = set()
-        if resume:
-            self._resume_at(resume)
-            return
-        begin = [n.id for n in graph.start_nodes if starts is None or n.id in starts]
-        for node_id in begin:
-            self._queue(node_id, None, self.lanes[0])
-        for n in graph.nodes:  # nothing leads here, so nothing can: whatever waits on it must not wait
-            if n.kind != "volume" and n.id not in begin and (n.kind in START_KINDS or not self.into[n.id]):
-                self.kill(n.id)
-
-    def _resume_at(self, resume: _Resume) -> None:
-        """Start from the approval gates a run was parked at. The first gate plays in the run's own lane; each further
-        one gets a lane beside it, as parallel branches had. Whatever already ran counts as queued, so a loop cannot
-        run it again, and every node that is neither a gate nor below one is dead, so that a Merger below the gates
-        waits for the gates and not for branches that no longer exist."""
-        for i, gate in enumerate(resume.gates):
-            if i:
-                self.lanes[i] = _Lane(i, 0)
-            self._queue(gate.node_id, gate.prev, self.lanes[i])
-        self.queued |= resume.ran
-        below, todo = set(), [g.node_id for g in resume.gates]
-        while todo:
-            for i in self.out[todo.pop()]:
-                if (target := self.edges[i].target) not in below:
-                    below.add(target)
-                    todo.append(target)
-        gates = {g.node_id for g in resume.gates}
-        for n in self.nodes.values():
-            if n.kind != "volume" and n.id not in gates and (n.id in resume.ran or n.id not in below):
-                self._abandon(n.id)
-
-    def _abandon(self, node_id: str) -> None:
-        """Nothing more comes of this node: it ran before the gates, or is not below them. Its lines are dead."""
-        if node_id in self.dead:
-            return
-        self.dead.add(node_id)
-        for i in self.out[node_id]:
-            self.settle(i, _Mark("dead"))
-
-    def _queue(
-        self, node_id: str, prev: Prev | None, lane: _Lane, inputs: list[_MergeIn] | None = None
-    ) -> None:
-        if node_id not in self.queued:
-            self.queued.add(node_id)
-            lane.queue.append((node_id, prev, inputs))
-
-    def kill(self, node_id: str) -> None:
-        """This node will never run: the lines out of it are dead."""
-        if node_id in self.dead or node_id in self.queued:
-            return
-        self.dead.add(node_id)
-        for i in self.out[node_id]:
-            self.settle(i, _Mark("dead"))
-
-    def settle(self, index: int, mark: _Mark) -> None:
-        target = self.edges[index].target
-        if target in self.queued or target in self.dead:
-            return
-        marks = self.marks[target]
-        marks[index] = mark
-        if self.nodes[target].kind == "merge":
-            if len(marks) == len(self.into[target]):
-                self._merge_ready(target, marks)
-        elif mark.state == "delivered":
-            self._queue(target, mark.prev, self.lanes[mark.lane])
-        elif len(marks) == len(self.into[target]):
-            self.kill(target)  # every line in is settled and none of them carried anything
-
-    def _merge_ready(self, node_id: str, marks: dict[int, _Mark]) -> None:
-        arrived = [m for m in marks.values() if m.state != "dead"]
-        if not arrived:
-            return self.kill(node_id)
-        inputs = []
-        for i in self.into[node_id]:
-            if i not in marks or marks[i].state == "dead":
-                continue
-            number = int(self.edges[i].targetHandle[1:])  # "i2" -> 2 (the graph is validated)
-            config = self.nodes[node_id].config
-            named = config.get(f"name{number}", "").strip()
-            inputs.append(_MergeIn(number, named or marks[i].source or f"Branch {number}", marks[i]))
-        # it carries on where the branches came from: the lane the last of them ran in, one level up
-        last = next((m for m in reversed(list(marks.values())) if m.state == "delivered"), arrived[-1])
-        lane = self.lanes.get(last.lane, self.lanes[0])
-        if lane.parent is not None:
-            lane = self.lanes[lane.parent]
-        self._queue(node_id, None, lane, sorted(inputs, key=lambda m: m.number))
-
-    def finish(
-        self,
-        node: GraphNode,
-        outcome: Outcome,
-        prev: Prev | None,
-        lane: _Lane,
-        failed: bool,
-        start: int | None,
-    ) -> None:
-        """A node ended: hand its result along every line out of it that is taken, and settle the rest."""
-        label = node.label or node.kind
-        here = outcome.workdir_id or (prev.workdir_id if prev else start)
-        # a folder handed on as it was keeps what it carried (shared with sibling branches, cut down to some paths)
-        carried = outcome.workdir_id is None and prev is not None and prev.workdir_id == here
-        out = Prev(
-            label, outcome.status, outcome.result, here, carried and prev.fork, prev.only if carried else ()
-        )
-        for i in self.out[node.id]:
-            line = self.edges[i]
-            if failed:
-                self.settle(i, _Mark("failed", error=outcome.error, source=label))
-            elif node.kind == "condition" and (line.sourceHandle or "yes") != outcome.branch:
-                self.settle(i, _Mark("dead"))
-            elif node.kind == "split":
-                handle = line.sourceHandle or ""
-                if handle not in (outcome.taken or ()):
-                    self.settle(i, _Mark("dead"))
-                    continue
-                key = (node.id, handle)
-                if (
-                    key not in self._branch_lanes
-                ):  # each branch point is a lane of its own, running beside the others
-                    branch = _Lane(len(self.lanes), lane.id)
-                    self.lanes[branch.id] = branch
-                    self._branch_lanes[key] = branch.id
-                only = _file_patterns(node.config.get(f"files{handle[1:]}", ""))
-                shared = Prev(label, outcome.status, outcome.result, here, here is not None, only)
-                self.settle(i, _Mark("delivered", shared, self._branch_lanes[key], source=label))
-            else:
-                self.settle(i, _Mark("delivered", out, lane.id, source=label))
-
-
-def _covers(where: str, board: Board) -> bool:
-    """Is the board in the part of the project a Trigger watches?"""
-    kind, _, ident = where.partition(":")
-    if kind == "b":
-        return ident == str(board.id)
-    if kind == "w":
-        return ident == str(board.workspace_id)
-    return True
 
 
 async def task_workdir(s: AsyncSession, task: Task) -> int | None:
@@ -735,7 +370,7 @@ class WorkflowRunner:
         return run_id
 
     def _spawn(
-        self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None, resume: _Resume | None = None
+        self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None, resume: Resume | None = None
     ) -> None:
         task = asyncio.create_task(self._run(ctx, graph, starts, resume), name=f"workflow-run-{ctx.run_id}")
         self._live[ctx.run_id] = task
@@ -748,7 +383,7 @@ class WorkflowRunner:
         for run_id in parked:
             try:
                 await self._resume(run_id)
-            except Exception:
+            except Exception:  # one unreadable run must not keep the others parked: fail it and go on
                 log.exception("could not resume workflow run %s", run_id)
                 await self._finish(run_id, RunStatus.FAILED, "Themis could not pick this run up again")
 
@@ -766,7 +401,7 @@ class WorkflowRunner:
             return
         graph = Graph.model_validate(run.graph)
         waiting = [n for n in rows if n.status == NodeStatus.WAITING]
-        gates = [_Gate(n.node_id, n.id, _prev_from((n.gate or {}).get("previous"))) for n in waiting]
+        gates = [Gate(n.node_id, n.id, prev_from((n.gate or {}).get("previous"))) for n in waiting]
         by_id = {n.id: n for n in graph.nodes}
         # what already failed: the run will end as failed, as it would have had it never stopped (a node that a restart
         # caught running is one of them)
@@ -777,7 +412,7 @@ class WorkflowRunner:
             and not (n.kind == "agent" and by_id[n.node_id].config.get("onFailure") == "continue")
         ]
         failure = f"'{failed[0].label}' failed: {failed[0].error}" if failed else ""
-        resume = _Resume(
+        resume = Resume(
             gates=gates,
             ran={n.node_id for n in rows if n.status != NodeStatus.WAITING},
             seq=max((n.seq for n in rows), default=0),
@@ -849,6 +484,7 @@ class WorkflowRunner:
                             )
                         except LoopError:
                             log.warning("workflow %s not started by task %s: it would loop", wf.id, task_id)
+        # fire-and-forget, after the task's own commit: a failed trigger must not surface anywhere
         except Exception:
             log.exception("starting workflows for moved tasks failed")
 
@@ -1092,13 +728,13 @@ class WorkflowRunner:
     # the run
 
     async def _run(
-        self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None, resume: _Resume | None = None
+        self, ctx: _Ctx, graph: Graph, starts: list[str] | None = None, resume: Resume | None = None
     ) -> None:
-        walk = _Walk(graph, starts, resume)
+        walk = Walk(graph, starts, resume)
         gate_rows = {g.node_id: g.nr_id for g in resume.gates} if resume else {}
         done: dict[str, Outcome] = {}
         carried_on: set[str] = set()  # failed nodes the workflow continued after
-        running: dict[asyncio.Task, tuple[GraphNode, Prev | None, _Lane, int]] = {}
+        running: dict[asyncio.Task, tuple[GraphNode, Prev | None, Lane, int]] = {}
         seq = resume.seq if resume else 0
         hard_fail, note = False, ""
         workdir = (
@@ -1185,7 +821,7 @@ class WorkflowRunner:
         node: GraphNode,
         seq: int,
         prev: Prev | None,
-        inputs: list[_MergeIn] | None = None,
+        inputs: list[MergeIn] | None = None,
         reuse: int | None = None,
     ) -> Outcome:
         """Run one node and record it. `reuse` is the record of an approval gate that is being picked up again."""
@@ -1238,7 +874,7 @@ class WorkflowRunner:
         return outcome
 
     async def _dispatch(
-        self, ctx: _Ctx, nr_id: int, node: GraphNode, prev: Prev | None, inputs: list[_MergeIn] | None = None
+        self, ctx: _Ctx, nr_id: int, node: GraphNode, prev: Prev | None, inputs: list[MergeIn] | None = None
     ) -> Outcome:
         c = node.config
         if node.kind in START_KINDS:
@@ -1363,7 +999,7 @@ class WorkflowRunner:
             NodeStatus.SUCCEEDED, result=result, log="\n".join(lines) + "\n", taken=frozenset(taken)
         )
 
-    async def _merge(self, ctx: _Ctx, node: GraphNode, inputs: list[_MergeIn]) -> Outcome:
+    async def _merge(self, ctx: _Ctx, node: GraphNode, inputs: list[MergeIn]) -> Outcome:
         """Waits for its branches (the run only gets here once every one is settled) and carries on with all of them:
         their results in one text, and their working folders side by side, each in a folder named after its branch."""
         c = node.config

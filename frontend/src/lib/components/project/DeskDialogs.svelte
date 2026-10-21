@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Board, Workspace } from '$lib/api'
+	import type { Board, Workspace } from '$lib/api/projects'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import type { ProjectDesk } from '$lib/projectDesk.svelte'
 	import { onClickAway } from '$lib/clickAway'

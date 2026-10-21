@@ -195,7 +195,7 @@ async def test_the_status_tells_everyone_cells_are_paused_but_only_administrator
 
 
 def test_each_run_leaves_a_trail_and_only_the_last_runs_are_kept(tmp_path):
-    for n in range(runlog.RUN_LIMIT + 5):
+    for _ in range(runlog.RUN_LIMIT + 5):
         trail = runlog.Trail(tmp_path)
         trail.begin()
         trail.event("ready")

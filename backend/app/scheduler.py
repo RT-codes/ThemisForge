@@ -28,7 +28,7 @@ from .cells import (
     snapshot_workdir,
     workdir_path,
 )
-from .codex import CodexError, lease_codex, lease_is_busy
+from .codex import CodexError, CodexLease, lease_codex, lease_is_busy
 from .config import settings
 from .connections import ConnectionProblem, RunConnection, plan_for_run, secret_values
 from .crypto import decrypt
@@ -139,6 +139,23 @@ def _run_failure(renderer: CodexRenderer | None, exit_code: int, retries: int) -
             "Try again later, or choose another model for the agent (its Model field, or Settings, Codex agents).",
         )
     return _themis_failure(f"The agent stopped with an error: {error}")
+
+
+def _judge(
+    res: CellResult, renderer: CodexRenderer | None, retries: int, redact: Redactor
+) -> tuple[AttemptStatus, dict | None]:
+    """How a run that finished ended, and why when it failed. An agent that stopped and said why (see parse_blocked)
+    decides the outcome by what it wrote, whatever the exit code of the program was."""
+    if res.blocked.strip():
+        reason, fix = parse_blocked(redact(res.blocked))
+        return AttemptStatus.FAILED, {
+            "source": "agent",
+            "reason": reason or "The agent stopped without saying why.",
+            "action": fix,
+        }
+    if res.exit_code == 0:
+        return AttemptStatus.SUCCEEDED, None
+    return AttemptStatus.FAILED, _run_failure(renderer, res.exit_code, retries)
 
 
 class _LogBuffer:
@@ -263,7 +280,7 @@ class Scheduler:
                 if self.mcp_logins and time.monotonic() - self._last_keep_alive >= KEEP_ALIVE_EVERY_SECONDS:
                     self._last_keep_alive = time.monotonic()
                     await self.mcp_logins.keep_alive()
-            except Exception:
+            except Exception:  # one bad pass must not end the loop: nothing else would ever start a task
                 log.exception("scheduler tick failed")
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), self.interval)
@@ -312,72 +329,19 @@ class Scheduler:
         self._starting = []  # whatever an interrupted earlier tick left behind
         async with self.maker() as s:
             cfg = await load_settings(s)
-            playing = len(self._live) - self.active_cells
             now = utcnow()
-            ready = (
-                Task.status == TaskStatus.READY,
-                (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
-                # cooldown: updated_at moves whenever the task changes status, including when a run ends. A workflow
-                # step is exempt: its workflow is already waiting for it and made it exactly once
-                Task.internal.is_(True) | cooled_down(cfg, int(now.timestamp())),
-                # a halt (see app/halt.py): a halted project holds everything, a halted board its own tasks; the steps
-                # of workflows (internal) only follow the project, since the board they sit on says nothing of them
-                Project.halted_at.is_(None),
-                Task.internal.is_(True) | Board.halted_at.is_(None),
-            )
-            order = (Task.next_run_at.asc().nulls_first(), Task.id)
-            budget = cfg.budget.as_cost()
-            waiting = []
-            if (
-                self.cells_ready
-            ):  # without Docker nothing can start, so tasks stay READY instead of failing (see preflight.py)
-                waiting = (
-                    await s.scalars(
-                        select(Task)
-                        .join(Project, Project.id == Task.project_id)
-                        .join(Board, Board.id == Task.board_id)
-                        .where(*ready, Task.harness != "workflow")
-                        .order_by(*order)
-                        .limit(MAX_WAITING)
-                    )
-                ).all()
-            playing_workflows = []
-            if playing < MAX_PLAYING:  # workflows only have a cap, since they wait on other tasks' cells
-                playing_workflows = (
-                    await s.scalars(
-                        select(Task)
-                        .join(Project, Project.id == Task.project_id)
-                        .join(Board, Board.id == Task.board_id)
-                        .where(*ready, Task.harness == "workflow")
-                        .order_by(*order)
-                        .limit(MAX_PLAYING - playing)
-                    )
-                ).all()
-            cells = await self._plans(s, list(waiting), cfg)
-            workflows = await self._plans(s, list(playing_workflows), cfg)
+            waiting, playing_workflows = await self._due_tasks(s, cfg, now)
+            cells = await self._plans(s, waiting, cfg)
+            workflows = await self._plans(s, playing_workflows, cfg)
 
             # what cannot run at all fails now, with the reason, instead of waiting forever
+            budget = cfg.budget.as_cost()
             broken = [p for p in cells if p.error or never_fits(budget, p.cost)]
             for plan in broken:
                 await self._fail(s, plan, budget, cfg, now)
             cells = [p for p in cells if p not in broken]
 
-            # a folder that writers must take turns on is held by one run at a time; a task that wants a busy one
-            # lets the next task go first, so it never sits on budget while it waits
-            claimed: set[int] = set().union(*(live.locks for live in self._live.values()))
-            eligible = []
-            for plan in cells:
-                if plan.locks & claimed or any(m.volume_id in self._renaming for m in plan.mounts):
-                    continue
-                claimed |= plan.locks
-                eligible.append(plan)
-
-            running = [
-                Cost(live.spec.cpus, live.spec.memory_mb)
-                for live in self._live.values()
-                if live.cell and live.spec
-            ]
-            due = [*eligible[: admit(budget, running, [p.cost for p in eligible])], *workflows]
+            due = [*self._admit(budget, cells), *workflows]
             if not due:
                 if broken:
                     await s.commit()
@@ -387,37 +351,103 @@ class Scheduler:
             self._starting = [
                 (frozenset(m.volume_id for m in p.mounts), p.task.id, p.task.title) for p in due
             ]
-            started: list[tuple[int, CellSpec, frozenset[int]]] = []
-            for plan in due:
-                task = plan.task
-                attempt = Attempt(task_id=task.id, started_at=now)
-                s.add(attempt)
-                await s.flush()
-                spec = self._spec(attempt.id, plan, cfg)
-                if plan.harness:  # recorded now, so a run that never reports tokens still says what it ran on
-                    attempt.harness = spec.harness
-                    attempt.model, attempt.billing = plan.harness.model, plan.harness.billing
-                # a task that plays workflows runs no cell: its attempt takes the folder its stages end in instead
-                if spec.harness != "workflow":
-                    attempt.workdir_id = spec.workdir_id
-                task.status = TaskStatus.RUNNING
-                task.next_run_at = None
-                task.last_run_at = now
-                started.append((attempt.id, spec, plan.locks))
+            started = await self._open_attempts(s, due, cfg, now)
             await s.commit()
         for attempt_id, spec, locks in started:
-            live = _Live(
-                task=asyncio.create_task(
-                    self._execute(attempt_id, spec, cfg.timezone, tuple(cfg.cell_package.retry_waits))
-                ),
-                spec=spec,
-                cell=spec.harness != "workflow",
-                locks=locks,
-            )
-            self._live[attempt_id] = live
-            live.task.add_done_callback(lambda _t, aid=attempt_id: self._live.pop(aid, None))
+            self._launch(attempt_id, spec, locks, cfg)
         self._starting = []
         return len(started)
+
+    async def _due_tasks(self, s: AsyncSession, cfg: AppSettings, now) -> tuple[list[Task], list[Task]]:
+        """The READY tasks that may start now: those that need a cell (as many as one tick looks at) and those that
+        play a workflow (as many as there is room to play)."""
+        playing = len(self._live) - self.active_cells
+        ready = (
+            Task.status == TaskStatus.READY,
+            (Task.next_run_at.is_(None)) | (Task.next_run_at <= now),
+            # cooldown: updated_at moves whenever the task changes status, including when a run ends. A workflow
+            # step is exempt: its workflow is already waiting for it and made it exactly once
+            Task.internal.is_(True) | cooled_down(cfg, int(now.timestamp())),
+            # a halt (see app/halt.py): a halted project holds everything, a halted board its own tasks; the steps
+            # of workflows (internal) only follow the project, since the board they sit on says nothing of them
+            Project.halted_at.is_(None),
+            Task.internal.is_(True) | Board.halted_at.is_(None),
+        )
+
+        async def pick(harness_filter, limit: int) -> list[Task]:
+            query = (
+                select(Task)
+                .join(Project, Project.id == Task.project_id)
+                .join(Board, Board.id == Task.board_id)
+                .where(*ready, harness_filter)
+                .order_by(Task.next_run_at.asc().nulls_first(), Task.id)
+                .limit(limit)
+            )
+            return list((await s.scalars(query)).all())
+
+        waiting: list[Task] = []
+        if (
+            self.cells_ready
+        ):  # without Docker nothing can start, so tasks stay READY instead of failing (see preflight.py)
+            waiting = await pick(Task.harness != "workflow", MAX_WAITING)
+        playing_workflows: list[Task] = []
+        if playing < MAX_PLAYING:  # workflows only have a cap, since they wait on other tasks' cells
+            playing_workflows = await pick(Task.harness == "workflow", MAX_PLAYING - playing)
+        return waiting, playing_workflows
+
+    def _admit(self, budget: Cost, cells: list[_Plan]) -> list[_Plan]:
+        """The planned cells that start now: in order, those whose folders are free, as far as the budget reaches."""
+        # a folder that writers must take turns on is held by one run at a time; a task that wants a busy one
+        # lets the next task go first, so it never sits on budget while it waits
+        claimed: set[int] = set().union(*(live.locks for live in self._live.values()))
+        eligible = []
+        for plan in cells:
+            if plan.locks & claimed or any(m.volume_id in self._renaming for m in plan.mounts):
+                continue
+            claimed |= plan.locks
+            eligible.append(plan)
+        running = [
+            Cost(live.spec.cpus, live.spec.memory_mb)
+            for live in self._live.values()
+            if live.cell and live.spec
+        ]
+        return eligible[: admit(budget, running, [p.cost for p in eligible])]
+
+    async def _open_attempts(
+        self, s: AsyncSession, due: list[_Plan], cfg: AppSettings, now
+    ) -> list[tuple[int, CellSpec, frozenset[int]]]:
+        """Give each planned task its attempt and mark the task running. The caller commits. Returns what to launch."""
+        started: list[tuple[int, CellSpec, frozenset[int]]] = []
+        for plan in due:
+            task = plan.task
+            attempt = Attempt(task_id=task.id, started_at=now)
+            s.add(attempt)
+            await s.flush()
+            spec = self._spec(attempt.id, plan, cfg)
+            if plan.harness:  # recorded now, so a run that never reports tokens still says what it ran on
+                attempt.harness = spec.harness
+                attempt.model, attempt.billing = plan.harness.model, plan.harness.billing
+            # a task that plays workflows runs no cell: its attempt takes the folder its stages end in instead
+            if spec.harness != "workflow":
+                attempt.workdir_id = spec.workdir_id
+            task.status = TaskStatus.RUNNING
+            task.next_run_at = None
+            task.last_run_at = now
+            started.append((attempt.id, spec, plan.locks))
+        return started
+
+    def _launch(self, attempt_id: int, spec: CellSpec, locks: frozenset[int], cfg: AppSettings) -> None:
+        """Run an attempt in the background and keep it in `_live` until it ends."""
+        live = _Live(
+            task=asyncio.create_task(
+                self._execute(attempt_id, spec, cfg.timezone, tuple(cfg.cell_package.retry_waits))
+            ),
+            spec=spec,
+            cell=spec.harness != "workflow",
+            locks=locks,
+        )
+        self._live[attempt_id] = live
+        live.task.add_done_callback(lambda _t, aid=attempt_id: self._live.pop(aid, None))
 
     async def _plans(self, s: AsyncSession, tasks: list[Task], cfg: AppSettings) -> list[_Plan]:
         """For each task: its agent, the cell it gets and the folders it mounts."""
@@ -721,144 +751,20 @@ class Scheduler:
         outcome, exit_code, result = AttemptStatus.FAILED, None, ""
         failure: dict | None = None  # why it failed, once it has (see Attempt.failure)
         before: dict[str, tuple[int, int]] | None = None  # the working folder as the cell found it
-        retries = 0  # how many times the provider's trouble made this attempt start its run again
-        login_retried = (
-            False  # whether a rejected login was already swapped for a newer one (once per attempt)
-        )
-        renderer = None
         renderers: list[CodexRenderer] = []  # one per run of this attempt: each remembers what its run spent
-        redact = Redactor(
-            []
-        )  # replaces the values of the keys this run was given, in everything that is stored
         try:
             async with AsyncExitStack() as stack:
-                lease = None
-                if spec.harness == "codex":
-                    async with self.maker() as session:
-                        parallel = (await load_settings(session)).codex_max_parallel
-                    if lease_is_busy(spec.owner_id, parallel):
-                        await buf.write(
-                            "[Waiting for the user's other Codex runs: they share one login, "
-                            f"at most {parallel} at a time]\n"
-                        )
-                    lease = await stack.enter_async_context(
-                        lease_codex(
-                            self.maker,
-                            spec.owner_id,
-                            max_parallel=parallel,
-                            run_seconds=spec.timeout_seconds,
-                        )
-                    )
-                    spec.secret_files[CODEX_AUTH] = lease.auth_json
-                    if spec.keys or spec.mcp or spec.connections:
-                        values = await self._key_values(spec)
-                        for key_id, env in spec.keys.items():
-                            spec.secret_files[key_path(env)] = values[key_id]
-                        if spec.mcp:
-                            spec.secret_files[CONFIG_PATH] = config_toml(spec.mcp, values, spec.keys)
-                        # connections hand over their secrets the same way a key does: a file, exported as a variable
-                        from_connections = await secret_values(self.maker, spec.connections)
-                        for env, value in from_connections.items():
-                            spec.secret_files[key_path(env)] = value
-                        # a tool that signs in gets a token that lasts the whole run, renewed first when it would not
-                        tokens = await self._login_tokens(spec)
-                        for env, value in tokens.items():
-                            spec.secret_files[key_path(env)] = value
-                        redact = Redactor([*values.values(), *from_connections.values(), *tokens.values()])
+                lease, redact = await self._codex_login(stack, spec, buf)
                 if spec.harness != "workflow":
                     before = await asyncio.to_thread(snapshot_workdir, spec)
-                while True:
-                    # one renderer per run: it remembers the error that ended it
-                    renderer = renderer_for(spec.harness)
-                    if renderer is not None:
-                        renderers.append(renderer)
-
-                    async def sink(chunk: str, renderer=renderer) -> None:
-                        if renderer is None:
-                            await buf.write(redact(chunk))
-                        elif text := renderer.feed(chunk):
-                            await buf.write(redact(text))
-
-                    sent = spec.secret_files.get(CODEX_AUTH)  # the login this run started with
-                    res = await self._play_or_run(spec, attempt_id, sink)
-                    if renderer is not None and (tail := renderer.flush()):
-                        await buf.write(redact(tail))
-                    if (
-                        lease is not None
-                        and (fresh := res.writeback.get(CODEX_AUTH))
-                        and fresh != lease.auth_json
-                    ):
-                        try:
-                            await lease.save_back(fresh)
-                        except CodexError as e:
-                            await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
-                    rejected = res.exit_code != 0 and renderer is not None and renderer.login_rejected
-                    if lease is not None and rejected:
-                        await lease.adopt_newer()  # a cell that wrote nothing back left the lease as it was
-                    if lease is not None and rejected and not login_retried and lease.auth_json != sent:
-                        # another run refreshed the login while this one held the old copy: the stored one is the
-                        # one that works, so start again with it (once; a login that still fails is dead)
-                        login_retried = True
-                        await buf.write(
-                            "\n[Themis] Another run refreshed the Codex login first. Starting this one "
-                            "again with the new login.\n"
-                        )
-                        spec.secret_files[CODEX_AUTH] = lease.auth_json
-                        continue
-                    trouble = renderer.transient_error if renderer is not None and res.exit_code != 0 else ""
-                    if not trouble or retries >= len(retry_waits):
-                        break
-                    wait = retry_waits[retries]
-                    retries += 1
-                    await buf.write(
-                        f"\n[Themis] The provider could not serve this run: {redact(trouble)}\n"
-                        f"[Themis] Starting it again in {wait} s (retry {retries} of {len(retry_waits)}). "
-                        "What it already did stays in the working folder.\n"
-                    )
-                    await asyncio.sleep(wait)
-                    # the next run starts from the login the last one refreshed, and is told it is a continuation
-                    if lease is not None:
-                        spec.secret_files[CODEX_AUTH] = lease.auth_json
-                    if RETRY_NOTE not in spec.prompt:
-                        spec.prompt = f"{spec.prompt.rstrip()}\n\n{RETRY_NOTE}\n"
-            exit_code, result = res.exit_code, redact(res.result)
-            outcome = AttemptStatus.SUCCEEDED if res.exit_code == 0 else AttemptStatus.FAILED
-            if res.blocked.strip():
-                # the agent stopped and said why: that is the answer, whatever the exit code of the program was
-                reason, fix = parse_blocked(redact(res.blocked))
-                outcome = AttemptStatus.FAILED
-                failure = {
-                    "source": "agent",
-                    "reason": reason or "The agent stopped without saying why.",
-                    "action": fix,
-                }
-            elif outcome == AttemptStatus.FAILED:
-                failure = _run_failure(renderer, res.exit_code, retries)
-        except asyncio.CancelledError:
-            reason = self._live[attempt_id].cancel_reason if attempt_id in self._live else None
-            if reason == "shutdown":
-                await buf.write("\n[Themis shut down while this attempt was running]\n")
-                failure = _themis_failure(
-                    "Themis shut down while this attempt was running.", "Run it again with Run now."
+                res, renderer, retries = await self._run_cell(
+                    attempt_id, spec, buf, redact, lease, retry_waits, renderers
                 )
-            else:
-                outcome = AttemptStatus.CANCELLED
-                await buf.write("\n[Cancelled]\n")
-        except CellTimeout as e:
-            await buf.write(f"\n[Cell error] {e}\n")
-            failure = _themis_failure(
-                str(e), "Raise the cell time limit in Settings, or give the agent a smaller job."
-            )
-        except (CellError, CodexError, ConnectionProblem) as e:
-            await buf.write(f"\n[Cell error] {e}\n")
-            failure = _themis_failure(str(e))
-        except Exception as e:
-            log.exception("attempt %s crashed", attempt_id)
-            await buf.write(f"\n[Unexpected error] {e}\n")
-            failure = _themis_failure(
-                f"Themis hit an unexpected error: {e}",
-                "This is a bug in Themis: the server log has the details.",
-            )
+            exit_code, result = res.exit_code, redact(res.result)
+            outcome, failure = _judge(res, renderer, retries, redact)
+        # no error escapes: each one ends the attempt with a recorded reason (_explain logs the unexpected ones)
+        except (Exception, asyncio.CancelledError) as e:  # noqa: BLE001
+            outcome, failure = await self._explain(e, attempt_id, buf)
         # every run counts, also the ones that were started again: the provider billed them all. A run that was
         # cancelled or timed out mid-turn has reported nothing, so what it spent is not in here.
         reported = [r.usage for r in renderers if r.usage is not None]
@@ -871,6 +777,143 @@ class Scheduler:
             failure = await self.workflows.failure_for_attempt(attempt_id) or failure
         await self._finish(
             attempt_id, spec.task_id, buf, outcome, exit_code, result, tz, changes, failure, usage
+        )
+
+    async def _codex_login(
+        self, stack: AsyncExitStack, spec: CellSpec, buf: _LogBuffer
+    ) -> tuple[CodexLease | None, Redactor]:
+        """For a Codex run: wait for a turn on the user's login, hold it for the run (`stack` lets it go), and put the
+        login and every secret the run needs (keys, tool sign ins, connections) in the cell's secret files. Returns
+        the lease, and a Redactor that hides those values in everything that is stored. Other harnesses need neither."""
+        redact = Redactor([])
+        if spec.harness != "codex":
+            return None, redact
+        async with self.maker() as session:
+            parallel = (await load_settings(session)).codex_max_parallel
+        if lease_is_busy(spec.owner_id, parallel):
+            await buf.write(
+                "[Waiting for the user's other Codex runs: they share one login, "
+                f"at most {parallel} at a time]\n"
+            )
+        lease = await stack.enter_async_context(
+            lease_codex(self.maker, spec.owner_id, max_parallel=parallel, run_seconds=spec.timeout_seconds)
+        )
+        spec.secret_files[CODEX_AUTH] = lease.auth_json
+        if spec.keys or spec.mcp or spec.connections:
+            values = await self._key_values(spec)
+            for key_id, env in spec.keys.items():
+                spec.secret_files[key_path(env)] = values[key_id]
+            if spec.mcp:
+                spec.secret_files[CONFIG_PATH] = config_toml(spec.mcp, values, spec.keys)
+            # connections hand over their secrets the same way a key does: a file, exported as a variable
+            from_connections = await secret_values(self.maker, spec.connections)
+            for env, value in from_connections.items():
+                spec.secret_files[key_path(env)] = value
+            # a tool that signs in gets a token that lasts the whole run, renewed first when it would not
+            tokens = await self._login_tokens(spec)
+            for env, value in tokens.items():
+                spec.secret_files[key_path(env)] = value
+            redact = Redactor([*values.values(), *from_connections.values(), *tokens.values()])
+        return lease, redact
+
+    async def _run_cell(
+        self,
+        attempt_id: int,
+        spec: CellSpec,
+        buf: _LogBuffer,
+        redact: Redactor,
+        lease: CodexLease | None,
+        retry_waits: tuple[int, ...],
+        renderers: list[CodexRenderer],
+    ) -> tuple[CellResult, CodexRenderer | None, int]:
+        """Run the cell (or play the workflow) and, when that is the right call, run it again in the same attempt:
+        once with a newer login when another run refreshed it first, and after each of `retry_waits` when the provider
+        could not serve it. Every run's renderer is added to `renderers` as it starts, so what each spent is counted
+        even if a later run is cut short. Returns the last run's result and renderer, and how many provider retries
+        it took."""
+        retries = 0  # how many times the provider's trouble made this attempt start its run again
+        login_retried = (
+            False  # whether a rejected login was already swapped for a newer one (once per attempt)
+        )
+        while True:
+            # one renderer per run: it remembers the error that ended it
+            renderer = renderer_for(spec.harness)
+            if renderer is not None:
+                renderers.append(renderer)
+
+            async def sink(chunk: str, renderer=renderer) -> None:
+                if renderer is None:
+                    await buf.write(redact(chunk))
+                elif text := renderer.feed(chunk):
+                    await buf.write(redact(text))
+
+            sent = spec.secret_files.get(CODEX_AUTH)  # the login this run started with
+            res = await self._play_or_run(spec, attempt_id, sink)
+            if renderer is not None and (tail := renderer.flush()):
+                await buf.write(redact(tail))
+            if lease is not None and (fresh := res.writeback.get(CODEX_AUTH)) and fresh != lease.auth_json:
+                try:
+                    await lease.save_back(fresh)
+                except CodexError as e:
+                    await buf.write(f"\n[The refreshed Codex login was not stored: {e}]\n")
+            rejected = res.exit_code != 0 and renderer is not None and renderer.login_rejected
+            if lease is not None and rejected:
+                await lease.adopt_newer()  # a cell that wrote nothing back left the lease as it was
+            if lease is not None and rejected and not login_retried and lease.auth_json != sent:
+                # another run refreshed the login while this one held the old copy: the stored one is the
+                # one that works, so start again with it (once; a login that still fails is dead)
+                login_retried = True
+                await buf.write(
+                    "\n[Themis] Another run refreshed the Codex login first. Starting this one "
+                    "again with the new login.\n"
+                )
+                spec.secret_files[CODEX_AUTH] = lease.auth_json
+                continue
+            trouble = renderer.transient_error if renderer is not None and res.exit_code != 0 else ""
+            if not trouble or retries >= len(retry_waits):
+                return res, renderer, retries
+            wait = retry_waits[retries]
+            retries += 1
+            await buf.write(
+                f"\n[Themis] The provider could not serve this run: {redact(trouble)}\n"
+                f"[Themis] Starting it again in {wait} s (retry {retries} of {len(retry_waits)}). "
+                "What it already did stays in the working folder.\n"
+            )
+            await asyncio.sleep(wait)
+            # the next run starts from the login the last one refreshed, and is told it is a continuation
+            if lease is not None:
+                spec.secret_files[CODEX_AUTH] = lease.auth_json
+            if RETRY_NOTE not in spec.prompt:
+                spec.prompt = f"{spec.prompt.rstrip()}\n\n{RETRY_NOTE}\n"
+
+    async def _explain(
+        self, error: BaseException, attempt_id: int, buf: _LogBuffer
+    ) -> tuple[AttemptStatus, dict | None]:
+        """What an error that cut a run short means for its attempt: how it ended and why, also written to its log.
+        A cancel the person asked for is not a failure; Themis shutting down, a timeout, a cell or login problem and a
+        bug in Themis each fail it with their own reason."""
+        if isinstance(error, asyncio.CancelledError):
+            reason = self._live[attempt_id].cancel_reason if attempt_id in self._live else None
+            if reason == "shutdown":
+                await buf.write("\n[Themis shut down while this attempt was running]\n")
+                return AttemptStatus.FAILED, _themis_failure(
+                    "Themis shut down while this attempt was running.", "Run it again with Run now."
+                )
+            await buf.write("\n[Cancelled]\n")
+            return AttemptStatus.CANCELLED, None
+        if isinstance(error, CellTimeout):
+            await buf.write(f"\n[Cell error] {error}\n")
+            return AttemptStatus.FAILED, _themis_failure(
+                str(error), "Raise the cell time limit in Settings, or give the agent a smaller job."
+            )
+        if isinstance(error, (CellError, CodexError, ConnectionProblem)):
+            await buf.write(f"\n[Cell error] {error}\n")
+            return AttemptStatus.FAILED, _themis_failure(str(error))
+        log.error("attempt %s crashed", attempt_id, exc_info=error)
+        await buf.write(f"\n[Unexpected error] {error}\n")
+        return AttemptStatus.FAILED, _themis_failure(
+            f"Themis hit an unexpected error: {error}",
+            "This is a bug in Themis: the server log has the details.",
         )
 
     async def _login_tokens(self, spec: CellSpec) -> dict[str, str]:

@@ -281,6 +281,7 @@ async def _save(session, agent: Agent, *, renamed: bool = False) -> None:
     try:
         await project_config.write_agent(session, agent, renamed=renamed)
         await session.commit()
+    # BaseException on purpose: a cancelled request must not leave a half-written config
     except BaseException:
         await session.rollback()
         raise

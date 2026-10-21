@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api'
+	import { authApi } from '$lib/api/auth'
 	import { auth } from '$lib/auth.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -28,7 +28,7 @@
 			if (mode === 'login') await auth.login(email, password)
 			else if (mode === 'setup') await auth.register(name, email, password)
 			else {
-				await api.requestAccess(name, email, reason)
+				await authApi.requestAccess(name, email, reason)
 				sent = true
 			}
 		} catch (err) {

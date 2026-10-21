@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { api, type TaskStage, type WorkflowRunDetail } from '$lib/api'
+	import { agentsApi } from '$lib/api/agents'
+	import type { TaskStage } from '$lib/api/tasks'
+	import { workflowsApi, type WorkflowRunDetail } from '$lib/api/workflows'
 	import { duration } from '$lib/format'
-	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
+	import { copyButtons, renderMarkdown } from '$lib/markdown'
 	import { STAGE_LABEL, STAGE_TONE } from '$lib/stageTrack'
 	import { agentSteps } from '$lib/workflow'
 	import LogPanel from '$lib/components/LogPanel.svelte'
@@ -32,7 +34,7 @@
 		if (!stepsOpen[i] || (steps[id] && steps[id] !== 'error')) return
 		steps[id] = 'loading'
 		try {
-			const [workflow, agents] = await Promise.all([api.workflow(id), api.agents(projectId)])
+			const [workflow, agents] = await Promise.all([workflowsApi.workflow(id), agentsApi.agents(projectId)])
 			steps[id] = agentSteps(workflow.graph, agents)
 		} catch {
 			steps[id] = 'error'
@@ -120,13 +122,12 @@
 											<ChevronRightIcon class={cn('ms-auto size-3.5 shrink-0 self-center text-muted-foreground transition-transform', openOutputs[n.id] && 'rotate-90')} />
 										</button>
 										<!-- trusted: renderMarkdown ran in untrusted mode -->
-										<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 										<div
 											class={cn(
 												'docs-prose prose prose-sm prose-invert slim-scrollbar mt-0.5 max-w-none text-xs break-words text-muted-foreground',
 												openOutputs[n.id] ? 'max-h-72 overflow-auto' : 'line-clamp-2'
 											)}
-											onclick={onCodeCopyClick}
+											use:copyButtons
 										>
 											{@html html(n.result.trim() || n.error)}
 										</div>

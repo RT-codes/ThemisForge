@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { system } from '$lib/system.svelte'
-	import { api, ApiError, type Volume } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { volumesApi, type Volume } from '$lib/api/volumes'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -23,7 +24,7 @@
 		saving = true
 		error = ''
 		try {
-			onadded(await api.createVolume(projectId, { name, kind, host_path: kind === 'host' ? hostPath : '', mode }))
+			onadded(await volumesApi.createVolume(projectId, { name, kind, host_path: kind === 'host' ? hostPath : '', mode }))
 		} catch (err) {
 			error = err instanceof ApiError || err instanceof Error ? err.message : 'Could not add the folder'
 		} finally {

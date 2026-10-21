@@ -4,7 +4,11 @@
 </script>
 
 <script lang="ts">
-	import { api, ApiError, type Agent, type Board, type Harness, type PropertyDef, type WorkflowSummary, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api'
+	import { agentsApi, type Agent } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import type { Board } from '$lib/api/projects'
+	import { tasksApi, type Harness, type PropertyDef, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api/tasks'
+	import { workflowsApi, type WorkflowSummary } from '$lib/api/workflows'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -121,7 +125,7 @@
 
 	onMount(async () => {
 		try {
-			;[workflows, agents] = await Promise.all([api.workflows(projectId), api.agents(projectId)])
+			;[workflows, agents] = await Promise.all([workflowsApi.workflows(projectId), agentsApi.agents(projectId)])
 		} catch {
 			// the list only fills the workflow picker; saving still reports a real problem
 		}
@@ -184,7 +188,7 @@
 			}
 			if (task === null) {
 				onsaved(
-					await api.createTask(projectId, {
+					await tasksApi.createTask(projectId, {
 						title,
 						description,
 						status,
@@ -212,7 +216,7 @@
 					max_hops: hops,
 				}
 				if (scheduleChanged) Object.assign(patch, schedule)
-				onsaved(await api.updateTask(task.id, patch))
+				onsaved(await tasksApi.updateTask(task.id, patch))
 			}
 			return true
 		} catch (err) {

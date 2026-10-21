@@ -51,10 +51,6 @@ def validate_definitions(defs: list[PropertyDef]) -> list[dict[str, Any]]:
     return [d.model_dump() for d in defs]
 
 
-def slugify(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:40] or "property"
-
-
 def clean_values(defs: list[dict[str, Any]], values: dict[str, Any]) -> dict[str, Any]:
     """Validate task property values against the project definitions; unknown keys are dropped."""
     by_key = {d["key"]: d for d in defs}

@@ -1,4 +1,4 @@
-import type { NodeRun, RunStatus } from './api'
+import type { NodeRun, RunStatus } from './api/workflows'
 import type { Graph, NodeKind } from './workflow'
 
 // What the task panel shows for the workflow a stage is playing: the node before, the node now, and what comes next.

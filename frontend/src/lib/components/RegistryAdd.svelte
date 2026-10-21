@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, type KeyInfo, type McpInput, type McpServer, type ProjectSummary } from '$lib/api'
+	import type { KeyInfo } from '$lib/api/agents'
+	import { projectsApi, type ProjectSummary } from '$lib/api/projects'
+	import type { McpInput, McpServer } from '$lib/api/tools'
 	import McpForm from '$lib/components/McpForm.svelte'
 	import RegistryBrowser from '$lib/components/RegistryBrowser.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -46,7 +48,7 @@
 		}
 		stage = 'project'
 		try {
-			projects = await api.projects()
+			projects = await projectsApi.projects()
 			chosen = projects.length === 1 ? projects[0].id : null
 			loadError = projects.length ? '' : 'There are no projects yet. Make one first, then add the tool to it.'
 		} catch (e) {

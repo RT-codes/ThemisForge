@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Approval } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { workflowsApi, type Approval } from '$lib/api/workflows'
 	import { approvalHref, headline } from '$lib/approvals'
 	import { approvals } from '$lib/approvals.svelte'
 	import ResultView from '$lib/components/ResultView.svelte'
@@ -43,7 +44,7 @@
 		busy = a.id
 		errors[a.id] = ''
 		try {
-			await api.decideApproval(a.id, approved, notes[a.id] ?? '')
+			await workflowsApi.decideApproval(a.id, approved, notes[a.id] ?? '')
 			delete notes[a.id]
 		} catch (e) {
 			errors[a.id] = e instanceof ApiError || e instanceof Error ? e.message : 'Could not send the answer'

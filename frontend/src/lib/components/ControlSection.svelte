@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
-	import { api, ApiError, type ControlConnect, type ControlScope, type ControlToken } from '$lib/api'
+	import { controlApi, type ControlConnect, type ControlScope, type ControlToken } from '$lib/api/control'
+	import { ApiError } from '$lib/api/core'
 	import { Button } from '$lib/components/ui/button/index.js'
 		import { Input } from '$lib/components/ui/input/index.js'
 	import { relative } from '$lib/format'
@@ -40,7 +41,7 @@
 
 	async function load() {
 		try {
-			tokens = projectId === undefined ? await api.accountControlTokens() : await api.controlTokens(projectId)
+			tokens = projectId === undefined ? await controlApi.accountControlTokens() : await controlApi.controlTokens(projectId)
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the connections'
@@ -55,7 +56,7 @@
 		busy = true
 		try {
 			const body = { name: name.trim(), scope }
-			const made = projectId === undefined ? await api.createAccountControlToken(body) : await api.createControlToken(projectId, body)
+			const made = projectId === undefined ? await controlApi.createAccountControlToken(body) : await controlApi.createControlToken(projectId, body)
 			adding = false
 			name = 'Claude Code'
 			scope = 'read'
@@ -74,7 +75,7 @@
 			return
 		}
 		try {
-			connect = await api.controlConnect(token.id)
+			connect = await controlApi.controlConnect(token.id)
 			openId = token.id
 			error = ''
 		} catch (e) {
@@ -97,7 +98,7 @@
 		doomed = null
 		if (!token) return
 		try {
-			await api.deleteControlToken(token.id)
+			await controlApi.deleteControlToken(token.id)
 			if (openId === token.id) openId = null
 			await load()
 		} catch (e) {

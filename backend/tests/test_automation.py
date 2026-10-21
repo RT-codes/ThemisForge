@@ -5,7 +5,8 @@ import asyncio
 from sqlalchemy import select, update
 
 from app.models import Task
-from app.workflows import Graph, WorkflowRunner, _Ctx
+from app.workflow_graph import Graph
+from app.workflows import WorkflowRunner, _Ctx
 from tests.conftest import drain, make_task, register
 from tests.test_workflows import (
     by_id,

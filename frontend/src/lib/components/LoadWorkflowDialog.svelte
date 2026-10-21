@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type RunStatus, type WorkflowSummary } from '$lib/api'
+	import { workflowsApi, type RunStatus, type WorkflowSummary } from '$lib/api/workflows'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -37,7 +37,7 @@
 		if (!open) return
 		query = ''
 		loaded = false
-		api.workflows(projectId)
+		workflowsApi.workflows(projectId)
 			.then((list) => {
 				flows = [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
 				error = ''

@@ -1,6 +1,6 @@
 // Helpers for the tool (MCP) form: a command is typed as one line and variables as one KEY=value per line.
 
-import type { ToolSignIn } from './api'
+import type { ToolSignIn } from './api/tools'
 
 /** "npx -y @scope/server" from a stored command and its arguments (quoting any argument that has a space) */
 export const commandLine = (command: string, args: string[]) =>
@@ -22,7 +22,7 @@ export const formatEnv = (env: Record<string, string>) =>
 
 export const isVariableName = (name: string) => /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)
 
-/** what the registry browser needs to know about one thing to fill in (see RegistryInput in api.ts) */
+/** what the registry browser needs to know about one thing to fill in (see RegistryInput in api/tools.ts) */
 interface InputLike {
   id: string
   label: string

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type Webhook, type Workspace } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Workspace } from '$lib/api/projects'
+	import { webhooksApi, type Webhook } from '$lib/api/webhooks'
 	import { destinationLabel, statusLabel } from '$lib/boards'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Switch } from '$lib/components/ui/switch/index.js'
@@ -26,7 +28,7 @@
 
 	async function load() {
 		try {
-			;[hooks, workspaces] = await Promise.all([api.webhooks(projectId), api.workspaces(projectId)])
+			;[hooks, workspaces] = await Promise.all([webhooksApi.webhooks(projectId), projectsApi.workspaces(projectId)])
 			error = ''
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Could not load the webhooks'
@@ -49,7 +51,7 @@
 
 	async function toggle(hook: Webhook, enabled: boolean) {
 		try {
-			await api.updateWebhook(hook.id, { enabled })
+			await webhooksApi.updateWebhook(hook.id, { enabled })
 			await load()
 		} catch (e) {
 			error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not change the webhook'

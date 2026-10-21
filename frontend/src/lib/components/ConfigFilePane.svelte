@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type FileEntry } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { volumesApi, type FileEntry } from '$lib/api/volumes'
 	import FilePreview from '$lib/components/FilePreview.svelte'
 	import { isDirty, parentPath, type Draft } from '$lib/files'
 
@@ -35,7 +36,7 @@
 		const file = path
 		let stale = false
 		error = ''
-		api
+		volumesApi
 			.listFiles(volumeId, parentPath(file))
 			.then((got) => {
 				const found = got?.listing.entries.find((e) => e.name === file.split('/').pop())
@@ -51,7 +52,7 @@
 		const d = draft
 		if (!d) return
 		// refused with the reason when the file could not work (the server checks a skill, agent or tool file)
-		await api.uploadFile(volumeId, d.path, new File([d.text], d.entry.name), true, force ? '' : d.entry.modified)
+		await volumesApi.uploadFile(volumeId, d.path, new File([d.text], d.entry.name), true, force ? '' : d.entry.modified)
 		draft = null
 		saves += 1
 		onsaved?.()

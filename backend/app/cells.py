@@ -292,10 +292,8 @@ class WritebackFilter:
             if stripped == WRITEBACK_END:
                 self._path = None
             elif stripped:
-                try:
+                with contextlib.suppress(ValueError):  # a garbled line is dropped, not fatal to the run
                     self.files[self._path] = base64.b64decode(stripped, validate=True).decode()
-                except ValueError:
-                    pass
             return ""
         if stripped.startswith(WRITEBACK_BEGIN) and stripped.endswith("@@"):
             path = stripped[len(WRITEBACK_BEGIN) : -2]

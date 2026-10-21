@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, ApiError, type Project } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
 	import IconField from '$lib/components/IconField.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -28,7 +29,7 @@
 		error = ''
 		saving = true
 		try {
-			await api.updateProject(project.id, { name, purpose, description, icon })
+			await projectsApi.updateProject(project.id, { name, purpose, description, icon })
 			onsaved()
 			justSaved = true
 			setTimeout(() => (justSaved = false), 2500)

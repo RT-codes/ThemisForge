@@ -19,7 +19,8 @@ from ..models import (
     WorkflowRun,
     utcnow,
 )
-from ..workflows import Graph, Kind, NodeConfig, WorkflowRunner
+from ..workflow_graph import Graph, Kind, NodeConfig
+from ..workflows import WorkflowRunner
 from .projects import _project, _task
 
 router = APIRouter(tags=["workflows"])

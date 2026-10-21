@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.cells import CellSpec
+from app.cells import CellResult, CellSpec
 from app.models import Task, utcnow
 from tests.conftest import drain, make_project, make_task, register
 from tests.test_harness import connect
@@ -31,7 +31,7 @@ def hold_cells(cells, monkeypatch) -> asyncio.Event:
     async def forever(spec: CellSpec, on_log):
         await on_log("working\n")
         await gate.wait()
-        return type("R", (), {"exit_code": 0, "result": "", "writeback": {}})()
+        return CellResult(exit_code=0)
 
     monkeypatch.setattr(cells, "run", forever)
     return gate

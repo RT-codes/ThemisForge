@@ -1,4 +1,4 @@
-import { api, type Approval } from './api'
+import { workflowsApi, type Approval } from './api/workflows'
 import { announce, headline } from './approvals'
 import { toasts } from './toasts.svelte'
 
@@ -16,7 +16,7 @@ class Approvals {
   async refresh() {
     let pending: Approval[]
     try {
-      pending = await api.approvals()
+      pending = await workflowsApi.approvals()
     } catch {
       return // transient: the next poll retries
     }

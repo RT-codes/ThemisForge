@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type CellPackage, type CellPackageDefaults } from '$lib/api'
+	import { settingsApi, type CellPackage, type CellPackageDefaults } from '$lib/api/settings'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
 	import { Label } from '$lib/components/ui/label/index.js'
@@ -20,7 +20,7 @@
 
 	onMount(async () => {
 		try {
-			defaults = await api.cellPackageDefaults()
+			defaults = await settingsApi.cellPackageDefaults()
 		} catch (e) {
 			loadError = e instanceof Error ? e.message : 'Could not load the built-in text'
 		}

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type KeyInfo, type McpInput, type RegistryInput, type RegistryPage, type RegistrySort, type RegistryTool } from '$lib/api'
+	import type { KeyInfo } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import { toolsApi, type McpInput, type RegistryInput, type RegistryPage, type RegistrySort, type RegistryTool } from '$lib/api/tools'
 	import ToolIcon from '$lib/components/ToolIcon.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Input } from '$lib/components/ui/input/index.js'
@@ -79,7 +81,7 @@
 	async function fetchPage(offset: number) {
 		const mine = ++ticket
 		try {
-			const result = await api.registryTools(projectId, {
+			const result = await toolsApi.registryTools(projectId, {
 				q: query.trim(),
 				category: category === FEATURED ? '' : category,
 				sort,
@@ -108,7 +110,7 @@
 
 	onMount(() => {
 		// featured tools are looked up one by one and work before the catalog exists; the catalog starts building
-		void api.registryFeatured(projectId).then(
+		void toolsApi.registryFeatured(projectId).then(
 			(f) => (featured = f),
 			(e) => (error = message(e, 'Could not reach the MCP registry')),
 		)
@@ -145,7 +147,7 @@
 		if (tool.supported && tool.inputs.length === 0) {
 			// the list leaves out what a tool needs to have filled in: ask for the whole entry
 			try {
-				const full = await api.registryEntry(projectId, tool.name)
+				const full = await toolsApi.registryEntry(projectId, tool.name)
 				if (selected?.name === tool.name) {
 					selected = { ...tool, ...full }
 					values = startingValues(full.inputs)
@@ -161,7 +163,7 @@
 		working = true
 		formError = ''
 		try {
-			onpick(await api.registryPrefill(projectId, selected.name, values))
+			onpick(await toolsApi.registryPrefill(projectId, selected.name, values))
 		} catch (e) {
 			formError = message(e, 'Could not set up this tool')
 		} finally {
@@ -171,7 +173,7 @@
 
 	async function refresh() {
 		try {
-			await api.registryRefresh(projectId)
+			await toolsApi.registryRefresh(projectId)
 			await fetchPage(0)
 		} catch (e) {
 			error = message(e, 'Could not update the catalog')

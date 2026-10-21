@@ -1,4 +1,4 @@
-from app.routers.workflows import MAX_NODE_PRESETS
+from app.features.workflows.service import MAX_NODE_PRESETS
 from tests.conftest import make_project
 from tests.test_workflows import setup
 

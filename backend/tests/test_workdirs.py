@@ -4,11 +4,12 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.cells import CellSpec, changes_between, snapshot_workdir
 from app.config import settings
-from app.harness import EarlierStep, build_prompt, workdir_note
-from app.models import Attempt, AttemptStatus, Task, utcnow
-from app.workflows import task_workdir
+from app.execution.cells.contract import CellSpec
+from app.execution.cells.files import changes_between, snapshot_workdir
+from app.execution.harnesses.prompts import EarlierStep, build_prompt, workdir_note
+from app.features.workflows.folders import task_workdir
+from app.persistence.models import Attempt, AttemptStatus, Task, utcnow
 from tests.test_harness import connect
 from tests.test_workflows import attempt_of, edge, make_workflow, node, play_task, run, save, setup
 
@@ -226,7 +227,7 @@ async def test_a_folder_that_is_gone_starts_empty_and_says_so(client, runner, ce
 
 
 async def _board(s, pid: int) -> int:
-    from app import boards
+    from app.features.projects import boards
 
     return (await boards.default_board(s, pid)).id
 

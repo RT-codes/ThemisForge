@@ -39,6 +39,7 @@ move them all together. **Esc** lets go of the selection.
 | **Task** | Creates a task, updates or runs one by its title, or moves **the task that started this run** (needs a Trigger of the kind above). It can work on a chosen **board**: create the task there, or send the moved task there. A created task can be a **follow-up** of the task that started the run. A task that becomes **Ready** runs like any other task and the node waits for it. |
 | **Agent** | Hands instructions to one of the project's [agents](/docs/agents) and waits for it. The result of the node before it is passed along, and so is the task behind the run: the task that started it, or the task it is a stage of (its title and description). That is how a ticket steers a workflow, see [Steering a run from the task](#steering-a-run-from-the-task). |
 | **Condition** | Checks the previous node's result or status and follows the **Yes** or **No** output. |
+| **Approval** | Parks the run until a person approves or rejects. See [Approvals](#approvals-waiting-for-a-person). |
 | **Splitter** | Sends the run down 2 to 4 **branches** that run at the same time. Each branch can have a rule: only when the result contains some text, and only some of the files. See [Branches](#branches-running-side-by-side). |
 | **Merger** | Waits for its branches, then carries on once with all of them: their results in one text and their working folders side by side. See [Branches](#branches-running-side-by-side). |
 | **End** | Finishes a path with an outcome (success, failed or needs review) and a note. |
@@ -156,6 +157,40 @@ it up. It then carries on with:
   other, and are drawn **in amber** with a note; put a Splitter or a Merger there to say what you mean.
 - A workflow that nests other workflows (a Task node that runs a task that plays a workflow) counts against the same
   limit of workflows playing at once as before; many parallel branches that each start one use it up faster.
+
+## Approvals: waiting for a person
+
+An **Approval** node stops the run at that point and waits for you. It is how a workflow can be allowed to do something
+that matters, such as publishing a listing or sending a message, without doing it unseen.
+
+- **What to approve** is the question you write in the node. Next to it you are shown what the step before produced, so
+  you decide on the real thing.
+- **Approve** carries on down the line. What the step before produced passes on unchanged.
+- **Reject** fails the node, and the run with it, with your note as the reason. Nothing after the Approval node runs.
+- The first answer stands. Whatever the note says is kept in the node's log, with who answered.
+
+A run that waits is not stuck. It holds no cell and costs no budget, and other branches go on meanwhile.
+
+### Where you answer
+
+- A **toast** appears in the corner of the page when a run reaches an Approval node. Click it to open that approval
+  straight away. It goes away by itself after a while (and waits while the pointer is on it), but the approval is still
+  there.
+- The **Approvals** button in the top bar shows how many are waiting. It is there whenever something waits, and opens the
+  list. Each entry unfolds to show the question, the result to approve, and a note field.
+- A project's **Needs attention** card lists its waiting approvals first.
+- On the **Runs** tab the waiting node unfolds on its own, with a button that opens the same answer panel. On the canvas of
+  a test run the node holds a steady amber ring.
+
+### Restarts
+
+A run waiting at an Approval node **survives a restart** of Themis, and an answer given before or after one counts. What
+does not survive is anything else that was in motion: a step that was running next to it fails with "Themis restarted",
+the run ends as failed in the end, and only the part of the workflow **below** the Approval node carries on.
+
+This holds for runs started by a trigger or by hand. A workflow that a **task plays** (a stage, or a Task node that runs a
+task) ends with that task's attempt when Themis restarts, waiting approval included, so keep an Approval node in workflows
+that start from a trigger.
 
 ## How a run works
 

@@ -13,12 +13,21 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from app.cells import SECRETS_DIR, CellError, CellSpec, DockerCellManager, secrets_archive
-from app.codex import CodexError, CodexLogins, get_connection, lease_codex, login_needs_refresh, save_auth
 from app.config import settings
 from app.crypto import decrypt
+from app.execution.cells.contract import SECRETS_DIR, CellError, CellSpec
+from app.execution.cells.docker import DockerCellManager
+from app.execution.cells.secrets import secrets_archive
+from app.features.connections.codex import (
+    CodexError,
+    CodexLogins,
+    get_connection,
+    lease_codex,
+    login_needs_refresh,
+    save_auth,
+)
 from app.main import app
-from app.models import CodexConnection, utcnow
+from app.persistence.models import CodexConnection, utcnow
 from tests.conftest import login, register
 from tests.test_harness import fake_auth
 

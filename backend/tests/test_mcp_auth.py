@@ -13,11 +13,12 @@ import pytest
 import yaml
 from sqlalchemy import select
 
-from app import connections
-from app.app_settings import AppSettings, McpAuthPolicy, save_settings
+import app.features.connections.service as connections
+import app.features.tools.auth.oauth as oauth_module
 from app.config import settings
-from app.keys import HIDDEN
-from app.mcp_auth import (
+from app.features.project_config.store import config_dir
+from app.features.system.settings import AppSettings, McpAuthPolicy, save_settings
+from app.features.tools.auth import (
     ACTIVE,
     NEEDS_SIGN_IN,
     AuthProblem,
@@ -28,9 +29,8 @@ from app.mcp_auth import (
     resource_key,
     unseal,
 )
-from app.mcp_auth import oauth as oauth_module
-from app.models import McpLogin, utcnow
-from app.project_config import config_dir
+from app.features.tools.keys import HIDDEN
+from app.persistence.models import McpLogin, utcnow
 from tests.conftest import drain, make_project, make_task, register
 from tests.registry_fakes import entry
 from tests.test_agents import make_agent
@@ -716,8 +716,8 @@ async def test_a_command_tool_has_no_sign_in(client):
 
 
 async def test_testing_a_tool_that_signs_in_uses_its_token(client, monkeypatch, service):
-    from app.mcp import ProbeResult
-    from app.routers import tools as tools_router
+    import app.features.tools.service as tools_router
+    from app.features.tools.mcp import ProbeResult
 
     await register(client)
     pid = (await make_project(client))["id"]

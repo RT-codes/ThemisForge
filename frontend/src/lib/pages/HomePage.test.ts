@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { createServer, type ViteDevServer } from 'vite'
-import type { ProjectSummary } from '../api'
+import type { ProjectSummary } from '../api/projects'
 
 let server: ViteDevServer
 let renderHome: (items: ProjectSummary[]) => string

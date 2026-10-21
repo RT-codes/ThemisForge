@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { Board, Column, Task, Workspace } from './api.ts'
+import type { Board, Column, Workspace } from './api/projects.ts'
+import type { Task } from './api/tasks.ts'
 import { boardChoices, clampHeight, boardSummary, columnsOf, customId, customStatusChoices, defaultBoard, destinationLabel, findBoard, lineage, whereChoices, parseCollapsed, statusLabel, statusTone, survivingBoards, taskTotal, workspaceOf, workspaceTasks } from './boards.ts'
 
 const builtin = (key: string): Column => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1), builtin: true, color: null, icon: '', description: '' })

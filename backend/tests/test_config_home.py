@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from app import config, run, volumes
-from app.app_settings import MountRoot
+from app import config, run
 from app.config import Settings
+from app.features.storage import volumes
+from app.features.system.settings import MountRoot
 
 
 def test_with_a_home_everything_that_is_ours_lives_in_it(tmp_path):

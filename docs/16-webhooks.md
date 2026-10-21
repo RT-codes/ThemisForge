@@ -41,7 +41,7 @@ Press **New webhook** and choose:
 - **Where its tasks land.** A board and a status. The **Backlog** is the safe choice: the task waits until you move it
   on. Choose **Ready** to run every message at once, or a status of your own that a workflow watches, to send the task
   into a workflow without running it by itself first.
-- **Run with.** An agent, a Codex run, or a list of workflows to play one after the other, exactly as on a task.
+- **Run with.** An agent, a Codex or Claude Code run, or a list of workflows to play one after the other, exactly as on a task.
 - **What a message becomes** and **Only when**, below.
 
 After you make it, Themis shows the **address** once. Copy it and give it to whatever should send messages. Only the end

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Project } from '$lib/api'
+	import { projectsApi, type Project } from '$lib/api/projects'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
@@ -28,7 +28,7 @@
 	async function deleteProject() {
 		deleteError = ''
 		try {
-			await api.deleteProject(project.id)
+			await projectsApi.deleteProject(project.id)
 			await projects.refresh()
 			deleteOpen = false
 			router.navigate('/')

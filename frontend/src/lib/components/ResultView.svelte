@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js'
 	import * as Dialog from '$lib/components/ui/dialog/index.js'
-	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
+	import { copyButtons, renderMarkdown } from '$lib/markdown'
 	import { cn } from '$lib/utils'
 	import Maximize2Icon from '@lucide/svelte/icons/maximize-2'
 
@@ -22,8 +22,7 @@
 		<pre class={cn('slim-scrollbar overflow-auto rounded-lg border bg-card p-4 text-xs break-words whitespace-pre-wrap', enlarged ? 'min-h-0 flex-1' : 'max-h-96')}>{text}</pre>
 	{:else}
 		<!-- trusted: agent results are rendered in untrusted mode, with no image resolver -->
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class={cn('docs-prose prose prose-sm prose-invert slim-scrollbar max-w-none overflow-auto rounded-lg border bg-card p-4 text-sm break-words', enlarged ? 'min-h-0 flex-1' : 'max-h-96')} onclick={onCodeCopyClick}>
+		<div class={cn('docs-prose prose prose-sm prose-invert slim-scrollbar max-w-none overflow-auto rounded-lg border bg-card p-4 text-sm break-words', enlarged ? 'min-h-0 flex-1' : 'max-h-96')} use:copyButtons>
 			{@html rich}
 		</div>
 	{/if}

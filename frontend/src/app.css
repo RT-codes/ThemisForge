@@ -280,6 +280,15 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 .run-ring.on {
 	opacity: 1;
 }
+/* an approval gate waiting for a person: a steady amber ring, because nothing is moving */
+.run-ring.parked {
+	box-shadow:
+		inset 0 0 0 2px color-mix(in oklab, var(--color-amber-500) 70%, transparent),
+		0 0 16px -2px color-mix(in oklab, var(--color-amber-500) 50%, transparent);
+}
+.run-ring.parked::before {
+	display: none;
+}
 .run-ring::before {
 	content: '';
 	position: absolute;

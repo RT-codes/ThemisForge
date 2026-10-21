@@ -22,6 +22,8 @@ For example: *"Every morning, research the news in my field and write me a short
 
 - **Let the outside world start work.** Give a project a **webhook** and a shop order, a GitHub issue or a script of your own becomes a task, set up the way you choose.
 
+- **Hear about it.** Connect a Discord channel and Themis messages you when a task fails or something waits for your approval.
+
 - **Share files safely.** Agents hand files to each other through shared folders, and you choose which folders they may read or change.
 
 - **Stay in control.** Read every log and result, cancel anything, and limit how much of the computer's power agents can use.

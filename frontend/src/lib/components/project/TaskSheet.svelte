@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { api, ApiError, type Board, type PropertyDef, type Task, type TaskStatus, type Workspace } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import type { Board, Workspace } from '$lib/api/projects'
+	import { tasksApi, type PropertyDef, type Task, type TaskStatus } from '$lib/api/tasks'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import XIcon from '@lucide/svelte/icons/x'
 	import { fly } from 'svelte/transition'
@@ -158,11 +160,11 @@
 		<div class="sticky top-0 z-10 flex items-center gap-2 border-b bg-popover/95 px-4 py-2 backdrop-blur">
 			{#if task}
 				{#if task.status === 'running'}
-					<Button size="sm" variant="secondary" disabled={busy} onclick={() => act(() => api.cancelTask(task!.id))}>
+					<Button size="sm" variant="secondary" disabled={busy} onclick={() => act(() => tasksApi.cancelTask(task!.id))}>
 						<OctagonXIcon /> Stop task
 					</Button>
 				{:else}
-					<Button size="sm" disabled={busy} onclick={() => act(() => api.runTask(task!.id))}>
+					<Button size="sm" disabled={busy} onclick={() => act(() => tasksApi.runTask(task!.id))}>
 						<PlayIcon /> Run now
 					</Button>
 				{/if}
@@ -243,7 +245,7 @@
 					status={task.status}
 					{busy}
 					showTabs
-					onstatus={(s) => act(() => api.updateTask(task!.id, { status: s }))}
+					onstatus={(s) => act(() => tasksApi.updateTask(task!.id, { status: s }))}
 					onsend={() => ((sendMode = 'move'), (sendOpen = true))}
 					onfollowup={() => ((sendMode = 'spawn'), (sendOpen = true))}
 					{onopen}

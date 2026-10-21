@@ -3,8 +3,9 @@ that is made is set by the project's owner."""
 
 from sqlalchemy import select
 
-from app import webhooks
-from app.models import Task, WebhookDelivery
+import app.features.webhooks.receiver as webhooks
+from app.persistence.models import Task, WebhookDelivery
+from app.security import hash_secret
 from tests.conftest import login, make_project, make_task, register
 from tests.test_agents import make_agent
 from tests.test_workflows import (
@@ -80,7 +81,7 @@ async def test_the_secret_is_shown_once_and_only_a_hash_is_kept(client, maker):
     assert token not in str(listed)
     async with maker() as s:
         stored = (await s.execute(select(webhooks.Webhook.token_hash))).scalar_one()
-    assert stored == webhooks.hash_token(token) and token not in stored
+    assert stored == hash_secret(token) and token not in stored
 
 
 async def test_a_wrong_address_is_not_found_and_a_new_secret_ends_the_old_one(client):

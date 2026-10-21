@@ -58,7 +58,7 @@ Set a task's **Run with** to **Codex agent**. When it runs, Themis:
 4. shows what the agent said and ran in the attempt **log**, and stores its final message as the **result**,
 5. saves the login back if Codex refreshed it during the run.
 
-The installer gets the image for you (and `themis upgrade` gets the one that matches each new version). In a development checkout, build it once with `./themis build-images`. Each run gets its own private working folder at `/workspace`,
+The installer gets the image for you (and `themis upgrade` gets the one that matches each new version). In a development checkout, build it once with `./themis build-images` (it builds the Claude Code image too). Each run gets its own private working folder at `/workspace`,
 so two agents never edit the same files. If the owner has not connected Codex, the attempt fails and says so.
 
 ## What the agent's computer has

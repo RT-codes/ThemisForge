@@ -12,11 +12,15 @@ export function classify(lines: string[]): { text: string; kind: Kind }[] {
       mode = 'output'
       return { text: line, kind: 'command' }
     }
+    if (line.startsWith('[tool] ')) {
+      mode = 'output'
+      return { text: line, kind: 'command' }
+    }
     if (line.startsWith('[thinking]')) {
       mode = 'thinking'
       return { text: line, kind: 'thinking' }
     }
-    if (/^\[(exit [1-9]\d*\]|Cell error|Unexpected error|Cancelled\]|codex\] error)/.test(line)) return { text: line, kind: 'error' }
+    if (/^\[(exit [1-9]\d*\]|Cell error|Unexpected error|Cancelled\]|codex\] error|claude\] error|error\])/.test(line)) return { text: line, kind: 'error' }
     if (/^\[[^\]]+\]/.test(line)) return { text: line, kind: 'note' }
     return { text: line, kind: mode }
   })

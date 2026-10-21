@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { api, ApiError, type Agent, type AgentInput, type CellDefaults, type HarnessInfo, type KeyInfo, type McpServer, type Project, type Skill } from '$lib/api'
+	import { agentsApi, type Agent, type AgentInput, type HarnessInfo, type KeyInfo, type Skill } from '$lib/api/agents'
+	import { ApiError } from '$lib/api/core'
+	import type { Project } from '$lib/api/projects'
+	import type { CellDefaults } from '$lib/api/settings'
+	import type { McpServer } from '$lib/api/tools'
 	import { auth } from '$lib/auth.svelte'
 	import CellChoice from '$lib/components/CellChoice.svelte'
 	import ModelPicker from '$lib/components/ModelPicker.svelte'
@@ -135,7 +139,7 @@
 		saving = true
 		try {
 			const created = agent === null
-			const saved = agent === null ? await api.createAgent(projectId, draft) : await api.updateAgent(agent.id, draft)
+			const saved = agent === null ? await agentsApi.createAgent(projectId, draft) : await agentsApi.updateAgent(agent.id, draft)
 			show(toInput(saved))
 			onsaved(saved, created)
 			justSaved = true
@@ -151,7 +155,7 @@
 		confirmOpen = false
 		if (!agent) return
 		try {
-			await api.deleteAgent(agent.id)
+			await agentsApi.deleteAgent(agent.id)
 			ondeleted()
 		} catch (err) {
 			saveError = err instanceof ApiError || err instanceof Error ? err.message : 'Could not delete the agent'
@@ -176,7 +180,7 @@
 		const ticket = ++checking
 		if (draft.mcp_servers.length === 0) return void (warnings = [])
 		try {
-			const result = await api.checkAgent(projectId, { harness: draft.harness, cell_profile: draft.cell_profile, mcp_servers: draft.mcp_servers })
+			const result = await agentsApi.checkAgent(projectId, { harness: draft.harness, cell_profile: draft.cell_profile, mcp_servers: draft.mcp_servers })
 			if (ticket === checking) warnings = result.warnings
 		} catch {
 			if (ticket === checking) warnings = []

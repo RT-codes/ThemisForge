@@ -1,4 +1,4 @@
-import { api, type ProjectSummary } from './api'
+import { projectsApi, type ProjectSummary } from './api/projects'
 
 class Projects {
   list = $state<ProjectSummary[]>([])
@@ -6,7 +6,7 @@ class Projects {
 
   async refresh() {
     try {
-      this.list = await api.projects()
+      this.list = await projectsApi.projects()
     } finally {
       this.loaded = true
     }

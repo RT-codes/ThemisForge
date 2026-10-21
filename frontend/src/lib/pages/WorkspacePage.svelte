@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, type Board as BoardInfo, type Workspace } from '$lib/api'
+	import { projectsApi, type Board as BoardInfo, type Workspace } from '$lib/api/projects'
 	import { defaultBoard, parseCollapsed } from '$lib/boards'
 	import BoardDialog from '$lib/components/project/BoardDialog.svelte'
 	import DeskDialogs from '$lib/components/project/DeskDialogs.svelte'
@@ -104,7 +104,7 @@
 	function shift(board: BoardInfo, step: -1 | 1) {
 		const others = workspace!.boards.filter((b) => b.id !== board.id)
 		const index = workspace!.boards.findIndex((b) => b.id === board.id) + step
-		run(() => api.updateBoard(board.id, { position: dropPosition(others.map((b) => b.position), index) }))
+		run(() => projectsApi.updateBoard(board.id, { position: dropPosition(others.map((b) => b.position), index) }))
 	}
 
 	function edit(board: BoardInfo) {
@@ -118,7 +118,7 @@
 	}
 
 	async function duplicate(board: BoardInfo) {
-		await run(() => api.duplicateBoard(board.id))
+		await run(() => projectsApi.duplicateBoard(board.id))
 	}
 </script>
 

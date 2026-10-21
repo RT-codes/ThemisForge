@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { NodeRun, NodeRunStatus } from './api.ts'
+import type { NodeRun, NodeRunStatus } from './api/workflows.ts'
 import { cardStages, stageTrack } from './stageTrack.ts'
 import type { Graph, NodeKind } from './workflow.ts'
 

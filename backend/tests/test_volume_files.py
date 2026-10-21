@@ -5,9 +5,9 @@ import os
 
 import pytest
 
-from app.app_settings import AppSettings
 from app.config import settings
-from app.volumes import plan_mounts
+from app.features.storage.volumes import plan_mounts
+from app.features.system.settings import AppSettings
 from tests.conftest import drain, make_project, make_task, register
 from tests.test_volumes import approve, notes  # noqa: F401  (notes is a fixture)
 
@@ -332,7 +332,7 @@ async def test_a_folder_a_run_is_using_keeps_its_name_until_it_finishes(
 async def test_a_running_task_locks_the_folders_it_mounts_until_it_ends(
     client, files, scheduler, cells, monkeypatch
 ):
-    from app.cells import CellResult
+    from app.execution.cells.contract import CellResult
 
     vid, disk = files
     pid = project_id(disk)

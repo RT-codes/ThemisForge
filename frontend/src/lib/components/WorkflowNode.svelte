@@ -44,7 +44,7 @@
 	<!-- the pulse of a node that finished, and the shining border of the one playing; each in its own clipped layer so the
 	     handles and labels that stick out of the node are not cut off -->
 	<span use:pulseWhen={run?.nodePulses[id] ?? 0} class="pointer-events-none absolute -inset-px overflow-hidden rounded-lg" aria-hidden="true"></span>
-	<span class="run-ring" class:on={phase === 'playing'} aria-hidden="true"></span>
+	<span class="run-ring" class:on={phase === 'playing' || phase === 'parked'} class:parked={phase === 'parked'} aria-hidden="true"></span>
 	{#if info.branching === 'in'}
 		{#each points as p, i (p.id)}
 			<Handle type="target" id={p.id} position={Position.Top} class="workflow-handle" style="left: {spread(i, points.length)}" />

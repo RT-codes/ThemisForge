@@ -1,4 +1,5 @@
-import { api, ApiError, type User } from './api'
+import { authApi, type User } from './api/auth'
+import { ApiError } from './api/core'
 
 class Auth {
   user = $state<User | null>(null)
@@ -8,12 +9,12 @@ class Auth {
 
   async init() {
     try {
-      this.user = await api.me()
+      this.user = await authApi.me()
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 401)) console.error(e)
       this.user = null
       try {
-        this.needsAdmin = (await api.setup()).needs_admin
+        this.needsAdmin = (await authApi.setup()).needs_admin
       } catch (err) {
         console.error(err)
       }
@@ -23,17 +24,17 @@ class Auth {
   }
 
   async login(email: string, password: string) {
-    this.user = await api.login(email, password)
+    this.user = await authApi.login(email, password)
   }
 
   async register(name: string, email: string, password: string) {
-    this.signedIn(await api.register(name, email, password))
+    this.signedIn(await authApi.register(name, email, password))
   }
 
   async logout() {
-    await api.logout()
+    await authApi.logout()
     this.user = null
-    this.needsAdmin = (await api.setup()).needs_admin
+    this.needsAdmin = (await authApi.setup()).needs_admin
   }
 
   /** For screens that create the account themselves (accepting an invite). */

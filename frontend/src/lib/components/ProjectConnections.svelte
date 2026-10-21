@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { api, type ConnectionProvider, type McpServer, type ProjectConnection } from '$lib/api'
+	import { connectionsApi, type ConnectionProvider, type ProjectConnection } from '$lib/api/connections'
+	import { toolsApi, type McpServer } from '$lib/api/tools'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import DynamicIcon from '$lib/components/DynamicIcon.svelte'
 	import UseConnectionDialog from '$lib/components/UseConnectionDialog.svelte'
@@ -26,7 +27,7 @@
 
 	async function load() {
 		try {
-			const [tools, list, bound] = await Promise.all([api.mcpServers(projectId), api.connections(), api.projectConnections(projectId)])
+			const [tools, list, bound] = await Promise.all([toolsApi.mcpServers(projectId), connectionsApi.connections(), connectionsApi.projectConnections(projectId)])
 			servers = tools
 			services = list.providers.filter((p) => p.category === 'service')
 			used = bound

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { api, ApiError, type FileEntry } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { volumesApi, type FileEntry } from '$lib/api/volumes'
 	import ImagePreview from '$lib/components/ImagePreview.svelte'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { isDirty, isMarkdown, parentPath, previewKind, resolveRelative, splitFrontmatter, type Draft } from '$lib/files'
-	import { onCodeCopyClick, renderMarkdown } from '$lib/markdown'
+	import { copyButtons, renderMarkdown } from '$lib/markdown'
 	import DownloadIcon from '@lucide/svelte/icons/download'
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle'
 	import LockKeyholeIcon from '@lucide/svelte/icons/lock-keyhole'
@@ -62,7 +63,7 @@
 					untrusted: true,
 					image: (src) => {
 						const target = resolveRelative(parentPath(path), src)
-						return target === null ? null : api.fileUrl(volumeId, target)
+						return target === null ? null : volumesApi.fileUrl(volumeId, target)
 					},
 				}).html
 			: ''
@@ -79,7 +80,7 @@
 		void entry.modified
 		if (editing) return
 		let stale = false
-		api
+		volumesApi
 			.readFileText(volumeId, path)
 			.then((t) => !stale && (text = t))
 			.catch((e) => !stale && (error = e instanceof ApiError || e instanceof Error ? e.message : 'Could not read the file'))
@@ -157,8 +158,7 @@
 			></textarea>
 		{:else if markdown && !raw}
 			<!-- trusted: renderMarkdown ran in untrusted mode, so nothing in the file can be markup of its own -->
-			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-			<div class="docs-prose prose prose-invert slim-scrollbar max-w-none min-h-0 flex-1 overflow-auto rounded-md border bg-background/40 p-4 text-sm" onclick={onCodeCopyClick}>
+			<div class="docs-prose prose prose-invert slim-scrollbar max-w-none min-h-0 flex-1 overflow-auto rounded-md border bg-background/40 p-4 text-sm" use:copyButtons>
 				{#if parts.meta}<pre class="not-prose mb-4 overflow-auto rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground">{parts.meta}</pre>{/if}
 				{@html rich}
 			</div>
@@ -168,7 +168,7 @@
 	{:else if kind === null}
 		<div class="m-auto flex flex-col items-center gap-3 text-center">
 			<p class="text-sm text-muted-foreground">This kind of file cannot be shown here.</p>
-			<Button variant="outline" href={api.fileUrl(volumeId, path, true)} download={entry.name}><DownloadIcon /> Download</Button>
+			<Button variant="outline" href={volumesApi.fileUrl(volumeId, path, true)} download={entry.name}><DownloadIcon /> Download</Button>
 		</div>
 	{/if}
 

@@ -13,3 +13,8 @@ test('commands, their output, thinking and notes get their own look', () => {
 test('a blank line ends a block', () => assert.deepEqual(kinds('$ ls\nfile\n\nplain text'), ['command', 'output', 'plain', 'plain']))
 test('failures stand out', () => assert.deepEqual(kinds('[Cell error] boom\n[Cancelled]\n[codex] error: x'), ['error', 'error', 'error']))
 test('a plain log stays plain', () => assert.deepEqual(kinds('hello\nworld'), ['plain', 'plain']))
+test('Claude Code tool calls look like commands, and its errors stand out', () => {
+  assert.deepEqual(kinds('[claude] session s1, model m\n\n[tool] Read /workspace/a.txt\nfile text\n[error]\n\n[claude] error: boom'), [
+    'note', 'plain', 'command', 'output', 'error', 'plain', 'error',
+  ])
+})

@@ -1,12 +1,15 @@
 <script lang="ts">
-	import { api, ApiError, type Project } from '$lib/api'
+	import { ApiError } from '$lib/api/core'
+	import { projectsApi, type Project } from '$lib/api/projects'
 	import AgentsSection from '$lib/components/AgentsSection.svelte'
 	import ProjectConnections from '$lib/components/ProjectConnections.svelte'
 	import SettingsSection from '$lib/components/SettingsSection.svelte'
 	import SkillsSection from '$lib/components/SkillsSection.svelte'
 	import ToolsSection from '$lib/components/ToolsSection.svelte'
 	import VolumesSection from '$lib/components/VolumesSection.svelte'
+	import NotificationsSection from '$lib/components/NotificationsSection.svelte'
 	import WebhooksSection from '$lib/components/WebhooksSection.svelte'
+	import ControlSection from '$lib/components/ControlSection.svelte'
 	import WorkflowLibrary from '$lib/components/WorkflowLibrary.svelte'
 	import GroupHeading from '$lib/components/GroupHeading.svelte'
 	import ProjectCells from '$lib/components/project/ProjectCells.svelte'
@@ -38,7 +41,7 @@
 
 	async function load() {
 		try {
-			project = await api.project(id)
+			project = await projectsApi.project(id)
 			loadError = ''
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.message : 'Could not load the project'
@@ -102,6 +105,7 @@
 				<AgentsSection projectId={id} />
 				<WorkflowLibrary projectId={id} now={Date.now()} />
 				<WebhooksSection projectId={id} />
+				<NotificationsSection projectId={id} />
 			</div>
 		</div>
 
@@ -110,6 +114,7 @@
 			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<ProjectConnections projectId={id} />
 				<ToolsSection projectId={id} />
+				<ControlSection projectId={id} />
 				<SkillsSection projectId={id} />
 				<VolumesSection projectId={id} />
 			</div>

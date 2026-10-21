@@ -84,8 +84,8 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
   ],
   agent: [
     // the options of agentId are the project's agents: the panel fills them in, this one is always there
-    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: plain Codex']) },
-    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent']), when: { key: 'agentId', oneOf: [''] } },
+    { key: 'agentId', label: 'Agent', type: 'select', options: opts(['', 'No agent: a plain one, chosen below']) },
+    { key: 'harness', label: 'Runs with', type: 'select', options: opts(['codex', 'Codex agent'], ['claude', 'Claude Code agent']), when: { key: 'agentId', oneOf: [''] } },
     { key: 'instructions', label: 'Instructions', type: 'textarea', placeholder: 'What should the agent do?' },
     { key: 'brief', label: 'Include task title and description', type: 'toggle', hint: "Added to this step's instructions. Turn it off for housekeeping steps, like syncing or publishing." },
     { key: 'workdir', label: 'Working folder', type: 'select', options: opts(['', 'A fresh folder'], ['inherit', 'Continue in the previous folder']), hint: 'Continue works in the folder of the step before this one (or of the stage before this workflow), and is told what that step changed. Without anything before it, the agent gets a fresh folder.' },
@@ -359,14 +359,14 @@ export const nextNodeNumber = (ids: string[]) => ids.reduce((max, id) => Math.ma
 
 /** the graph a new workflow starts with: just where a run begins */
 /** The steps of a graph that are given instructions (its Agent nodes), with who does each: for a ticket to show what its
- * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs plain Codex. */
+ * stages tell the agents, in the order the nodes were made. A node with no agent chosen runs a plain agent of the harness it names (Codex by default). */
 export function agentSteps(graph: Graph, agents: { id: number; name: string }[]) {
   return graph.nodes
     .filter((n) => n.kind === 'agent')
     .map((n) => ({
       nodeId: n.id,
       label: n.label.trim() || 'Agent',
-      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? 'Plain Codex',
+      agent: agents.find((a) => String(a.id) === (n.config.agentId ?? '').trim())?.name ?? (n.config.harness === 'claude' ? 'Plain Claude Code' : 'Plain Codex'),
       instructions: (n.config.instructions ?? '').trim(),
     }))
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { AppSettings, CellPackage, DockerStatus, UpdateInfo } from './api/settings.ts'
-import { copySettings, gb, summarizeAgent, summarizeCell, summarizeDocker, summarizeKeys, summarizePackage, summarizeResources, summarizeRoots, summarizeUpdate, withMountRoot } from './settingsView.ts'
+import { copySettings, gb, summarizeAgent, summarizeCell, summarizeClaude, summarizeDocker, summarizeKeys, summarizePackage, summarizeResources, summarizeRoots, summarizeUpdate, withMountRoot } from './settingsView.ts'
 
 const update = (over: Partial<UpdateInfo> = {}): UpdateInfo =>
   ({ enabled: true, current: '0.3.0', latest: '', available: false, url: '', checked_at: '', error: '', channel: 'stable', kind: 'release', ...over }) as UpdateInfo
@@ -41,6 +41,7 @@ test('the resource line counts cells in the singular and the plural', () => {
 test('the cell, agent and package lines read out the settings they stand for', () => {
   assert.equal(summarizeCell({ cell_image: 'themis/cell', cell_cpus: 2, cell_memory_mb: 2048 }), 'themis/cell · 2 CPU · 2048 MB')
   assert.equal(summarizeAgent({ codex_model: 'gpt-x', codex_reasoning_effort: 'high', codex_max_parallel: 2 }), 'gpt-x · high effort · 2 at once')
+  assert.equal(summarizeClaude({ claude_model: 'claude-x', claude_reasoning_effort: 'low' }), 'claude-x · low effort')
   const pkg = (over: Partial<CellPackage>) => ({ rules_enabled: true, skill_enabled: false, retry_waits: [], ...over }) as CellPackage
   assert.equal(summarizePackage(pkg({})), 'Rules on · skill off · 0 retries')
   assert.equal(summarizePackage(pkg({ retry_waits: [5] })), 'Rules on · skill off · 1 retry')

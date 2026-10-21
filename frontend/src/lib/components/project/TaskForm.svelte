@@ -7,6 +7,7 @@
 	import { agentsApi, type Agent } from '$lib/api/agents'
 	import { ApiError } from '$lib/api/core'
 	import type { Board } from '$lib/api/projects'
+	import { harnessLabel } from '$lib/boardView'
 	import { tasksApi, type Harness, type PropertyDef, type PropertyValue, type ScheduleKind, type Task, type TaskPatch, type TaskStatus } from '$lib/api/tasks'
 	import { workflowsApi, type WorkflowSummary } from '$lib/api/workflows'
 	import { Button } from '$lib/components/ui/button/index.js'
@@ -113,8 +114,7 @@
 	// The workflows this task plays, in order; '' is a row that has none chosen yet.
 	let workflowIds = $state<string[]>(initial.workflowIds.length ? initial.workflowIds : [''])
 	let workflows = $state<WorkflowSummary[]>([])
-	const harnessLabels: Record<Harness, string> = { '': 'Placeholder program', codex: 'Codex agent', workflow: 'Workflow' }
-	const runLabel = $derived(agentId !== null ? (chosenAgent?.name ?? 'An agent that was deleted') : harnessLabels[harness])
+	const runLabel = $derived(agentId !== null ? (chosenAgent?.name ?? 'An agent that was deleted') : harnessLabel(harness))
 	const pickedWorkflows = $derived(workflowIds.filter(Boolean).map(Number))
 	const workflowName = (id: string) => workflows.find((w) => String(w.id) === id)?.name ?? (id ? 'Workflow' : 'Choose a workflow')
 	function moveWorkflow(i: number, by: -1 | 1) {
@@ -262,6 +262,7 @@
 					<Select.Content>
 						<Select.Item value="" label="Placeholder program">Placeholder program</Select.Item>
 						<Select.Item value="codex" label="Codex agent">Codex agent</Select.Item>
+						<Select.Item value="claude" label="Claude Code agent">Claude Code agent</Select.Item>
 						{#each agents as a (a.id)}
 							<Select.Item value="agent:{a.id}" label={a.name}>{a.name}{a.role ? ` - ${a.role}` : ''}</Select.Item>
 						{/each}
@@ -319,8 +320,8 @@
 						Plays the workflows one after the other instead of running a container: each is a stage, whose nodes run in order and can start other tasks. A stage that fails stops the ones after it.
 					{:else if agentId !== null}
 						{chosenAgent?.name ?? 'The agent'} does the task with its own instructions, model, cell and folders (set on the Agents page).
-					{:else if harness === 'codex'}
-						An agent works on the task in its own container, using the project owner's Codex connection (Settings). Its working folder is private to each run.
+					{:else if harness === 'codex' || harness === 'claude'}
+						An agent works on the task in its own container, using the project owner's {harness === 'claude' ? 'Claude Code' : 'Codex'} connection (Settings). Its working folder is private to each run.
 					{:else}
 						Prints the task and finishes. Useful to try out scheduling.
 					{/if}

@@ -16,7 +16,7 @@
 	import { Switch } from '$lib/components/ui/switch/index.js'
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js'
 	import { cellsThatFit } from '$lib/budget'
-	import { copySettings, gb, summarizeAgent, summarizeCell, summarizeDocker, summarizePackage, summarizeResources, summarizeRoots, summarizeUpdate, withMountRoot } from '$lib/settingsView'
+	import { copySettings, gb, summarizeAgent, summarizeCell, summarizeClaude, summarizeDocker, summarizePackage, summarizeResources, summarizeRoots, summarizeUpdate, withMountRoot } from '$lib/settingsView'
 	import { cn } from '$lib/utils'
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check'
@@ -152,6 +152,7 @@
 	}
 	const packageSummary = $derived(form ? summarizePackage(form.cell_package) : '')
 	const agentSummary = $derived(form ? summarizeAgent(form) : '')
+	const claudeSummary = $derived(form ? summarizeClaude(form) : '')
 
 	function discard() {
 		if (saved) form = copySettings(saved)
@@ -474,7 +475,33 @@
 						</div>
 					</SettingsSection>
 
-					<SettingsSection id="package" title="Cell package" description="What Themis adds to every Codex run: its rules, the themis-cell skill and retries." summary={packageSummary}>
+					<SettingsSection id="claude-agents" title="Claude Code agents" description="The image and model tasks use when they run with a Claude Code agent." summary={claudeSummary}>
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid gap-2 sm:col-span-2">
+								<Label for="claude-image">Image</Label>
+								<Input id="claude-image" bind:value={form.claude_image} class="font-mono" required />
+								<p class="text-xs text-muted-foreground">Build the default with <code>./themis build-images</code>.</p>
+							</div>
+							<div class="grid gap-2">
+								<Label for="claude-model">Model</Label>
+								<Input id="claude-model" bind:value={form.claude_model} class="font-mono" required />
+							</div>
+							<div class="grid gap-2">
+								<Label for="claude-effort">Reasoning effort</Label>
+								<Select.Root type="single" bind:value={form.claude_reasoning_effort}>
+									<Select.Trigger id="claude-effort" class="w-full capitalize">{form.claude_reasoning_effort}</Select.Trigger>
+									<Select.Content>
+										{#each ['low', 'medium', 'high'] as e (e)}<Select.Item value={e} label={e} class="capitalize">{e}</Select.Item>{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<p class="text-xs text-muted-foreground sm:col-span-2">
+								Connect your Claude subscription or an API key under Connections. Claude Code runs draw on that account's usage limits.
+							</p>
+						</div>
+					</SettingsSection>
+
+					<SettingsSection id="package" title="Cell package" description="What Themis adds to every agent run: its rules, the themis-cell skill and retries." summary={packageSummary}>
 						<CellPackageSettings bind:pkg={form.cell_package} />
 					</SettingsSection>
 

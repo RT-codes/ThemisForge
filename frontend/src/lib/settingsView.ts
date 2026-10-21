@@ -44,6 +44,9 @@ export const summarizePackage = (p: CellPackage) =>
 export const summarizeAgent = (s: Pick<AppSettings, 'codex_model' | 'codex_reasoning_effort' | 'codex_max_parallel'>) =>
   `${s.codex_model} · ${s.codex_reasoning_effort} effort · ${s.codex_max_parallel} at once`
 
+export const summarizeClaude = (s: Pick<AppSettings, 'claude_model' | 'claude_reasoning_effort'>) =>
+  `${s.claude_model} · ${s.claude_reasoning_effort} effort`
+
 export const summarizeKeys = (count: number) => `${count} ${count === 1 ? 'key' : 'keys'}`
 
 /**

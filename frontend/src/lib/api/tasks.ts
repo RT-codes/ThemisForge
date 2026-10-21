@@ -25,7 +25,7 @@ export interface PropertyDef {
   colors?: Record<string, string> // option -> "#rrggbb", for select properties
 }
 
-export type Harness = '' | 'codex' | 'workflow'
+export type Harness = '' | 'codex' | 'claude' | 'workflow'
 
 /** one workflow a task plays; "pending" until a run of it starts, then the run's own status */
 export interface TaskStage {

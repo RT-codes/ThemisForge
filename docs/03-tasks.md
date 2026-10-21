@@ -74,6 +74,11 @@ and **Open** it to get its own page with a header and four views of the **same**
 - **Schedule**: a timeline of what will run in the next 24 hours or 7 days.
 - **History**: what was done on this board: tasks created, moved, sent or deleted, and changes to its statuses.
 
+In **List**, a task whose latest run failed shows **Last run failed** beneath its title, with up to two lines of the
+reason when available. This includes recurring tasks back in Ready. The warning clears when a new run starts or the
+latest attempt no longer failed. Click the title or row to open the task's details and read the full explanation and
+log in **History**.
+
 The header shows how many tasks are running, ready, waiting for review or failed, when the next run is due, and
 whether the scheduler is on and how many cells are busy. A workspace page also has a **History** tab for the whole
 workspace.

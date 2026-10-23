@@ -59,20 +59,20 @@
 	<Sheet.Content side="right" class="w-full gap-0 sm:max-w-lg">
 		<Sheet.Header class="border-b">
 			<Sheet.Title class="flex items-center gap-2">
-				<ShieldCheckIcon class="size-4 text-amber-500" /> Approvals
+				<ShieldCheckIcon class="size-4 text-tone-amber" /> Approvals
 				{#if approvals.list.length}
-					<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">{approvals.list.length}</span>
+					<span class="rounded-full bg-tone-amber/15 px-2 py-0.5 text-xs font-medium text-tone-amber tabular-nums">{approvals.list.length}</span>
 				{/if}
 			</Sheet.Title>
 			<Sheet.Description>Runs wait here until you approve or reject them. Nothing goes on past an approval without your answer.</Sheet.Description>
 		</Sheet.Header>
 		<div class="slim-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
 			{#if approvals.list.length === 0}
-				<p class="flex items-center gap-2 text-sm text-muted-foreground"><CircleCheckIcon class="size-4 shrink-0 text-emerald-500" /> Nothing is waiting for approval.</p>
+				<p class="flex items-center gap-2 text-sm text-muted-foreground"><CircleCheckIcon class="size-4 shrink-0 text-tone-green" /> Nothing is waiting for approval.</p>
 			{/if}
 			{#each approvals.list as a (a.id)}
 				{@const open = shown === a.id}
-				<section id="approval-{a.id}" class={cn('rounded-lg border bg-card', open && 'border-amber-500/40')}>
+				<section id="approval-{a.id}" class={cn('rounded-lg border bg-card', open && 'border-tone-amber/40')}>
 					<button
 						type="button"
 						class="flex w-full items-center gap-3 p-3 text-start"

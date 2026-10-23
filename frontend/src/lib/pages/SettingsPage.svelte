@@ -197,8 +197,8 @@
 	<p class="mt-1 text-sm text-muted-foreground">Your own connections, and for administrators how this installation runs.</p>
 
 	{#if auth.user?.is_admin && system?.insecure_secret_key}
-		<p class="mt-6 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
-			<span class="font-medium text-yellow-300">Insecure secret key.</span>
+		<p class="mt-6 rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 p-3 text-sm" role="alert">
+			<span class="font-medium text-tone-yellow">Insecure secret key.</span>
 			THEMIS_SECRET_KEY is still the development default, so sessions can be forged and stored keys are weakly protected. Set a real value in
 			<code>backend/.env</code> (the installer does this for you) and restart. Keys saved before the change must be added again.
 		</p>
@@ -246,12 +246,12 @@
 						<div
 							class={cn(
 								'flex items-start gap-3 rounded-lg border p-3',
-								docker.ok ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-destructive/40 bg-destructive/5'
+								docker.ok ? 'border-tone-green/30 bg-tone-green/5' : 'border-destructive/40 bg-destructive/5'
 							)}
 							role="status"
 						>
 							{#if docker.ok}
-								<CircleCheckIcon class="mt-0.5 size-5 shrink-0 text-emerald-400" />
+								<CircleCheckIcon class="mt-0.5 size-5 shrink-0 text-tone-green" />
 							{:else}
 								<CircleXIcon class="mt-0.5 size-5 shrink-0 text-destructive" />
 							{/if}
@@ -341,7 +341,7 @@
 								{/if}
 							</p>
 							{#if overCommitted}
-								<p class="text-yellow-300">This is more than the machine has.</p>
+								<p class="text-tone-yellow">This is more than the machine has.</p>
 							{/if}
 							{#if resources?.recommended}
 								<Button
@@ -399,8 +399,8 @@
 						description="Folders on this machine that agents may be given. Nothing outside them can be mounted."
 						summary={rootSummary}
 					>
-						<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm">
-							<span class="font-medium text-yellow-300">Mind what you approve.</span>
+						<p class="rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 p-3 text-sm">
+							<span class="font-medium text-tone-yellow">Mind what you approve.</span>
 							Agents run unattended. A folder they may <em>write</em> to can have files changed or deleted, with no undo. Approve only folders you are
 							fine with that for, and leave "Allow writing" off wherever reading is enough. Everything inside an approved folder is covered.
 						</p>
@@ -522,9 +522,9 @@
 									{#if update.available}
 										<ArrowUpCircleIcon class="mt-0.5 size-5 shrink-0 text-primary" />
 									{:else if update.error}
-										<CircleXIcon class="mt-0.5 size-5 shrink-0 text-yellow-300" />
+										<CircleXIcon class="mt-0.5 size-5 shrink-0 text-tone-yellow" />
 									{:else}
-										<CircleCheckIcon class="mt-0.5 size-5 shrink-0 text-emerald-400" />
+										<CircleCheckIcon class="mt-0.5 size-5 shrink-0 text-tone-green" />
 									{/if}
 									<div class="min-w-0 text-sm">
 										{#if update.available}
@@ -593,7 +593,7 @@
 					{#if dirty || saving || justSaved || saveError}
 						<div class="sticky bottom-4 z-10" transition:fly={{ y: 16, duration: 200 }}>
 							<div class="flex items-center gap-3 rounded-xl border bg-popover/95 px-4 py-3 shadow-lg backdrop-blur">
-								<p class={cn('flex-1 text-sm', saveError ? 'text-destructive' : justSaved && !dirty ? 'text-emerald-400' : '')} role={saveError ? 'alert' : 'status'}>
+								<p class={cn('flex-1 text-sm', saveError ? 'text-destructive' : justSaved && !dirty ? 'text-tone-green' : '')} role={saveError ? 'alert' : 'status'}>
 									{saveError || (justSaved && !dirty ? 'Saved' : 'You have unsaved changes')}
 								</p>
 								<Button type="button" variant="ghost" disabled={!dirty || saving} onclick={discard}>Discard</Button>

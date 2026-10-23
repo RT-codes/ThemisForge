@@ -205,11 +205,11 @@
 			<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No skills yet. A skill is a short guide that agents read when a task calls for it.</p>
 		{/each}
 		{#each missing as name (name)}
-			<div class="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2.5" transition:slide={{ duration: 160 }}>
-				<AlertTriangleIcon class="size-4 shrink-0 text-yellow-300" />
+			<div class="flex items-center gap-3 rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 px-3 py-2.5" transition:slide={{ duration: 160 }}>
+				<AlertTriangleIcon class="size-4 shrink-0 text-tone-yellow" />
 				<span class="min-w-0 flex-1">
 					<span class="block truncate font-mono text-sm">{name}</span>
-					<span class="block text-xs text-yellow-300">No longer exists in this project</span>
+					<span class="block text-xs text-tone-yellow">No longer exists in this project</span>
 				</span>
 				<Button type="button" variant="outline" size="sm" onclick={() => toggled(name, false)}>Remove</Button>
 			</div>

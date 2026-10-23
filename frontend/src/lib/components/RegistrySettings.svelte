@@ -38,7 +38,7 @@
 	{#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}
 	{#if added}
 		<div class="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" role="status">
-			<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" />
+			<CircleCheckIcon class="size-4 shrink-0 text-tone-green" />
 			<span class="flex-1">Added <span class="font-mono">{added.name}</span> to {added.project.name}. Give it to an agent from that project.</span>
 			<Button variant="ghost" size="sm" onclick={() => added && router.navigate(`/projects/${added.project.id}/settings#tools`)}>Open project</Button>
 		</div>

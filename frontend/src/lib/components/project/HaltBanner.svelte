@@ -6,7 +6,7 @@
 	let { scope, name }: { scope: 'project' | 'board'; name: string } = $props()
 </script>
 
-<div class="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" role="status">
+<div class="flex items-center gap-2 rounded-lg border border-tone-amber/40 bg-tone-amber/10 px-3 py-2 text-sm text-tone-amber" role="status">
 	<OctagonXIcon class="size-4 shrink-0" />
 	<span class="min-w-0">
 		<span class="font-medium">{scope === 'project' ? 'This project is halted' : `"${name}" is halted`}.</span>

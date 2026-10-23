@@ -344,7 +344,7 @@
 				</div>
 				<ToolPicker {projectId} bind:selected={draft.mcp_servers} bind:servers {keys} bind:dirty={toolsDirty} canEdit onremoved={(id) => rebase((a) => (a.mcp_servers = a.mcp_servers.filter((x) => x !== id)))} />
 				{#each warnings as warning (warning)}
-					<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-300" role="status">{warning}</p>
+					<p class="rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 px-3 py-2 text-sm text-tone-yellow" role="status">{warning}</p>
 				{/each}
 			</section>
 		{/if}
@@ -359,7 +359,7 @@
 			{#if agent}
 				<Button type="button" size="sm" variant="ghost" class="text-destructive hover:text-destructive" onclick={() => (confirmOpen = true)}><Trash2Icon /> Delete</Button>
 			{/if}
-			<p class={cn('min-w-0 flex-1 truncate text-end text-sm', saveError ? 'text-destructive' : justSaved && !anything ? 'text-emerald-400' : 'text-muted-foreground')} role={saveError ? 'alert' : 'status'} title={status}>
+			<p class={cn('min-w-0 flex-1 truncate text-end text-sm', saveError ? 'text-destructive' : justSaved && !anything ? 'text-tone-green' : 'text-muted-foreground')} role={saveError ? 'alert' : 'status'} title={status}>
 				{status}
 			</p>
 			{#if isNew}

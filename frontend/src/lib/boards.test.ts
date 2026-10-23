@@ -124,8 +124,8 @@ test('a custom status tells what it is for in its own words, or in a generic lin
 })
 
 test('every built-in status has a tone, and an unknown one falls back to the plain one', () => {
-  assert.match(statusTone('done').text, /emerald/)
-  assert.match(statusTone('blocked').text, /red/)
+  assert.match(statusTone('done').text, /tone-green/)
+  assert.match(statusTone('blocked').text, /destructive/)
   assert.equal(statusTone('custom:4'), statusTone('backlog'))
 })
 

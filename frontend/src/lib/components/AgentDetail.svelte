@@ -53,7 +53,7 @@
 	const cell = $derived(defaults ? effectiveCell(defaults, project?.cell_profile, agent.cell_profile) : null)
 	// rich text from a file a person (or an agent) wrote: see markdown.ts for what untrusted mode takes out
 	const instructions = $derived(agent.instructions.trim() ? renderMarkdown(agent.instructions, { untrusted: true }).html : '')
-	const toneOf = (s: McpServer) => (s.config_error ? 'bg-yellow-400' : s.last_test === null ? 'bg-muted-foreground/40' : s.last_test.ok ? 'bg-emerald-400' : 'bg-destructive')
+	const toneOf = (s: McpServer) => (s.config_error ? 'bg-tone-yellow' : s.last_test === null ? 'bg-muted-foreground/40' : s.last_test.ok ? 'bg-tone-green' : 'bg-destructive')
 	const toneText = (s: McpServer) => (s.config_error ? 'Its file has a problem' : s.last_test === null ? 'Not tried yet' : `Tried ${relative(s.last_test.at)}: ${s.last_test.ok ? 'worked' : 'failed'}`)
 </script>
 
@@ -77,7 +77,7 @@
 		</div>
 		{#if agent.description}<p class="mt-3 text-sm break-words whitespace-pre-line text-muted-foreground">{agent.description}</p>{/if}
 		{#if agent.config_error}
-			<p class="mt-4 flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2 text-sm text-yellow-300" role="alert">
+			<p class="mt-4 flex items-start gap-2 rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 px-3 py-2 text-sm text-tone-yellow" role="alert">
 				<AlertTriangleIcon class="mt-0.5 size-4 shrink-0" />
 				<span>
 					This agent's file has a problem, so it will not run until it is fixed: {agent.config_error}. What is shown here is the last version that worked. Open the file to fix it, or save the agent from the editor.
@@ -107,10 +107,10 @@
 					<ul class="mt-2.5 grid gap-1.5">
 						{#each mySkills as { name, skill } (name)}
 							<li class="flex items-start gap-2.5 rounded-md border px-2.5 py-1.5">
-								<SparklesIcon class={cn('mt-0.5 size-4 shrink-0', skill ? 'text-primary' : 'text-yellow-300')} />
+								<SparklesIcon class={cn('mt-0.5 size-4 shrink-0', skill ? 'text-primary' : 'text-tone-yellow')} />
 								<span class="min-w-0">
 									<span class="block truncate font-mono text-sm">{name}</span>
-									<span class={cn('block text-xs', skill ? 'text-muted-foreground' : 'text-yellow-300')}>{skill ? skill.description || 'No description' : 'No longer exists in this project'}</span>
+									<span class={cn('block text-xs', skill ? 'text-muted-foreground' : 'text-tone-yellow')}>{skill ? skill.description || 'No description' : 'No longer exists in this project'}</span>
 								</span>
 							</li>
 						{/each}

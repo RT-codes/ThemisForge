@@ -8,6 +8,7 @@ export type Route =
   | { name: 'workflow'; id: number; workflowId: number | null; run: number | null; resume: boolean } // workflowId null: a new one, not saved yet; resume: no workflow chosen, open the latest
   | { name: 'agents'; id: number; agentId: number | null; isNew: boolean; editing: boolean } // agentId null and not new: the list, nothing chosen; an agent is shown first and edited on /edit
   | { name: 'settings' }
+  | { name: 'theme'; id: string } // the editor of one custom theme
   | { name: 'access' }
   | { name: 'docs'; slug: string }
   | { name: 'invite'; token: string }
@@ -16,6 +17,8 @@ export type Route =
 export function parse(path: string): Route {
   if (path === '/' || path === '') return { name: 'home' }
   if (path === '/settings') return { name: 'settings' }
+  const theme = path.match(/^\/settings\/themes\/([\w-]+)\/?$/)
+  if (theme) return { name: 'theme', id: theme[1] }
   if (path === '/access') return { name: 'access' }
   const docs = path.match(/^\/docs(?:\/([\w-]+))?\/?$/)
   if (docs) return { name: 'docs', slug: docs[1] ?? 'overview' }

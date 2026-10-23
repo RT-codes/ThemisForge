@@ -109,7 +109,7 @@
 								class={cn(
 								'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full',
 								row.at.length > 30 ? 'h-4 w-0.5' : 'h-5 w-1.5', // dense schedules get thinner marks
-								row.recurring ? 'bg-primary' : 'bg-sky-400'
+								row.recurring ? 'bg-primary' : 'bg-tone-sky'
 							)}
 								style:left="{pct(at)}%"
 								title="{row.title}: {timeOnly(at)}"
@@ -120,7 +120,7 @@
 				<div></div>
 				<div class="flex items-center gap-4 pt-2 text-xs text-muted-foreground">
 					<span class="flex items-center gap-1.5"><span class="h-3 w-1.5 rounded-full bg-primary"></span> Recurring</span>
-					<span class="flex items-center gap-1.5"><span class="h-3 w-1.5 rounded-full bg-sky-400"></span> One-off</span>
+					<span class="flex items-center gap-1.5"><span class="h-3 w-1.5 rounded-full bg-tone-sky"></span> One-off</span>
 					<span class="ms-auto">Left edge is now</span>
 				</div>
 			</div>

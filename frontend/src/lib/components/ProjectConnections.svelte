@@ -50,7 +50,7 @@
 
 	function status(server: McpServer) {
 		if (server.config_error) return { label: 'Configuration issue', tone: 'text-destructive' }
-		if (server.last_test?.ok) return { label: 'Last test passed', tone: 'text-emerald-400' }
+		if (server.last_test?.ok) return { label: 'Last test passed', tone: 'text-tone-green' }
 		if (server.last_test) return { label: 'Last test failed', tone: 'text-destructive' }
 		return { label: 'Not tested', tone: 'text-muted-foreground' }
 	}

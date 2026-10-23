@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Background, Controls, MarkerType, MiniMap, Panel, SvelteFlow, useSvelteFlow, useViewport, type Connection, type Edge, type Node } from '@xyflow/svelte'
 	import '@xyflow/svelte/dist/style.css'
+	import { themeMode } from '$lib/appearance'
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js'
 	import { Button } from '$lib/components/ui/button/index.js'
 	import { Switch } from '$lib/components/ui/switch/index.js'
@@ -48,7 +49,7 @@
 	const nodeTypes = { workflow: WorkflowNode }
 	const edgeTypes = { workflow: WorkflowEdge }
 	// the minimap tells node types apart by colour
-	const KIND_COLORS: Record<string, string> = { start: '#34d399', trigger: '#fbbf24', task: '#60a5fa', agent: '#c084fc', condition: '#fb923c', approval: '#f472b6', end: '#f87171', volume: '#2dd4bf', split: '#38bdf8', merge: '#38bdf8' }
+	const KIND_COLORS: Record<string, string> = { start: 'var(--tone-green)', trigger: 'var(--tone-amber)', task: 'var(--tone-sky)', agent: 'var(--tone-violet)', condition: 'var(--glow)', approval: 'var(--tone-rose)', end: 'var(--destructive)', volume: 'var(--tone-teal)', split: 'var(--tone-sky)', merge: 'var(--tone-sky)' }
 	const { screenToFlowPosition, deleteElements, fitView } = useSvelteFlow()
 
 	// the dotted background and the snapping share one grid, so a snapped node sits exactly on the dots (Svelte Flow
@@ -336,7 +337,7 @@
 	}
 
 	// a line that hands a folder over looks different from a step: dashed, teal, no arrow, not animated
-	const MOUNT_STYLE = 'stroke: #2dd4bf; stroke-width: 2; stroke-dasharray: 6 4'
+	const MOUNT_STYLE = 'stroke: var(--tone-teal); stroke-width: 2; stroke-dasharray: 6 4'
 	$effect(() => {
 		const stale = edges.some((e) => e.sourceHandle === MOUNT && (e.style !== MOUNT_STYLE || e.animated || e.markerEnd))
 		if (stale) untrack(() => (edges = edges.map((e) => (e.sourceHandle === MOUNT ? { ...e, style: MOUNT_STYLE, animated: false, markerEnd: undefined } : e))))
@@ -426,14 +427,14 @@
 								type="button"
 								draggable="true"
 								title="{k.label} node: {name}"
-								class="flex w-full cursor-grab items-center gap-2 rounded-md border bg-card py-1 ps-2 pe-6 text-start text-xs transition-colors hover:border-green-300/50 hover:bg-accent/40 active:cursor-grabbing"
+								class="flex w-full cursor-grab items-center gap-2 rounded-md border bg-card py-1 ps-2 pe-6 text-start text-xs transition-colors hover:border-tone-green/50 hover:bg-accent/40 active:cursor-grabbing"
 								ondragstart={(e) => {
 									e.dataTransfer?.setData(PRESET_DRAG_TYPE, String(p.id))
 									if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 								}}
 								onclick={() => addAtCenter(p.kind, p)}
 							>
-								<span class="flex size-4 shrink-0 items-center justify-center rounded bg-green-300/15 text-green-300"><Icon class="size-2.5" /></span>
+								<span class="flex size-4 shrink-0 items-center justify-center rounded bg-tone-green/15 text-tone-green"><Icon class="size-2.5" /></span>
 								<span class="truncate">{name}</span>
 							</button>
 							<button
@@ -465,7 +466,7 @@
 			{edgeTypes}
 			{isValidConnection}
 			onbeforeconnect={beforeConnect}
-			colorMode="dark"
+			colorMode={$themeMode}
 			deleteKey={['Backspace', 'Delete']}
 			selectionKey="Shift"
 			multiSelectionKey={['Shift', 'Control', 'Meta']}
@@ -490,7 +491,7 @@
 			</Panel>
 			<Controls showLock={false} />
 			<SelectionBox selected={selectedNodes} ondelete={deleteSelectedNodes} onclear={deselectAll} />
-			<MiniMap pannable zoomable class="workflow-minimap max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? '#888'} nodeStrokeWidth={0} />
+			<MiniMap pannable zoomable class="workflow-minimap max-xl:hidden" nodeColor={(n) => KIND_COLORS[(n.data as WorkflowNodeData).kind] ?? 'var(--muted-foreground)'} nodeStrokeWidth={0} />
 		</SvelteFlow>
 
 		{#if active && win}

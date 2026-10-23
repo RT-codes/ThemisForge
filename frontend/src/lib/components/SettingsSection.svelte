@@ -66,7 +66,7 @@
 		<span class="min-w-0 flex-1">
 			<span class="flex items-center gap-2 text-base font-semibold tracking-tight">
 				{title}
-				{#if status}<span class={cn('size-2 rounded-full', status === 'ok' ? 'bg-emerald-400' : 'bg-destructive')} aria-hidden="true"></span>{/if}
+				{#if status}<span class={cn('size-2 rounded-full', status === 'ok' ? 'bg-tone-green' : 'bg-destructive')} aria-hidden="true"></span>{/if}
 			</span>
 			{#if description}<span class="mt-0.5 block text-sm text-muted-foreground">{description}</span>{/if}
 		</span>

@@ -30,7 +30,7 @@
 </script>
 
 <g>
-	<BaseEdge {id} {path} {markerEnd} style={warn ? `${style ?? ''}; stroke: #f59e0b` : style} {interactionWidth} class={walked ? 'run-walked' : ''} />
+	<BaseEdge {id} {path} {markerEnd} style={warn ? `${style ?? ''}; stroke: var(--tone-amber)` : style} {interactionWidth} class={walked ? 'run-walked' : ''} />
 	{#if warn}
 		<title>Several lines share this connection point, so they run one after another. Put a Splitter after it to run them side by side, or a Merger before it to wait for all of them.</title>
 	{/if}

@@ -27,7 +27,7 @@
 	}
 	const tone: Record<AttemptStatus, string> = {
 		running: 'text-primary',
-		succeeded: 'text-emerald-400',
+		succeeded: 'text-tone-green',
 		failed: 'text-destructive',
 		cancelled: 'text-muted-foreground',
 	}

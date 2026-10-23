@@ -135,7 +135,7 @@
 							<span class="block truncate text-sm font-medium">{a.name}</span>
 							<span class="block truncate text-xs text-muted-foreground">{a.role || 'No role yet'}</span>
 						</span>
-						{#if a.config_error}<AlertTriangleIcon class="size-4 shrink-0 text-yellow-300" aria-label="Its file has a problem" />{/if}
+						{#if a.config_error}<AlertTriangleIcon class="size-4 shrink-0 text-tone-yellow" aria-label="Its file has a problem" />{/if}
 					</a>
 				{/each}
 				{#if isNew}

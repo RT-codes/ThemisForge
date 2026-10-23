@@ -27,12 +27,12 @@ export const CUSTOM_HINT = 'A status of this board. Tasks wait here until you mo
  *  red. A status of your own has no tone: it brings its own colour, or this one. */
 const TONES: Record<string, { dot: string; text: string }> = {
   backlog: { dot: 'bg-muted-foreground/60', text: 'text-foreground' },
-  ready: { dot: 'bg-sky-400', text: 'text-sky-300' },
+  ready: { dot: 'bg-tone-sky', text: 'text-tone-sky' },
   running: { dot: 'bg-primary', text: 'text-primary' },
-  review: { dot: 'bg-violet-400', text: 'text-violet-300' },
-  done: { dot: 'bg-emerald-400', text: 'text-emerald-300' },
-  blocked: { dot: 'bg-red-400', text: 'text-red-300' },
-  failed: { dot: 'bg-rose-500', text: 'text-rose-400' },
+  review: { dot: 'bg-tone-violet', text: 'text-tone-violet' },
+  done: { dot: 'bg-tone-green', text: 'text-tone-green' },
+  blocked: { dot: 'bg-destructive', text: 'text-destructive' },
+  failed: { dot: 'bg-tone-rose', text: 'text-tone-rose' },
 }
 export const statusTone = (key: string) => TONES[key] ?? TONES.backlog
 

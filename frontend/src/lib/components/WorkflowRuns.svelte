@@ -41,16 +41,16 @@
 	}
 	const statusTone: Record<NodeRunStatus, string> = {
 		running: 'text-primary',
-		succeeded: 'text-emerald-400',
+		succeeded: 'text-tone-green',
 		failed: 'text-destructive',
 		skipped: 'text-muted-foreground/60',
 		cancelled: 'text-muted-foreground',
-		waiting: 'text-amber-400',
+		waiting: 'text-tone-amber',
 	}
 	const runLabel: Record<RunStatus, string> = { running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }
 	const runTone: Record<RunStatus, string> = {
 		running: 'bg-primary/15 text-primary',
-		succeeded: 'bg-emerald-500/15 text-emerald-400',
+		succeeded: 'bg-tone-green/15 text-tone-green',
 		failed: 'bg-destructive/15 text-destructive',
 		cancelled: 'bg-muted text-muted-foreground',
 	}
@@ -248,7 +248,7 @@
 {#snippet details(n: NodeRun)}
 	<div class="ms-[34px] me-1 grid gap-3 pt-1 pb-3" transition:slide={{ duration: 200 }}>
 		{#if n.status === 'waiting'}
-			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm">
+			<div class="flex flex-wrap items-center gap-3 rounded-lg border border-tone-amber/40 bg-tone-amber/5 px-3 py-2 text-sm">
 				<p class="min-w-0 flex-1">{n.gate?.prompt.trim() || 'This run is waiting for someone to approve or reject it.'}</p>
 				<Button size="sm" onclick={() => approvals.show(n.id)}>Review and answer</Button>
 			</div>

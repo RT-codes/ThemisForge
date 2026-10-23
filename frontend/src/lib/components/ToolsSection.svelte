@@ -111,7 +111,7 @@
 
 	{#if error}<p class="px-5 pb-3 text-sm text-destructive" role="alert">{error}</p>{/if}
 	{#if notice}
-		<p class="mx-5 mb-3 rounded-md px-3 py-2 text-sm {notice.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-destructive/10 text-destructive'}" role={notice.ok ? 'status' : 'alert'}>{notice.text}</p>
+		<p class="mx-5 mb-3 rounded-md px-3 py-2 text-sm {notice.ok ? 'bg-tone-green/10 text-tone-green' : 'bg-destructive/10 text-destructive'}" role={notice.ok ? 'status' : 'alert'}>{notice.text}</p>
 	{/if}
 
 	{#if !loaded}
@@ -136,7 +136,7 @@
 						</span>
 					</button>
 					{#if sign}
-						<span class="hidden shrink-0 text-xs sm:block {sign.tone === 'ok' ? 'text-emerald-400' : 'text-yellow-300'}">{sign.label}</span>
+						<span class="hidden shrink-0 text-xs sm:block {sign.tone === 'ok' ? 'text-tone-green' : 'text-tone-yellow'}">{sign.label}</span>
 						<Button size="sm" variant={sign.tone === 'warn' ? 'default' : 'outline'} disabled={signingIn === s.id} onclick={() => signIn(s)}>
 							<LogInIcon /> {sign.action}
 						</Button>

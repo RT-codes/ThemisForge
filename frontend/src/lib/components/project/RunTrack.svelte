@@ -20,9 +20,9 @@
 	}: { runId: number; compact?: boolean; detail?: WorkflowRunDetail | null } = $props()
 
 	const chip: Record<TrackState, string> = {
-		done: 'border-emerald-400/40',
+		done: 'border-tone-green/40',
 		running: 'border-primary bg-primary/10 ring-1 ring-primary/40',
-		waiting: 'border-amber-400/60 bg-amber-500/10',
+		waiting: 'border-tone-amber/60 bg-tone-amber/10',
 		failed: 'border-destructive/60 text-destructive',
 		cancelled: 'text-muted-foreground',
 		upcoming: 'border-dashed text-muted-foreground',
@@ -35,7 +35,7 @@
 		failed: CircleXIcon,
 		cancelled: BanIcon,
 	}
-	const chipTone: Partial<Record<TrackState, string>> = { done: 'text-emerald-400', running: 'text-primary', waiting: 'text-amber-400' }
+	const chipTone: Partial<Record<TrackState, string>> = { done: 'text-tone-green', running: 'text-primary', waiting: 'text-tone-amber' }
 
 	async function load(id: number) {
 		try {

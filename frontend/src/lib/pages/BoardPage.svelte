@@ -161,7 +161,7 @@
 				{counts.running} running
 			</span>
 			<span class="rounded-full border px-2.5 py-1">{counts.ready} ready</span>
-			{#if counts.review}<span class="rounded-full border px-2.5 py-1 text-violet-300">{counts.review} to review</span>{/if}
+			{#if counts.review}<span class="rounded-full border px-2.5 py-1 text-tone-violet">{counts.review} to review</span>{/if}
 			{#if counts.failed}<span class="rounded-full border px-2.5 py-1 text-destructive">{counts.failed} failed</span>{/if}
 			<span class="rounded-full border px-2.5 py-1 text-muted-foreground">
 				{nextRun ? `Next run ${relative(nextRun, desk.now)}` : 'Nothing scheduled'}
@@ -171,7 +171,7 @@
 					class="ms-auto inline-flex items-center gap-1.5 text-muted-foreground"
 					title="Containers running now out of how many may run at once. The scheduler checks for due tasks every few seconds, around the clock."
 				>
-					<span class="size-1.5 rounded-full {desk.system.scheduler.running ? 'bg-emerald-400' : 'bg-destructive'}"></span>
+					<span class="size-1.5 rounded-full {desk.system.scheduler.running ? 'bg-tone-green' : 'bg-destructive'}"></span>
 					{desk.system.scheduler.running ? 'Scheduler on' : 'Scheduler off'} · {desk.system.scheduler.active_cells}/{desk.system.scheduler.max_cells} containers
 				</span>
 			{/if}

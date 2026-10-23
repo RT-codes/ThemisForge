@@ -228,7 +228,7 @@
 			</fieldset>
 
 			{#if tried}
-				<p class="rounded-md px-3 py-2 text-sm {tried.ok ? 'bg-emerald-500/15 text-emerald-400' : 'bg-destructive/15 text-destructive'}">
+				<p class="rounded-md px-3 py-2 text-sm {tried.ok ? 'bg-tone-green/15 text-tone-green' : 'bg-destructive/15 text-destructive'}">
 					{tried.ok ? 'Sent. Look in the chat.' : tried.detail}
 				</p>
 			{/if}

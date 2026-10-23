@@ -35,7 +35,7 @@
 					{#if (c.review ?? 0) > 0 || (c.failed ?? 0) > 0}
 						<div class="mb-3 flex flex-wrap gap-2 text-xs font-medium">
 							{#if (c.review ?? 0) > 0}
-								<span class="inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-violet-700 dark:text-violet-300">
+								<span class="inline-flex items-center gap-1 rounded-full border border-tone-violet/30 bg-tone-violet/10 px-2.5 py-1 text-tone-violet">
 									<ClipboardCheckIcon class="size-3.5 shrink-0" aria-hidden="true" />
 									<span class="tabular-nums">{c.review}</span> to review
 								</span>

@@ -194,7 +194,7 @@
 		<div class="flex items-center gap-4 border-b px-6 py-3">
 			<div class="inline-flex shrink-0 items-center gap-0.5 rounded-lg border bg-card p-0.5" role="group" aria-label="Workflow actions">
 				<Button variant="ghost" size="sm" class="h-8 gap-1.5" disabled={saveDisabled} onclick={save} title="Save this workflow">
-					{#if saving || saveState === 'saving'}<LoaderCircleIcon class="animate-spin" />{:else if workflow && saveState === 'saved'}<CheckIcon class="text-emerald-400" />{:else}<SaveIcon />{/if}
+					{#if saving || saveState === 'saving'}<LoaderCircleIcon class="animate-spin" />{:else if workflow && saveState === 'saved'}<CheckIcon class="text-tone-green" />{:else}<SaveIcon />{/if}
 					{saveLabel}
 				</Button>
 				<span class="h-4 w-px bg-border" aria-hidden="true"></span>

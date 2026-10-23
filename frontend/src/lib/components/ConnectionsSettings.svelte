@@ -65,8 +65,8 @@
 
 <div class="grid min-w-0 grid-cols-1 gap-4">
 	{#if list && !list.secret_key_secure}
-		<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
-			<span class="font-medium text-yellow-300">Set a real secret key first.</span>
+		<p class="rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 p-3 text-sm" role="alert">
+			<span class="font-medium text-tone-yellow">Set a real secret key first.</span>
 			Connections are encrypted with <code>THEMIS_SECRET_KEY</code>, which is still the development default. Ask the administrator to set one, then come back.
 		</p>
 	{/if}
@@ -106,7 +106,7 @@
 								{#if conn.needs_reconnect}
 									<CircleXIcon class="size-4 shrink-0 text-destructive" />
 								{:else}
-									<CircleCheckIcon class="size-4 shrink-0 text-emerald-400" />
+									<CircleCheckIcon class="size-4 shrink-0 text-tone-green" />
 								{/if}
 								<span class="min-w-0 flex-1">
 									<span class="flex items-center gap-2 truncate text-sm font-medium">

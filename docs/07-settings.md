@@ -1,7 +1,7 @@
 ---
 title: Settings
 group: Running it
-summary: Docker connection, resource budget, cell defaults, time zone and stored keys.
+summary: Appearance, Docker connection, resource budget, cell defaults, time zone and stored keys.
 ---
 
 # Settings
@@ -11,6 +11,18 @@ The **Settings** page has two parts. **Your account** holds your own connections
 
 Every section folds away, and a folded section says in one line what is inside. Themis remembers which ones you
 left open. Change something and a bar slides in at the bottom with **Discard** and **Save changes**.
+
+## Appearance
+
+**Appearance** is the first section under Your account. It holds two independent choices, and both are saved in
+this browser only, so each person (and each browser) can pick their own:
+
+- **Theme** sets the colours and the corner style of the whole interface. **Themis Default** is the warm dark
+  look with the brand orange, and **Themis Light** is the same layout on light surfaces. Each card previews its
+  theme before you pick it.
+- **Typography** sets the fonts and the size of the text: Compact (Inter), Crisp (Geist) or Technical (IBM Plex).
+
+Any theme works with any typography.
 
 ## Docker
 

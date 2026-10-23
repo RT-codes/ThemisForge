@@ -68,7 +68,7 @@
 			</Select.Content>
 		</Select.Root>
 		{#if kind === 'host' && mode === 'rw'}
-			<p class="text-xs text-yellow-300">Read and write lets an unattended agent change or delete the real files in that folder.</p>
+			<p class="text-xs text-tone-yellow">Read and write lets an unattended agent change or delete the real files in that folder.</p>
 		{/if}
 	</div>
 	{#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}

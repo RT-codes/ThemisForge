@@ -73,7 +73,7 @@
 						{#if login.status === 'active'}
 							{login.expires_at ? `token renews ${relative(login.expires_at)}` : 'does not expire'}
 						{:else}
-							<span class="text-yellow-300">needs a new sign in{login.error ? `: ${login.error}` : ''}</span>
+							<span class="text-tone-yellow">needs a new sign in{login.error ? `: ${login.error}` : ''}</span>
 						{/if}
 					</p>
 				</div>

@@ -179,7 +179,7 @@
 		</ProjectHero>
 
 		{#if issues.length}
-			<section class="mt-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4" aria-labelledby="setup-title">
+			<section class="mt-4 rounded-xl border border-tone-yellow/30 bg-tone-yellow/5 p-4" aria-labelledby="setup-title">
 				<h3 id="setup-title" class="text-sm font-semibold tracking-tight">Needs setup ({issues.length})</h3>
 				<ul class="mt-2 grid gap-0.5">
 					{#each issues as issue (issue.id)}
@@ -223,7 +223,7 @@
 					<h3 id="attention-title" class="flex items-center gap-2 text-base font-semibold tracking-tight">
 						Needs attention
 						{#if !attentionError && tasks !== null}
-							<span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">{attention.total + pendingApprovals.length}</span>
+							<span class="rounded-full bg-tone-amber/15 px-2 py-0.5 text-xs font-medium text-tone-amber tabular-nums">{attention.total + pendingApprovals.length}</span>
 						{/if}
 					</h3>
 					<p class="text-xs text-muted-foreground">Approve waiting runs, review results and check failures across all boards.</p>
@@ -238,7 +238,7 @@
 											<p class="truncate font-medium" title={headline(a)}>{headline(a)}</p>
 											<p class="truncate text-xs text-muted-foreground">{a.workflow_name} · {a.label}</p>
 										</div>
-										<span class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"><ShieldCheckIcon class="size-3.5" /> Waiting for approval</span>
+										<span class="inline-flex items-center gap-1 text-tone-amber"><ShieldCheckIcon class="size-3.5" /> Waiting for approval</span>
 										<span class="shrink-0 font-medium text-primary">Review</span>
 									</button>
 								</li>
@@ -252,7 +252,7 @@
 					{:else if attention.total === 0}
 						{#if !pendingApprovals.length}
 							<p class="flex items-center gap-2 text-sm text-muted-foreground">
-								<CircleCheckIcon class="size-4 shrink-0 text-emerald-500" /> No tasks need attention.
+								<CircleCheckIcon class="size-4 shrink-0 text-tone-green" /> No tasks need attention.
 							</p>
 						{/if}
 					{:else}

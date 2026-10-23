@@ -173,7 +173,7 @@
 					{#each handled as r (r.id)}
 						<li class="flex items-center gap-3 px-3 py-2">
 							<span class="truncate">{r.name} <span class="text-muted-foreground">{r.email}</span></span>
-							<span class="ms-auto shrink-0 text-xs {r.status === 'approved' ? 'text-emerald-400' : 'text-muted-foreground'}">{r.status}</span>
+							<span class="ms-auto shrink-0 text-xs {r.status === 'approved' ? 'text-tone-green' : 'text-muted-foreground'}">{r.status}</span>
 						</li>
 					{/each}
 				</ul>

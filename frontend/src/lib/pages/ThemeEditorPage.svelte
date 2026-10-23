@@ -181,10 +181,10 @@
 				{#each EDITOR_SECTIONS as section (section.title)}
 					{@const followers = section.followers.flatMap((group) => group.entries)}
 					{@const custom = followers.filter((entry) => follows(entry.token) === 'custom')}
-					<section class="rounded-xl border bg-card p-5">
+					<section class="@container rounded-xl border bg-card p-5">
 						<h3 class="text-base font-semibold">{section.title}</h3>
 						<p class="mt-0.5 text-sm text-muted-foreground">{section.description}</p>
-						<div class="mt-4 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+						<div class="mt-4 grid gap-x-6 gap-y-1 @min-[42rem]:grid-cols-2">
 							{#each section.main as { token, label, hint } (token)}
 								<ThemeColorField {label} {hint} value={current.colors[token]} onchange={(colour) => setColour(token, colour)} onsave={saveToPalette} />
 							{/each}
@@ -206,7 +206,7 @@
 									{#each section.followers as group (group.title)}
 										<div>
 											<h4 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{group.title}</h4>
-											<div class="mt-1.5 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+											<div class="mt-1.5 grid gap-x-4 gap-y-1 @min-[42rem]:grid-cols-2">
 												{#each group.entries as { token, label, hint } (token)}
 													<ThemeColorField
 														{label}

@@ -12,7 +12,7 @@
 
 	// One colour of a theme: a swatch that opens the browser's colour picker, and a field for the colour itself (oklch, hex
 	// or rgb(), so a colour with transparency can be typed). Every valid change is passed on at once, so the editor shows it
-	// live; a half-typed colour stays in the field until it is valid. A colour that follows from others says so, and the
+	// live (every row is one fixed-height line, so swatches, titles, fields and menus line up in columns); a half-typed colour stays in the field until it is valid. A colour that follows from others says so, and the
 	// menu has what can be done with a colour: copy it, paste one over it, keep it in the palette. A colour can also be
 	// dropped onto the row from the palette.
 	let {
@@ -73,7 +73,7 @@
 <div
 	role="group"
 	aria-label={label}
-	class="flex items-center gap-2 rounded-lg p-1 transition-colors {dropping ? 'bg-accent ring-2 ring-ring' : ''}"
+	class="grid h-14 min-w-0 grid-cols-[2.25rem_minmax(0,1fr)_9rem_1.75rem] items-center gap-x-2 rounded-lg px-1 transition-colors {dropping ? 'bg-accent ring-2 ring-ring' : ''}"
 	ondragover={(e) => {
 		e.preventDefault()
 		dropping = true
@@ -82,33 +82,34 @@
 	ondrop={drop}
 >
 	<!-- the swatch is painted with the real colour (transparency included); the picker input sits invisibly over it -->
-	<label class="relative size-9 shrink-0 cursor-pointer overflow-hidden rounded-md border focus-within:ring-2 focus-within:ring-ring" title="Pick {label.toLowerCase()}">
+	<label class="relative size-9 cursor-pointer overflow-hidden rounded-md border focus-within:ring-2 focus-within:ring-ring" title="Pick {label.toLowerCase()}">
 		<span class="absolute inset-0 bg-[repeating-conic-gradient(var(--muted)_0%_25%,transparent_0%_50%)] bg-size-[8px_8px]"></span>
 		<span class="absolute inset-0" style="background-color: {valid ? draft : value}"></span>
 		<input type="color" class="absolute inset-0 size-full cursor-pointer opacity-0" aria-label={label} value={swatchHex(value)} oninput={(e) => pick(e.currentTarget.value)} />
 	</label>
-	<div class="min-w-0 flex-1">
-		<div class="flex items-baseline gap-2">
-			<span class="truncate text-sm font-medium">{label}</span>
+	<div class="min-w-0">
+		<div class="flex min-w-0 items-baseline gap-1.5">
+			<span class="min-w-0 truncate text-sm font-medium">{label}</span>
 			{#if follows === 'auto'}
 				<span class="shrink-0 text-[0.7rem] text-muted-foreground">follows</span>
 			{:else if follows === 'custom'}
 				<span class="shrink-0 rounded-full bg-primary/15 px-1.5 text-[0.7rem] text-primary">custom</span>
 			{/if}
 		</div>
-		{#if hint}<div class="truncate text-xs text-muted-foreground">{hint}</div>{/if}
-		<Input
-			value={draft}
-			oninput={(e) => type(e.currentTarget.value)}
-			onblur={() => (draft = value)}
-			aria-label="{label} colour value"
-			aria-invalid={!valid}
-			spellcheck="false"
-			class="mt-1 h-7 px-2 font-mono text-xs md:text-xs"
-		/>
+		<!-- the hint line is always reserved, so labels sit at the same height whether or not a row has a hint -->
+		<div class="h-4 truncate text-xs leading-4 text-muted-foreground" title={hint}>{hint}</div>
 	</div>
+	<Input
+		value={draft}
+		oninput={(e) => type(e.currentTarget.value)}
+		onblur={() => (draft = value)}
+		aria-label="{label} colour value"
+		aria-invalid={!valid}
+		spellcheck="false"
+		class="h-8 w-full min-w-0 px-2 font-mono text-xs md:text-xs"
+	/>
 	<DropdownMenu.Root>
-		<DropdownMenu.Trigger class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label="Actions for {label.toLowerCase()}">
+		<DropdownMenu.Trigger class="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none" aria-label="Actions for {label.toLowerCase()}">
 			<EllipsisIcon class="size-4" />
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end" class="min-w-52">

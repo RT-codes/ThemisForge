@@ -24,6 +24,21 @@ this browser only, so each person (and each browser) can pick their own:
 
 Any theme works with any typography.
 
+### Your own themes
+
+The built-in themes cannot be changed, but you can make your own:
+
+- **New theme** (or **Duplicate** on any card) makes a copy of a theme and opens it in the theme editor. The copy
+  becomes the theme in use, so everything you change shows across Themis straight away.
+- **Edit** on a custom theme opens the editor. There you can rename the theme, set whether it is a dark or a light
+  theme underneath, round or square the corners, change how dark the shadow under panels is, and set every colour. A colour can
+  be picked with the colour picker or typed as any CSS colour (`oklch(0.76 0.17 58)`, `#f97316`, `rgb(...)`). Typing one with
+  transparency, like `oklch(1 0 0 / 9%)`, works too.
+- Changes are saved as you make them, so there is no Save button. **Delete** removes a custom theme, and if it was in use Themis
+  Default takes its place.
+
+Custom themes are stored in this browser, like the rest of Appearance. They are not shared between browsers or accounts.
+
 ## Docker
 
 Cells are Docker containers, so Themis needs to reach a Docker engine. The Docker section runs a live check and

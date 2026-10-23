@@ -254,7 +254,7 @@
 				</Sidebar.MenuItem>
 			{/if}
 			<Sidebar.MenuItem>
-				<Sidebar.MenuButton isActive={route.name === 'settings'}>
+				<Sidebar.MenuButton isActive={route.name === 'settings' || route.name === 'theme'}>
 					{#snippet child({ props })}
 						<a href="/settings" {...props}><SettingsIcon /><span>Settings</span></a>
 					{/snippet}

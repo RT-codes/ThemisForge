@@ -154,12 +154,154 @@ const themisLight: Theme = {
 	shadowFloat: '0 0 28px 2px rgb(0 0 0 / 0.14)',
 }
 
-export const themes: readonly Theme[] = [themisDefault, themisLight]
+/** The themes that ship with Themis. They cannot be edited or deleted; duplicate one to make it your own. */
+export const builtinThemes: readonly Theme[] = [themisDefault, themisLight]
 export const DEFAULT_THEME_ID = themisDefault.id
 
-export function findTheme(id: string | null | undefined): Theme | undefined {
-	return themes.find((theme) => theme.id === id)
+export const isBuiltinTheme = (id: string) => builtinThemes.some((theme) => theme.id === id)
+
+export function findTheme(id: string | null | undefined, list: readonly Theme[] = builtinThemes): Theme | undefined {
+	return list.find((theme) => theme.id === id)
 }
+
+// ---------- custom themes: the ones people make, kept in this browser (see appearance.ts) ----------
+
+export const CUSTOM_ID_PREFIX = 'custom-'
+export const MAX_THEME_NAME = 60
+
+/** A theme's name as stored: trimmed and kept to a sensible length; empty is not a name. */
+export const cleanThemeName = (name: string): string => name.trim().slice(0, MAX_THEME_NAME)
+
+/** "Name copy", then "Name copy 2", ... the first that no theme in the list has yet */
+export function uniqueThemeName(base: string, taken: readonly string[]): string {
+	const names = new Set(taken.map((name) => name.toLowerCase()))
+	const stem = cleanThemeName(`${base} copy`).slice(0, MAX_THEME_NAME - 5)
+	let name = stem
+	for (let n = 2; names.has(name.toLowerCase()); n++) name = `${stem} ${n}`
+	return name
+}
+
+/** A new custom theme that starts as a copy of `source`: its own id and name, the same colours and shape. */
+export function duplicateTheme(source: Theme, name: string): Theme {
+	return {
+		id: `${CUSTOM_ID_PREFIX}${crypto.randomUUID().slice(0, 8)}`,
+		name: cleanThemeName(name) || 'Custom theme',
+		description: 'A custom theme.',
+		mode: source.mode,
+		colors: { ...source.colors },
+		radius: source.radius,
+		shadowFloat: source.shadowFloat,
+	}
+}
+
+/** Custom themes read back from browser storage. Whatever is not usable is dropped or filled in rather than trusted:
+ *  a token the stored theme lacks (one added to Themis since it was saved) takes the built-in theme's value of the same
+ *  mode, so an older saved theme keeps working after an update. */
+export function parseCustomThemes(raw: unknown): Theme[] {
+	if (!Array.isArray(raw)) return []
+	const themes: Theme[] = []
+	for (const item of raw) {
+		if (!item || typeof item !== 'object') continue
+		const { id, name, mode, colors, radius, shadowFloat } = item as Record<string, unknown>
+		if (typeof id !== 'string' || !id.startsWith(CUSTOM_ID_PREFIX) || themes.some((theme) => theme.id === id)) continue
+		if (mode !== 'light' && mode !== 'dark') continue
+		const base = builtinThemes.find((theme) => theme.mode === mode) ?? themisDefault
+		const stored = colors && typeof colors === 'object' ? (colors as Record<string, unknown>) : {}
+		const filled = { ...base.colors }
+		for (const token of COLOR_TOKENS) if (typeof stored[token] === 'string' && stored[token]) filled[token] = stored[token] as string
+		themes.push({
+			id,
+			name: typeof name === 'string' && cleanThemeName(name) ? cleanThemeName(name) : 'Custom theme',
+			description: 'A custom theme.',
+			mode,
+			colors: filled,
+			radius: typeof radius === 'string' && radius ? radius : base.radius,
+			shadowFloat: typeof shadowFloat === 'string' && shadowFloat ? shadowFloat : base.shadowFloat,
+		})
+	}
+	return themes
+}
+
+// ---------- what the editor shows: the tokens in groups, and the two shape settings as simple numbers ----------
+
+export const THEME_COLOR_GROUPS: { title: string; description: string; tokens: { token: ColorToken; label: string }[] }[] = [
+	{
+		title: 'Surfaces and text',
+		description: 'The page, cards, menus and the sidebar, with the text that sits on them.',
+		tokens: [
+			{ token: 'background', label: 'Page' },
+			{ token: 'foreground', label: 'Text' },
+			{ token: 'card', label: 'Cards' },
+			{ token: 'card-foreground', label: 'Card text' },
+			{ token: 'popover', label: 'Menus and dialogs' },
+			{ token: 'popover-foreground', label: 'Menu text' },
+			{ token: 'sidebar', label: 'Sidebar' },
+			{ token: 'sidebar-foreground', label: 'Sidebar text' },
+			{ token: 'code', label: 'Code blocks' },
+		],
+	},
+	{
+		title: 'Primary and brand',
+		description: 'The main buttons, links and focus rings, and the soft glow behind pages.',
+		tokens: [
+			{ token: 'primary', label: 'Primary' },
+			{ token: 'primary-foreground', label: 'Text on primary' },
+			{ token: 'ring', label: 'Focus ring' },
+			{ token: 'glow', label: 'Brand glow' },
+			{ token: 'sidebar-primary', label: 'Sidebar primary' },
+			{ token: 'sidebar-primary-foreground', label: 'Text on sidebar primary' },
+			{ token: 'sidebar-ring', label: 'Sidebar focus ring' },
+		],
+	},
+	{
+		title: 'Quiet surfaces and lines',
+		description: 'Hovers, subdued text, and the borders of cards and fields.',
+		tokens: [
+			{ token: 'secondary', label: 'Secondary' },
+			{ token: 'secondary-foreground', label: 'Secondary text' },
+			{ token: 'muted', label: 'Muted' },
+			{ token: 'muted-foreground', label: 'Muted text' },
+			{ token: 'accent', label: 'Hover' },
+			{ token: 'accent-foreground', label: 'Hover text' },
+			{ token: 'border', label: 'Borders' },
+			{ token: 'input', label: 'Field borders' },
+			{ token: 'sidebar-accent', label: 'Sidebar hover' },
+			{ token: 'sidebar-accent-foreground', label: 'Sidebar hover text' },
+			{ token: 'sidebar-border', label: 'Sidebar borders' },
+		],
+	},
+	{
+		title: 'Meaning colours',
+		description: 'Status and attention colours. Each also becomes a soft wash behind its text, so keep it readable on the page.',
+		tokens: [
+			{ token: 'destructive', label: 'Errors and failures' },
+			{ token: 'tone-green', label: 'Done and good' },
+			{ token: 'tone-yellow', label: 'Warnings' },
+			{ token: 'tone-amber', label: 'Attention and time' },
+			{ token: 'tone-violet', label: 'Review and running' },
+			{ token: 'tone-sky', label: 'Ready and structure' },
+			{ token: 'tone-rose', label: 'Upcoming' },
+			{ token: 'tone-teal', label: 'Folders' },
+		],
+	},
+	{
+		title: 'Charts',
+		description: 'The ramp used by charts.',
+		tokens: [1, 2, 3, 4, 5].map((n) => ({ token: `chart-${n}` as ColorToken, label: `Chart ${n}` })),
+	},
+]
+
+/** the corner radius in rem, for a slider; a radius written in other units reads as the default 0.625 */
+export const radiusRem = (radius: string): number => (radius.trim().endsWith('rem') && Number.isFinite(parseFloat(radius)) ? parseFloat(radius) : 0.625)
+export const radiusFromRem = (rem: number): string => `${Number(rem.toFixed(3))}rem`
+
+const FLOAT_SHADOW = /^0 0 28px 2px rgb\(0 0 0 \/ ([0-9.]+)\)$/
+/** how dark the float shadow is (0 to 1), or null for a shadow the slider does not describe (the editor then leaves it be) */
+export function shadowStrength(shadow: string): number | null {
+	const match = FLOAT_SHADOW.exec(shadow.trim())
+	return match ? Number(match[1]) : null
+}
+export const shadowFromStrength = (strength: number): string => `0 0 28px 2px rgb(0 0 0 / ${Number(strength.toFixed(2))})`
 
 /** The CSS variables a theme sets on the page, by property name. This is the single place that maps a theme onto the
  *  stylesheet: app.css reads these names and nothing else describes a theme's values. */

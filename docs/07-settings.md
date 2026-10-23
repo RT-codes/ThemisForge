@@ -30,14 +30,42 @@ The built-in themes cannot be changed, but you can make your own:
 
 - **New theme** (or **Duplicate** on any card) makes a copy of a theme and opens it in the theme editor. The copy
   becomes the theme in use, so everything you change shows across Themis straight away.
-- **Edit** on a custom theme opens the editor. There you can rename the theme, set whether it is a dark or a light
-  theme underneath, round or square the corners, change how dark the shadow under panels is, and set every colour. A colour can
-  be picked with the colour picker or typed as any CSS colour (`oklch(0.76 0.17 58)`, `#f97316`, `rgb(...)`). Typing one with
-  transparency, like `oklch(1 0 0 / 9%)`, works too.
-- Changes are saved as you make them, so there is no Save button. **Delete** removes a custom theme, and if it was in use Themis
-  Default takes its place.
+- **Edit** on a custom theme opens the editor.
+- **Delete** removes a custom theme, and if it was in use Themis Default takes its place.
 
 Custom themes are stored in this browser, like the rest of Appearance. They are not shared between browsers or accounts.
+
+#### Saving
+
+There is no Save button: every change is saved in this browser the moment you make it. The bar at the top of the editor
+confirms it (**Saved**, then **All changes saved in this browser**), so you can leave at any time. **Done** takes you back
+to Settings. If the browser refuses to store the theme, the bar says so, and the theme then only lasts until you close the page.
+
+#### Choosing colours
+
+Each section asks for a few colours, and the rest follow from them:
+
+- **Page and text.** The page and the text colour. Cards, menus, the sidebar, borders, quiet text and hover colours
+  are shades of these.
+- **Primary and brand.** The primary colour, the text on it, and the brand glow. The focus ring and the sidebar button follow the primary colour.
+- **Meaning colours.** Errors, done, warnings and the other status colours. These are all chosen by hand.
+
+Open **Colours that follow** under a section to see the shades that are worked out for you. They change when you change
+the colour they are built from, and when you switch the theme between **Dark** and **Light** surfaces. Set one yourself and it is marked
+**custom** and stays as you made it. Use **Follow automatically** in its menu (or **Make all of these follow automatically**) to hand it back.
+A duplicate looks exactly like the theme it came from; whatever Themis cannot work out from the main colours starts out as custom.
+
+A colour can be picked with the colour picker or typed as `oklch(0.76 0.17 58)`, `#f97316` or `rgb(249 115 22)`. Add transparency
+with `oklch(1 0 0 / 9%)` or `rgb(0 0 0 / 40%)`. The **Shape** section sets the corner radius and how dark the shadow under panels is.
+
+#### The palette
+
+The palette on the right keeps up to 20 colours with the theme, each with a name you can change.
+
+- Add a colour from the menu (**...**) of any colour with **Add to palette**, or with the plus box.
+- Click a palette colour to select it. That also copies it, so you can open any colour's menu and choose **Paste colour**.
+- Or drag a palette colour onto any colour in the editor.
+- **Copy colour** in a colour's menu puts it on the clipboard too, so you can paste colours between themes or into other apps.
 
 ## Docker
 

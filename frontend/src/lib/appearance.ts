@@ -1,7 +1,7 @@
 import { derived, get, writable } from 'svelte/store'
 import {
-	builtinThemes, cleanThemeName, DEFAULT_THEME_ID, duplicateTheme, findTheme, isBuiltinTheme, parseCustomThemes,
-	themeVariables, uniqueThemeName, type Theme,
+	builtinThemes, DEFAULT_THEME_ID, duplicateTheme, editTheme, findTheme, isBuiltinTheme, parseCustomThemes, themeVariables,
+	uniqueThemeName, type Theme, type ThemeEdit,
 } from './themes.ts'
 
 // Appearance is two independent choices, both kept in this browser: the theme (colours and shape, see themes.ts) and
@@ -117,12 +117,17 @@ export function setTheme(id: string) {
 	}
 }
 
+/** True when the last attempt to keep the custom themes in this browser failed (storage blocked or full): the editor says so,
+ *  because the themes then only last until the page is closed. */
+export const themesSaveFailed = writable(false)
+
 function saveCustomThemes(list: Theme[]) {
 	customThemes.set(list)
 	try {
 		localStorage.setItem(CUSTOM_THEMES_KEY, JSON.stringify(list))
+		themesSaveFailed.set(false)
 	} catch {
-		// The themes stay for this session if browser storage is unavailable.
+		themesSaveFailed.set(true) // the themes stay for this session
 	}
 }
 
@@ -135,17 +140,13 @@ export function duplicateThemeOf(id: string): Theme | null {
 	return copy
 }
 
-/** What the editor may change about a custom theme. Colours are given by token and merged into the theme's own. */
-export type ThemeEdit = Partial<Pick<Theme, 'name' | 'mode' | 'radius' | 'shadowFloat'>> & { colors?: Partial<Theme['colors']> }
-
 /** Edit a custom theme (the built-in ones are never edited). When it is the theme in use the page follows at once, which
  *  is what makes editing live. */
 export function updateTheme(id: string, edit: ThemeEdit) {
 	if (isBuiltinTheme(id)) return
 	const current = get(customThemes).find((t) => t.id === id)
 	if (!current) return
-	const name = edit.name === undefined ? current.name : cleanThemeName(edit.name) || current.name
-	const next: Theme = { ...current, ...edit, name, colors: { ...current.colors, ...edit.colors } }
+	const next = editTheme(current, edit)
 	saveCustomThemes(get(customThemes).map((t) => (t.id === id ? next : t)))
 	if (get(theme) === id) applyTheme(next)
 }

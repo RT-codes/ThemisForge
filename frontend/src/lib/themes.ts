@@ -5,36 +5,15 @@
 // Fonts and text scale are a separate axis (the typography presets in appearance.ts), so any theme can be combined
 // with any typography.
 //
-// To add a theme: write one more Theme object below (every token in COLOR_TOKENS is required, and the type checker and
-// the test in appearance.test.ts say which is missing) and add it to `themes`. The picker in Settings lists it from
-// there. Colours go through Tailwind's `@theme inline` block in app.css; a new token needs a `--color-*` line there too.
+// To add a built-in theme: write one more Theme object below (every token in COLOR_TOKENS is required, and the type checker
+// and the test in appearance.test.ts say which is missing) and add it to `builtinThemes`. The picker in Settings lists it
+// from there. Colours go through Tailwind's `@theme inline` block in app.css; a new token needs a `--color-*` line there too
+// and a place in themeColors.ts (as a main colour, or as a derived one with a rule).
 
-export type ThemeMode = 'light' | 'dark'
+import { isColor } from './colors.ts'
+import { COLOR_TOKENS, DERIVED_TOKENS, pinnedColors, resolveColors, type ColorToken, type DerivedToken, type ThemeMode } from './themeColors.ts'
 
-/** The shadcn tokens every component is built on. The names are the CSS variables without their leading `--`. */
-const SURFACE_TOKENS = [
-	'background', 'foreground', 'card', 'card-foreground', 'popover', 'popover-foreground',
-	'primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'muted', 'muted-foreground',
-	'accent', 'accent-foreground', 'destructive', 'border', 'input', 'ring',
-	'chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5',
-	'sidebar', 'sidebar-foreground', 'sidebar-primary', 'sidebar-primary-foreground',
-	'sidebar-accent', 'sidebar-accent-foreground', 'sidebar-border', 'sidebar-ring',
-] as const
-
-/** `glow` is the brand accent: the glow of cards, the minimap edge and other flourishes. It is separate from `primary`
- *  because primary is near black on the light theme while the brand stays orange. `code` is the surface of code blocks
- *  (in the documentation), which sits a step away from the page on either mode. */
-const EXTRA_TOKENS = ['glow', 'code'] as const
-
-/** Colours that carry meaning in the interface (done is green, running is violet, attention is yellow, ...). Each is
- *  one colour per theme, used as text, as a dot, or as a wash and border by mixing it with transparency
- *  (`bg-tone-green/15`), so it must be strong enough to read as text on the theme's own surfaces. */
-export const TONES = ['green', 'yellow', 'amber', 'violet', 'sky', 'rose', 'teal'] as const
-export type Tone = (typeof TONES)[number]
-const TONE_TOKENS = TONES.map((tone) => `tone-${tone}` as const)
-
-export const COLOR_TOKENS = [...SURFACE_TOKENS, ...EXTRA_TOKENS, ...TONE_TOKENS] as const
-export type ColorToken = (typeof COLOR_TOKENS)[number]
+export { COLOR_TOKENS, TONES, type ColorToken, type ThemeMode, type Tone } from './themeColors.ts'
 
 export interface Theme {
 	id: string
@@ -43,7 +22,13 @@ export interface Theme {
 	/** whether the theme sits on a dark or a light surface: decides the `dark` class, the browser's own widgets
 	 *  (scrollbars, date pickers) and the colour mode of embedded libraries */
 	mode: ThemeMode
+	/** every colour, as it is painted. For a custom theme the derived ones follow from the main colours (themeColors.ts)
+	 *  unless they are pinned. */
 	colors: Record<ColorToken, string>
+	/** the derived colours that were set by hand and so do not follow the main colours (custom themes only) */
+	pinned: DerivedToken[]
+	/** colours a person saved to reuse (custom themes only) */
+	palette: PaletteColor[]
 	/** the base corner radius; every other radius is a multiple of it */
 	radius: string
 	/** the shadow under what floats above the page (panels, dialogs, menus) */
@@ -98,6 +83,8 @@ const themisDefault: Theme = {
 		'tone-rose': 'oklch(0.712 0.194 13.428)',
 		'tone-teal': 'oklch(0.777 0.152 181.912)',
 	},
+	pinned: [],
+	palette: [],
 	radius: '0.625rem',
 	shadowFloat: '0 0 28px 2px rgb(0 0 0 / 0.45)',
 }
@@ -150,6 +137,8 @@ const themisLight: Theme = {
 		'tone-rose': 'oklch(0.586 0.253 17.585)',
 		'tone-teal': 'oklch(0.6 0.118 184.704)',
 	},
+	pinned: [],
+	palette: [],
 	radius: '0.625rem',
 	shadowFloat: '0 0 28px 2px rgb(0 0 0 / 0.14)',
 }
@@ -181,7 +170,40 @@ export function uniqueThemeName(base: string, taken: readonly string[]): string 
 	return name
 }
 
-/** A new custom theme that starts as a copy of `source`: its own id and name, the same colours and shape. */
+// ---------- the palette: colours saved with a theme to use again ----------
+
+export interface PaletteColor {
+	id: string
+	name: string
+	color: string
+}
+
+export const MAX_PALETTE = 20
+export const MAX_PALETTE_NAME = 30
+
+export const cleanPaletteName = (name: string): string => name.trim().slice(0, MAX_PALETTE_NAME)
+
+export function newPaletteColor(color: string, name: string): PaletteColor {
+	return { id: crypto.randomUUID().slice(0, 8), name: cleanPaletteName(name) || 'Colour', color: color.trim() }
+}
+
+/** A palette as it may be kept: real colours only, named, no repeated ids, at most MAX_PALETTE of them */
+export function cleanPalette(list: unknown): PaletteColor[] {
+	if (!Array.isArray(list)) return []
+	const palette: PaletteColor[] = []
+	for (const item of list) {
+		if (!item || typeof item !== 'object') continue
+		const { id, name, color } = item as Record<string, unknown>
+		if (typeof id !== 'string' || !id || typeof color !== 'string' || !isColor(color) || palette.some((entry) => entry.id === id)) continue
+		palette.push({ id, name: typeof name === 'string' && cleanPaletteName(name) ? cleanPaletteName(name) : 'Colour', color: color.trim() })
+		if (palette.length === MAX_PALETTE) break
+	}
+	return palette
+}
+
+/** A new custom theme that starts as a copy of `source`: its own id and name, the same colours, shape and palette. What
+ *  the formulas of themeColors.ts cannot reproduce stays pinned, so the copy looks exactly like its source and the rest of it
+ *  follows when a main colour is changed. */
 export function duplicateTheme(source: Theme, name: string): Theme {
 	return {
 		id: `${CUSTOM_ID_PREFIX}${crypto.randomUUID().slice(0, 8)}`,
@@ -189,20 +211,50 @@ export function duplicateTheme(source: Theme, name: string): Theme {
 		description: 'A custom theme.',
 		mode: source.mode,
 		colors: { ...source.colors },
+		pinned: pinnedColors(source.mode, source.colors),
+		palette: source.palette.map((entry) => ({ ...entry })),
 		radius: source.radius,
 		shadowFloat: source.shadowFloat,
 	}
 }
 
+/** What the editor may change about a custom theme. Colours are given by token and merged into the theme's own: setting a
+ *  derived colour pins it, `follow` lets pinned colours follow the main colours again. */
+export type ThemeEdit = Partial<Pick<Theme, 'name' | 'mode' | 'radius' | 'shadowFloat' | 'palette'>> & {
+	colors?: Partial<Record<ColorToken, string>>
+	follow?: DerivedToken[]
+}
+
+/** The theme after an edit, with the colours that follow re-derived (so changing the page colour, the primary colour or the
+ *  light/dark surface moves everything that is built from it) */
+export function editTheme(theme: Theme, edit: ThemeEdit): Theme {
+	const mode = edit.mode ?? theme.mode
+	const pinned = new Set(theme.pinned)
+	for (const token of Object.keys(edit.colors ?? {}) as ColorToken[]) if ((DERIVED_TOKENS as readonly string[]).includes(token)) pinned.add(token as DerivedToken)
+	for (const token of edit.follow ?? []) pinned.delete(token)
+	const pins = [...pinned]
+	return {
+		...theme,
+		name: edit.name === undefined ? theme.name : cleanThemeName(edit.name) || theme.name,
+		mode,
+		colors: resolveColors(mode, { ...theme.colors, ...edit.colors }, pins),
+		pinned: pins,
+		palette: edit.palette === undefined ? theme.palette : cleanPalette(edit.palette),
+		radius: edit.radius ?? theme.radius,
+		shadowFloat: edit.shadowFloat ?? theme.shadowFloat,
+	}
+}
+
 /** Custom themes read back from browser storage. Whatever is not usable is dropped or filled in rather than trusted:
  *  a token the stored theme lacks (one added to Themis since it was saved) takes the built-in theme's value of the same
- *  mode, so an older saved theme keeps working after an update. */
+ *  mode, so an older saved theme keeps working after an update. A theme saved before colours could follow (no `pinned`)
+ *  gets its pins worked out from its colours. */
 export function parseCustomThemes(raw: unknown): Theme[] {
 	if (!Array.isArray(raw)) return []
 	const themes: Theme[] = []
 	for (const item of raw) {
 		if (!item || typeof item !== 'object') continue
-		const { id, name, mode, colors, radius, shadowFloat } = item as Record<string, unknown>
+		const { id, name, mode, colors, pinned, palette, radius, shadowFloat } = item as Record<string, unknown>
 		if (typeof id !== 'string' || !id.startsWith(CUSTOM_ID_PREFIX) || themes.some((theme) => theme.id === id)) continue
 		if (mode !== 'light' && mode !== 'dark') continue
 		const base = builtinThemes.find((theme) => theme.mode === mode) ?? themisDefault
@@ -215,81 +267,14 @@ export function parseCustomThemes(raw: unknown): Theme[] {
 			description: 'A custom theme.',
 			mode,
 			colors: filled,
+			pinned: Array.isArray(pinned) ? DERIVED_TOKENS.filter((token) => pinned.includes(token)) : pinnedColors(mode, filled),
+			palette: cleanPalette(palette),
 			radius: typeof radius === 'string' && radius ? radius : base.radius,
 			shadowFloat: typeof shadowFloat === 'string' && shadowFloat ? shadowFloat : base.shadowFloat,
 		})
 	}
 	return themes
 }
-
-// ---------- what the editor shows: the tokens in groups, and the two shape settings as simple numbers ----------
-
-export const THEME_COLOR_GROUPS: { title: string; description: string; tokens: { token: ColorToken; label: string }[] }[] = [
-	{
-		title: 'Surfaces and text',
-		description: 'The page, cards, menus and the sidebar, with the text that sits on them.',
-		tokens: [
-			{ token: 'background', label: 'Page' },
-			{ token: 'foreground', label: 'Text' },
-			{ token: 'card', label: 'Cards' },
-			{ token: 'card-foreground', label: 'Card text' },
-			{ token: 'popover', label: 'Menus and dialogs' },
-			{ token: 'popover-foreground', label: 'Menu text' },
-			{ token: 'sidebar', label: 'Sidebar' },
-			{ token: 'sidebar-foreground', label: 'Sidebar text' },
-			{ token: 'code', label: 'Code blocks' },
-		],
-	},
-	{
-		title: 'Primary and brand',
-		description: 'The main buttons, links and focus rings, and the soft glow behind pages.',
-		tokens: [
-			{ token: 'primary', label: 'Primary' },
-			{ token: 'primary-foreground', label: 'Text on primary' },
-			{ token: 'ring', label: 'Focus ring' },
-			{ token: 'glow', label: 'Brand glow' },
-			{ token: 'sidebar-primary', label: 'Sidebar primary' },
-			{ token: 'sidebar-primary-foreground', label: 'Text on sidebar primary' },
-			{ token: 'sidebar-ring', label: 'Sidebar focus ring' },
-		],
-	},
-	{
-		title: 'Quiet surfaces and lines',
-		description: 'Hovers, subdued text, and the borders of cards and fields.',
-		tokens: [
-			{ token: 'secondary', label: 'Secondary' },
-			{ token: 'secondary-foreground', label: 'Secondary text' },
-			{ token: 'muted', label: 'Muted' },
-			{ token: 'muted-foreground', label: 'Muted text' },
-			{ token: 'accent', label: 'Hover' },
-			{ token: 'accent-foreground', label: 'Hover text' },
-			{ token: 'border', label: 'Borders' },
-			{ token: 'input', label: 'Field borders' },
-			{ token: 'sidebar-accent', label: 'Sidebar hover' },
-			{ token: 'sidebar-accent-foreground', label: 'Sidebar hover text' },
-			{ token: 'sidebar-border', label: 'Sidebar borders' },
-		],
-	},
-	{
-		title: 'Meaning colours',
-		description: 'Status and attention colours. Each also becomes a soft wash behind its text, so keep it readable on the page.',
-		tokens: [
-			{ token: 'destructive', label: 'Errors and failures' },
-			{ token: 'tone-green', label: 'Done and good' },
-			{ token: 'tone-yellow', label: 'Warnings' },
-			{ token: 'tone-amber', label: 'Attention and time' },
-			{ token: 'tone-violet', label: 'Review and running' },
-			{ token: 'tone-sky', label: 'Ready and structure' },
-			{ token: 'tone-rose', label: 'Upcoming' },
-			{ token: 'tone-teal', label: 'Folders' },
-		],
-	},
-	{
-		title: 'Charts',
-		description: 'The ramp used by charts.',
-		tokens: [1, 2, 3, 4, 5].map((n) => ({ token: `chart-${n}` as ColorToken, label: `Chart ${n}` })),
-	},
-]
 
 /** the corner radius in rem, for a slider; a radius written in other units reads as the default 0.625 */
 export const radiusRem = (radius: string): number => (radius.trim().endsWith('rem') && Number.isFinite(parseFloat(radius)) ? parseFloat(radius) : 0.625)

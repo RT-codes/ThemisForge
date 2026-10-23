@@ -5,7 +5,7 @@ import {
 	allThemes, appearance, appearancePresets, customThemes, deleteTheme, duplicateThemeOf, initializeAppearance, setAppearance,
 	setTheme, theme, themeMode, updateTheme,
 } from './appearance.ts'
-import { builtinThemes, COLOR_TOKENS, DEFAULT_THEME_ID, findTheme, parseCustomThemes, radiusFromRem, radiusRem, shadowFromStrength, shadowStrength, THEME_COLOR_GROUPS, themeVariables, uniqueThemeName } from './themes.ts'
+import { builtinThemes, COLOR_TOKENS, DEFAULT_THEME_ID, findTheme, parseCustomThemes, radiusFromRem, radiusRem, shadowFromStrength, shadowStrength, themeVariables, uniqueThemeName } from './themes.ts'
 
 function browser(t: TestContext, saved: string | null = null) {
 	const values = new Map<string, string>()
@@ -213,11 +213,6 @@ test('copy names count up until they are unique', () => {
 	assert.equal(uniqueThemeName('Mine', []), 'Mine copy')
 	assert.equal(uniqueThemeName('Mine', ['mine copy']), 'Mine copy 2')
 	assert.equal(uniqueThemeName('Mine', ['Mine copy', 'Mine copy 2']), 'Mine copy 3')
-})
-
-test('the editor lists every colour token once', () => {
-	const listed = THEME_COLOR_GROUPS.flatMap((group) => group.tokens.map((entry) => entry.token))
-	assert.deepEqual([...listed].sort(), [...COLOR_TOKENS].sort())
 })
 
 test('radius and float shadow convert to slider numbers and back', () => {

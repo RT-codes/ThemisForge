@@ -79,8 +79,9 @@ async def test_a_gate_parks_the_run_until_it_is_approved(client, runner):
     n = by_id(detail)
     assert detail["status"] == "succeeded" and n["e"]["status"] == "succeeded"
     assert (
-        n["g"]["status"] == "succeeded" and n["g"]["result"] == "yes"
-    )  # the previous result passes on unchanged
+        n["g"]["status"] == "succeeded"
+        and n["g"]["result"] == "yes\n\nHuman approval note (Ada):\nlooks good"
+    )
     assert "Approved by Ada: looks good" in n["g"]["log"]
     assert (n["g"]["decision"], n["g"]["decided_by"]) == ("approved", "Ada")
     assert (await client.get("/api/approvals")).json() == []
@@ -96,6 +97,19 @@ async def test_rejecting_fails_the_node_with_the_note_and_the_run_with_it(client
     assert detail["status"] == "failed" and "Rejected by Ada: wrong photo" in detail["outcome"]
     assert n["g"]["status"] == "failed" and n["g"]["error"] == "Rejected by Ada: wrong photo"
     assert n["e"]["status"] == "skipped" and "failed before this node" in n["e"]["error"]
+
+
+async def test_approval_choice_reaches_the_next_step(client, runner):
+    _, pid = await setup(client)
+    nodes, edges = gated("Choose a feature")
+    nodes.insert(-1, node("choice", "condition", source="result", operator="contains", value="Option 3"))
+    edges[-1:] = [edge("g", "choice"), edge("choice", "e", "yes")]
+    run_id = await start(client, pid, nodes, edges)
+    [approval] = await open_approvals(client)
+    assert (await answer(client, approval["id"], True, "Option 3")).status_code == 204
+    detail = await wait_for_run(client, run_id)
+    assert by_id(detail)["choice"]["result"] == "yes"
+    assert by_id(detail)["e"]["status"] == "succeeded"
 
 
 async def test_the_first_answer_stands(client, runner):
@@ -158,7 +172,8 @@ async def test_a_run_parked_at_a_gate_survives_a_restart(client, runner, maker, 
         detail = await wait_for_run(client, run_id)
         n = by_id(detail)
         assert detail["status"] == "succeeded" and n["e"]["status"] == "succeeded"
-        assert n["g"]["result"] == "yes" and "after the restart" in n["g"]["log"]
+        assert n["g"]["result"] == "yes\n\nHuman approval note (Ada):\nafter the restart"
+        assert "after the restart" in n["g"]["log"]
         # nothing ran twice and nothing was recorded as not run: one record per node, in the order they happened
         assert [(x["node_id"], x["status"]) for x in detail["nodes"]] == [
             ("s", "succeeded"), ("c", "succeeded"), ("g", "succeeded"), ("e", "succeeded"),

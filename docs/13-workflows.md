@@ -165,7 +165,9 @@ that matters, such as publishing a listing or sending a message, without doing i
 
 - **What to approve** is the question you write in the node. Next to it you are shown what the step before produced, so
   you decide on the real thing.
-- **Approve** carries on down the line. What the step before produced passes on unchanged.
+- **Approve** carries on down the line. What the step before produced passes on, with your note appended as
+  **Human approval note** when you write one. The next agent can use it to act on your choice or requested changes.
+  Without a note, the previous result passes on unchanged.
 - **Reject** fails the node, and the run with it, with your note as the reason. Nothing after the Approval node runs.
 - The first answer stands. Whatever the note says is kept in the node's log, with who answered.
 

@@ -131,7 +131,7 @@
 			<div class="ms-auto flex items-center gap-2" transition:fade={{ duration: 150 }}>
 				{#if editing}
 					{#if saveError}<span class="text-xs text-destructive" role="alert">{saveError}</span>
-					{:else if dirty}<span class="text-xs text-yellow-300">Unsaved changes</span>{/if}
+					{:else if dirty}<span class="text-xs text-tone-yellow">Unsaved changes</span>{/if}
 					<Button variant="ghost" size="sm" class="h-7" disabled={saving} onclick={() => onleave?.()}>Cancel</Button>
 					{#if conflict}
 						<Button variant="outline" size="sm" class="h-7" disabled={saving} onclick={() => save(true)}>Save anyway</Button>

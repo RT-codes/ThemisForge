@@ -175,7 +175,7 @@
 				<p class="truncate text-sm font-medium">{info.label} node</p>
 				<button
 					type="button"
-					class="flex size-5 shrink-0 items-center justify-center rounded transition-colors {saved ? 'text-green-300' : 'text-muted-foreground hover:text-foreground'}"
+					class="flex size-5 shrink-0 items-center justify-center rounded transition-colors {saved ? 'text-tone-green' : 'text-muted-foreground hover:text-foreground'}"
 					aria-pressed={saved}
 					aria-label={saved ? 'Remove this node from the saved nodes' : 'Save this node for reuse'}
 					title={saved ? 'Saved. Press to remove it from the saved nodes' : 'Save this node, with its settings, to the palette'}
@@ -288,7 +288,7 @@
 							<Label>{@render labelText('Handed over on the canvas', fieldIcons.handedOver)}</Label>
 							<ul class="grid gap-1.5">
 								{#each attached as m (m.volume_id)}
-									<li class="flex items-center gap-2 rounded-lg border border-dashed border-teal-400/40 px-3 py-2 text-sm">
+									<li class="flex items-center gap-2 rounded-lg border border-dashed border-tone-teal/40 px-3 py-2 text-sm">
 										<span class="min-w-0 flex-1 truncate font-mono">/workspace/{volumeName(m.volume_id) ?? `folder ${m.volume_id}`}</span>
 										<span class="shrink-0 text-xs text-muted-foreground">{m.mode === 'ro' ? 'Read only' : 'Read and write'}</span>
 									</li>

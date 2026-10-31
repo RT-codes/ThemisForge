@@ -6,6 +6,7 @@
     "module": "esnext",
     "types": ["svelte", "vite/client"],
     "allowArbitraryExtensions": true,
+    "allowImportingTsExtensions": true, // lets modules the node test runner loads import siblings by their .ts name
     "noEmit": true,
     /**
      * Typecheck JS in `.svelte` and `.js` files by default.

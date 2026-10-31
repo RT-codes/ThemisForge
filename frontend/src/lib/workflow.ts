@@ -106,7 +106,7 @@ export const NODE_FIELDS: Record<NodeKind, FieldDef[]> = {
     { key: 'value', label: 'Value', type: 'text', when: { key: 'operator', oneOf: ['contains', 'equals', 'not_equals'] } },
   ],
   approval: [
-    { key: 'prompt', label: 'What to approve', type: 'textarea', placeholder: 'Publish this listing?', hint: 'Shown with the result of the step before, which passes on unchanged when someone approves. Rejecting stops this branch and fails the run, with their note as the reason.' },
+    { key: 'prompt', label: 'What to approve', type: 'textarea', placeholder: 'Publish this listing?', hint: 'Shown with the previous result. Approving passes it on with the person’s note, so the next agent can use their choice or changes. Rejecting stops this branch and fails the run, with their note as the reason.' },
   ],
   volume: [
     // the options of volumeId are the project's folders: the panel fills them in

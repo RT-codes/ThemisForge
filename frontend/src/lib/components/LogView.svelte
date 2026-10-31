@@ -19,11 +19,11 @@
 
 	const tone: Record<Kind, string> = {
 		plain: 'text-foreground',
-		command: 'font-medium text-sky-300',
+		command: 'font-medium text-tone-sky',
 		output: 'text-muted-foreground',
-		thinking: 'text-violet-300/80 italic',
+		thinking: 'text-tone-violet/80 italic',
 		note: 'text-muted-foreground/60',
-		error: 'text-red-400',
+		error: 'text-destructive',
 	}
 
 	const rows = $derived(classify(text ? text.replace(/^\n+/, '').replace(/\n$/, '').split('\n') : []))
@@ -85,7 +85,7 @@
 	})
 </script>
 
-<div class={cn('relative flex min-h-16 flex-col overflow-hidden rounded-lg border bg-black/40', className)}>
+<div class={cn('relative flex min-h-16 flex-col overflow-hidden rounded-lg border bg-code', className)}>
 	<div class="flex flex-wrap items-center gap-1 border-b bg-muted/30 px-2 py-1.5">
 		<div class="flex min-w-24 flex-1 items-center gap-1.5 rounded-md border bg-background/60 px-2 focus-within:ring-1 focus-within:ring-ring">
 			<SearchIcon class="size-3.5 shrink-0 text-muted-foreground" />
@@ -121,7 +121,7 @@
 	<div bind:this={el} onscroll={() => !moving && !query && (stick = atBottom())} class="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
 		{#if rows.length}
 			{#each rows as row, i (i)}
-				<div class={cn('break-words whitespace-pre-wrap', tone[row.kind])}>{#each search.rows[i] as part}{#if part.match !== null}<mark data-log-match={part.match} aria-current={part.match === current ? 'true' : undefined} class={cn('rounded-sm', part.match === current ? 'bg-amber-300 text-black outline outline-1 outline-amber-100' : 'bg-yellow-300/40 text-yellow-950 dark:bg-yellow-300/25 dark:text-yellow-100')}>{part.text}</mark>{:else}{part.text || ' '}{/if}{/each}</div>
+				<div class={cn('break-words whitespace-pre-wrap', tone[row.kind])}>{#each search.rows[i] as part}{#if part.match !== null}<mark data-log-match={part.match} aria-current={part.match === current ? 'true' : undefined} class={cn('rounded-sm', part.match === current ? 'bg-tone-amber text-black outline outline-1 outline-tone-amber' : 'bg-tone-yellow/25 text-foreground')}>{part.text}</mark>{:else}{part.text || ' '}{/if}{/each}</div>
 			{/each}
 		{:else}
 			<span class="text-muted-foreground">{empty}</span>

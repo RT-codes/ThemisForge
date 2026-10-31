@@ -11,11 +11,11 @@
 
 	const styles: Record<BuiltinStatus, string> = {
 		backlog: 'bg-muted text-muted-foreground',
-		ready: 'bg-sky-500/15 text-sky-300',
+		ready: 'bg-tone-sky/15 text-tone-sky',
 		running: 'bg-primary/15 text-primary',
-		review: 'bg-violet-500/15 text-violet-300',
-		done: 'bg-emerald-500/15 text-emerald-300',
-		blocked: 'bg-yellow-500/15 text-yellow-300',
+		review: 'bg-tone-violet/15 text-tone-violet',
+		done: 'bg-tone-green/15 text-tone-green',
+		blocked: 'bg-tone-yellow/15 text-tone-yellow',
 		failed: 'bg-destructive/15 text-destructive',
 	}
 	const builtin = $derived(styles[status as BuiltinStatus])

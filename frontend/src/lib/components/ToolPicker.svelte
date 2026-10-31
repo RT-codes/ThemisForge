@@ -142,7 +142,7 @@
 	     tool stays at its foot -->
 	<div class="flex h-[26rem] min-w-0 flex-col overflow-hidden rounded-lg border bg-background/40 lg:h-auto">
 		{#if installed}
-			<div class="m-2 mb-0 flex items-start gap-2 rounded-md bg-emerald-500/10 px-2.5 py-2 text-xs text-emerald-400" role="status" transition:slide={{ duration: 160 }}>
+			<div class="m-2 mb-0 flex items-start gap-2 rounded-md bg-tone-green/10 px-2.5 py-2 text-xs text-tone-green" role="status" transition:slide={{ duration: 160 }}>
 				<CircleCheckIcon class="mt-0.5 size-3.5 shrink-0" />
 				<span class="min-w-0 flex-1">
 					<span class="font-mono">{installed.name}</span> is installed in the project. Switch it on below to give it to this agent.
@@ -162,9 +162,9 @@
 						{#if s.kind === 'http'}<GlobeIcon class="size-4" />{:else}<TerminalIcon class="size-4" />{/if}
 						<span
 							class={cn('absolute -end-0.5 -top-0.5 size-2.5 rounded-full border-2 border-card', {
-								'bg-emerald-400': tone(s) === 'ok',
+								'bg-tone-green': tone(s) === 'ok',
 								'bg-destructive': tone(s) === 'bad',
-								'bg-yellow-400': tone(s) === 'warn',
+								'bg-tone-yellow': tone(s) === 'warn',
 								'bg-muted-foreground/40': tone(s) === 'none',
 							})}
 							title={toneLabel(s)}
@@ -182,9 +182,9 @@
 			<p class="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">No tools yet. A tool is an MCP server that gives agents more to work with, such as a file system or a search service.</p>
 		{/each}
 		{#each missing as id (id)}
-			<div class="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2.5" transition:slide={{ duration: 160 }}>
-				<AlertTriangleIcon class="size-4 shrink-0 text-yellow-300" />
-				<span class="min-w-0 flex-1 text-xs text-yellow-300">A tool this agent had no longer exists</span>
+			<div class="flex items-center gap-3 rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 px-3 py-2.5" transition:slide={{ duration: 160 }}>
+				<AlertTriangleIcon class="size-4 shrink-0 text-tone-yellow" />
+				<span class="min-w-0 flex-1 text-xs text-tone-yellow">A tool this agent had no longer exists</span>
 				<Button type="button" variant="outline" size="sm" onclick={() => toggled(id, false)}>Remove</Button>
 			</div>
 		{/each}
@@ -248,9 +248,9 @@
 							<div class="flex flex-wrap items-center gap-3">
 								<div class="min-w-0 flex-1">
 									{#if server.config_error}
-										<p class="flex items-start gap-2 text-sm text-yellow-300"><AlertTriangleIcon class="mt-0.5 size-4 shrink-0" /><span>{server.config_error}</span></p>
+										<p class="flex items-start gap-2 text-sm text-tone-yellow"><AlertTriangleIcon class="mt-0.5 size-4 shrink-0" /><span>{server.config_error}</span></p>
 									{:else if server.last_test}
-										<p class={cn('flex items-start gap-2 text-sm', server.last_test.ok ? 'text-emerald-400' : 'text-destructive')} role="status">
+										<p class={cn('flex items-start gap-2 text-sm', server.last_test.ok ? 'text-tone-green' : 'text-destructive')} role="status">
 											{#if server.last_test.ok}<CircleCheckIcon class="mt-0.5 size-4 shrink-0" />{:else}<CircleXIcon class="mt-0.5 size-4 shrink-0" />{/if}
 											<span>{server.last_test.message}</span>
 										</p>

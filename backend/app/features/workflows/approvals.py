@@ -28,7 +28,7 @@ class ApprovalGates:
 
     async def wait(self, nr_id: int, node: GraphNode, prev: Prev | None) -> Outcome:
         """Park the run here until a person answers (see `decide`). Approving passes on what the node before produced,
-        unchanged; rejecting fails the node with the person's note as the reason.
+        with the person's note appended when present; rejecting fails the node with the note as the reason.
 
         The gate is stored on its record (the question, and what the node before handed on), so after a restart
         `_resume` can pick the run up at this node without any state of the walker."""
@@ -68,6 +68,9 @@ class ApprovalGates:
         log = f"Waiting for approval.\n{said}\n"
         result = prev.result if prev else ""
         if row.decision == "approved":
+            if note:
+                feedback = f"Human approval note ({who}):\n{note}"
+                result = f"{result}\n\n{feedback}" if result else feedback
             return Outcome(NodeStatus.SUCCEEDED, result=result, log=log)
         return Outcome(NodeStatus.FAILED, result=result, log=log, error=said)
 

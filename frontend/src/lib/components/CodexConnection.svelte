@@ -53,13 +53,13 @@
 			{#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}
 		{:else}
 			{#if !codex.secret_key_secure}
-				<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
-					<span class="font-medium text-yellow-300">Set a real secret key first.</span>
+				<p class="rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 p-3 text-sm" role="alert">
+					<span class="font-medium text-tone-yellow">Set a real secret key first.</span>
 					Your login is encrypted with <code>THEMIS_SECRET_KEY</code>, which is still the development default. Ask the administrator to set one (see Settings), then come back.
 				</p>
 			{:else if !codex.can_sign_in}
-				<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
-					<span class="font-medium text-yellow-300">Signing in is not available right now.</span>
+				<p class="rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 p-3 text-sm" role="alert">
+					<span class="font-medium text-tone-yellow">Signing in is not available right now.</span>
 					{codex.sign_in_problem}
 				</p>
 			{/if}
@@ -83,7 +83,7 @@
 				</div>
 			{:else if codex.connected}
 				<div class="flex items-center gap-3 rounded-lg border px-3 py-2.5">
-					<CircleCheckIcon class="size-4 shrink-0 text-emerald-400" />
+					<CircleCheckIcon class="size-4 shrink-0 text-tone-green" />
 					<div class="min-w-0">
 						<p class="truncate text-sm font-medium">Connected{codex.account ? ` as ${codex.account}` : ''}</p>
 						<p class="text-xs text-muted-foreground">
@@ -97,8 +97,8 @@
 				</p>
 			{:else}
 				{#if codex.needs_reconnect}
-					<p class="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-sm" role="alert">
-						<span class="font-medium text-yellow-300">Reconnect needed.</span> The stored login can no longer be read (the secret key changed). Connect again.
+					<p class="rounded-lg border border-tone-yellow/30 bg-tone-yellow/5 p-3 text-sm" role="alert">
+						<span class="font-medium text-tone-yellow">Reconnect needed.</span> The stored login can no longer be read (the secret key changed). Connect again.
 					</p>
 				{/if}
 				{#if login?.status === 'failed'}

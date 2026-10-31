@@ -10,7 +10,7 @@
 </script>
 
 {#if !system.cellsReady}
-	<div class="flex items-start gap-3 border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-200" role="alert" transition:slide={{ duration: 200 }}>
+	<div class="flex items-start gap-3 border-b border-tone-yellow/30 bg-tone-yellow/10 px-4 py-2 text-sm text-tone-yellow" role="alert" transition:slide={{ duration: 200 }}>
 		<AlertTriangleIcon class="mt-0.5 size-4 shrink-0" />
 		<p class="min-w-0">
 			<span class="font-medium">Runs are paused.</span>

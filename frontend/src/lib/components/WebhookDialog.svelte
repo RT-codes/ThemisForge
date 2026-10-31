@@ -222,7 +222,7 @@
 		}
 	}
 
-	const tone = { good: 'bg-emerald-500/15 text-emerald-400', quiet: 'bg-muted text-muted-foreground', bad: 'bg-destructive/15 text-destructive' }
+	const tone = { good: 'bg-tone-green/15 text-tone-green', quiet: 'bg-muted text-muted-foreground', bad: 'bg-destructive/15 text-destructive' }
 </script>
 
 <Dialog.Root bind:open>

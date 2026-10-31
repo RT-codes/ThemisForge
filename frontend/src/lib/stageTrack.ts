@@ -106,7 +106,7 @@ export const STAGE_LABEL: Record<'pending' | RunStatus, string> = {
 export const STAGE_TONE: Record<'pending' | RunStatus, string> = {
   pending: 'text-muted-foreground',
   running: 'text-primary',
-  succeeded: 'text-emerald-400',
+  succeeded: 'text-tone-green',
   failed: 'text-destructive',
   cancelled: 'text-muted-foreground',
 }

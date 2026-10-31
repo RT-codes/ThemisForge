@@ -37,13 +37,13 @@
 <div class="pointer-events-none fixed right-4 bottom-4 z-[60] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2" role="region" aria-label="Notifications" aria-live="polite">
 	{#each toasts.list as t (t.id)}
 		<div
-			class={cn('pointer-events-auto relative rounded-xl border bg-popover text-popover-foreground shadow-float', t.tone === 'attention' && 'border-amber-500/50')}
+			class={cn('pointer-events-auto relative rounded-xl border bg-popover text-popover-foreground shadow-float', t.tone === 'attention' && 'border-tone-amber/50')}
 			use:autoDismiss={{ ms: t.ms ?? 10_000, done: () => toasts.dismiss(t.id) }}
 			transition:fly={{ x: calm ? 0 : 32, duration: calm ? 0 : 200 }}
 		>
 			{#snippet content()}
 				{#if t.tone === 'attention'}
-					<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-500"><ShieldCheckIcon class="size-4" /></span>
+					<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-tone-amber/15 text-tone-amber"><ShieldCheckIcon class="size-4" /></span>
 				{/if}
 				<span class="min-w-0 flex-1">
 					<span class="block text-sm font-medium">{t.title}</span>

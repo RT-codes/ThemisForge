@@ -7,6 +7,19 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Themis</title>
+    <!-- Paints the saved theme before the app loads, so a light theme does not flash dark. appearance.ts writes this
+         cache whenever a theme is applied and applies the same thing again once it runs. -->
+    <script>
+      try {
+        var cache = JSON.parse(localStorage.getItem('themis.theme-cache'))
+        if (cache) {
+          var root = document.documentElement
+          root.classList.toggle('dark', cache.mode === 'dark')
+          root.style.colorScheme = cache.mode
+          for (var name in cache.variables) root.style.setProperty(name, cache.variables[name])
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

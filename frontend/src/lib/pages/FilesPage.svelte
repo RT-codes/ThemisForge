@@ -663,7 +663,7 @@
 					</p>
 				{/if}
 				{#if error}<p class="px-4 pt-3 text-sm text-destructive" role="alert">{error}</p>{/if}
-				{#if notice}<p class="px-4 pt-3 text-sm text-yellow-300">{notice}</p>{/if}
+				{#if notice}<p class="px-4 pt-3 text-sm text-tone-yellow">{notice}</p>{/if}
 
 				<div class="slim-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
 					{#if root && root.entries.length === 0}

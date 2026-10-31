@@ -56,7 +56,7 @@
 </script>
 
 {#if haltedAt}
-	<Button size={labelled ? 'lg' : 'sm'} variant="outline" class="border-amber-500/50 text-amber-300 hover:text-amber-200" disabled={busy} onclick={resume} title="Let the {noun} start things again">
+	<Button size={labelled ? 'lg' : 'sm'} variant="outline" class="border-tone-amber/50 text-tone-amber hover:text-tone-amber" disabled={busy} onclick={resume} title="Let the {noun} start things again">
 		<PlayIcon /> Resume
 	</Button>
 {:else if labelled}

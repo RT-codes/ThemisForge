@@ -64,7 +64,7 @@
 <AuthShell title={titles[mode][0]} description={titles[mode][1]} footer={mode === 'setup' || sent ? undefined : links}>
 	{#if mode === 'request' && sent}
 		<div class="grid justify-items-center gap-3 py-4 text-center">
-			<CircleCheckIcon class="size-8 text-emerald-400" />
+			<CircleCheckIcon class="size-8 text-tone-green" />
 			<p class="font-medium">Request sent</p>
 			<p class="text-sm text-muted-foreground">
 				The administrator will look at it. If they approve, they will send you a personal link to create your account.

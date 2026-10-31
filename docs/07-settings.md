@@ -1,7 +1,7 @@
 ---
 title: Settings
 group: Running it
-summary: Docker connection, resource budget, cell defaults, time zone and stored keys.
+summary: Appearance, Docker connection, resource budget, cell defaults, time zone and stored keys.
 ---
 
 # Settings
@@ -11,6 +11,61 @@ The **Settings** page has two parts. **Your account** holds your own connections
 
 Every section folds away, and a folded section says in one line what is inside. Themis remembers which ones you
 left open. Change something and a bar slides in at the bottom with **Discard** and **Save changes**.
+
+## Appearance
+
+**Appearance** is the first section under Your account. It holds two independent choices, and both are saved in
+this browser only, so each person (and each browser) can pick their own:
+
+- **Theme** sets the colours and the corner style of the whole interface. **Themis Default** is the warm dark
+  look with the brand orange, and **Themis Light** is the same layout on light surfaces. Each card previews its
+  theme before you pick it.
+- **Typography** sets the fonts and the size of the text: Compact (Inter), Crisp (Geist) or Technical (IBM Plex).
+
+Any theme works with any typography.
+
+### Your own themes
+
+The built-in themes cannot be changed, but you can make your own:
+
+- **New theme** (or **Duplicate** on any card) makes a copy of a theme and opens it in the theme editor. The copy
+  becomes the theme in use, so everything you change shows across Themis straight away.
+- **Edit** on a custom theme opens the editor.
+- **Delete** removes a custom theme, and if it was in use Themis Default takes its place.
+
+Custom themes are stored in this browser, like the rest of Appearance. They are not shared between browsers or accounts.
+
+#### Saving
+
+There is no Save button: every change is saved in this browser the moment you make it. The bar at the top of the editor
+confirms it (**Saved**, then **All changes saved in this browser**), so you can leave at any time. **Done** takes you back
+to Settings. If the browser refuses to store the theme, the bar says so, and the theme then only lasts until you close the page.
+
+#### Choosing colours
+
+Each section asks for a few colours, and the rest follow from them:
+
+- **Page and text.** The page and the text colour. Cards, menus, the sidebar, borders, quiet text and hover colours
+  are shades of these.
+- **Primary and brand.** The primary colour, the text on it, and the brand glow. The focus ring and the sidebar button follow the primary colour.
+- **Meaning colours.** Errors, done, warnings and the other status colours. These are all chosen by hand.
+
+Open **Colours that follow** under a section to see the shades that are worked out for you. They change when you change
+the colour they are built from, and when you switch the theme between **Dark** and **Light** surfaces. Set one yourself and it is marked
+**custom** and stays as you made it. Use **Follow automatically** in its menu (or **Make all of these follow automatically**) to hand it back.
+A duplicate looks exactly like the theme it came from; whatever Themis cannot work out from the main colours starts out as custom.
+
+A colour can be picked with the colour picker or typed as `oklch(0.76 0.17 58)`, `#f97316` or `rgb(249 115 22)`. Add transparency
+with `oklch(1 0 0 / 9%)` or `rgb(0 0 0 / 40%)`. The **Shape** section sets the corner radius and how dark the shadow under panels is.
+
+#### The palette
+
+The palette on the right keeps up to 20 colours with the theme, each with a name you can change.
+
+- Add a colour from the menu (**...**) of any colour with **Add to palette**, or with the plus box.
+- Click a palette colour to select it. That also copies it, so you can open any colour's menu and choose **Paste colour**.
+- Or drag a palette colour onto any colour in the editor.
+- **Copy colour** in a colour's menu puts it on the clipboard too, so you can paste colours between themes or into other apps.
 
 ## Docker
 

@@ -22,11 +22,14 @@
 	import BoardPage from '$lib/pages/BoardPage.svelte'
 	import WorkspacePage from '$lib/pages/WorkspacePage.svelte'
 	import SettingsPage from '$lib/pages/SettingsPage.svelte'
+	import ThemeEditorPage from '$lib/pages/ThemeEditorPage.svelte'
+	import { allThemes } from '$lib/appearance'
 	import { system } from '$lib/system.svelte'
 	import { projects } from '$lib/projects.svelte'
 	import { router } from '$lib/router.svelte'
 	import { structure } from '$lib/structure.svelte'
 	import { findBoard, workspaceOf } from '$lib/boards'
+	import { findTheme } from '$lib/themes'
 	import { onMount } from 'svelte'
 	import { fade } from 'svelte/transition'
 
@@ -81,6 +84,7 @@
 			return [project, { label: page }]
 		}
 		if (route.name === 'agents') return [{ label: projects.get(route.id)?.name ?? 'Project', href: `/projects/${route.id}` }, { label: 'Agents' }]
+		if (route.name === 'theme') return [{ label: 'Settings', href: '/settings' }, { label: findTheme(route.id, $allThemes)?.name ?? 'Theme' }]
 		const single: Record<string, string> = { settings: 'Settings', access: 'Access', docs: 'Docs', home: 'Home' }
 		return [{ label: single[route.name] ?? 'Not found' }]
 	})
@@ -166,6 +170,8 @@
 					<AgentsPage projectId={route.id} agentId={route.agentId} isNew={route.isNew} editing={route.editing} />
 				{:else if route.name === 'settings'}
 					<SettingsPage />
+				{:else if route.name === 'theme'}
+					<ThemeEditorPage themeId={route.id} />
 				{:else if route.name === 'access'}
 					<AccessPage />
 				{:else if route.name === 'docs'}

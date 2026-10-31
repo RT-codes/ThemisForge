@@ -24,7 +24,7 @@
 	const runLabel: Record<RunStatus, string> = { running: 'Running', succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled' }
 	const runTone: Record<RunStatus, string> = {
 		running: 'bg-primary/15 text-primary',
-		succeeded: 'bg-emerald-500/15 text-emerald-400',
+		succeeded: 'bg-tone-green/15 text-tone-green',
 		failed: 'bg-destructive/15 text-destructive',
 		cancelled: 'bg-muted text-muted-foreground',
 	}

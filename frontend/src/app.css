@@ -10,75 +10,15 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	--glow: oklch(0.76 0.17 58); /* the brand orange, the same on both themes: --primary is near black on light */
 	--appearance-font-sans: 'Inter Variable', sans-serif;
 	--appearance-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-	--background: oklch(1 0 0);
-	--foreground: oklch(0.145 0 0);
-	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.145 0 0);
-	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.145 0 0);
-	--primary: oklch(0.205 0 0);
-	--primary-foreground: oklch(0.985 0 0);
-	--secondary: oklch(0.97 0 0);
-	--secondary-foreground: oklch(0.205 0 0);
-	--muted: oklch(0.97 0 0);
-	--muted-foreground: oklch(0.556 0 0);
-	--accent: oklch(0.97 0 0);
-	--accent-foreground: oklch(0.205 0 0);
-	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.922 0 0);
-	--input: oklch(0.922 0 0);
-	--ring: oklch(0.708 0 0);
-	--chart-1: oklch(0.87 0 0);
-	--chart-2: oklch(0.556 0 0);
-	--chart-3: oklch(0.439 0 0);
-	--chart-4: oklch(0.371 0 0);
-	--chart-5: oklch(0.269 0 0);
-	--radius: 0.625rem;
-	--sidebar: oklch(0.985 0 0);
-	--sidebar-foreground: oklch(0.145 0 0);
-	--sidebar-primary: oklch(0.205 0 0);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent: oklch(0.97 0 0);
-	--sidebar-accent-foreground: oklch(0.205 0 0);
-	--sidebar-border: oklch(0.922 0 0);
-	--sidebar-ring: oklch(0.708 0 0);
 }
 
-.dark {
-	--background: oklch(0.145 0.008 50);
-	--foreground: oklch(0.97 0.005 80);
-	--card: oklch(0.19 0.01 50);
-	--card-foreground: oklch(0.97 0.005 80);
-	--popover: oklch(0.19 0.01 50);
-	--popover-foreground: oklch(0.97 0.005 80);
-	--primary: oklch(0.76 0.17 58);
-	--primary-foreground: oklch(0.2 0.02 50);
-	--secondary: oklch(0.25 0.012 50);
-	--secondary-foreground: oklch(0.97 0.005 80);
-	--muted: oklch(0.25 0.012 50);
-	--muted-foreground: oklch(0.7 0.015 70);
-	--accent: oklch(0.27 0.025 55);
-	--accent-foreground: oklch(0.97 0.005 80);
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(1 0 0 / 9%);
-	--input: oklch(1 0 0 / 13%);
-	--ring: oklch(0.76 0.17 58 / 60%);
-	--chart-1: oklch(0.76 0.17 58);
-	--chart-2: oklch(0.65 0.19 40);
-	--chart-3: oklch(0.55 0.15 30);
-	--chart-4: oklch(0.45 0.1 25);
-	--chart-5: oklch(0.35 0.07 20);
-	--sidebar: oklch(0.175 0.01 50);
-	--sidebar-foreground: oklch(0.97 0.005 80);
-	--sidebar-primary: oklch(0.76 0.17 58);
-	--sidebar-primary-foreground: oklch(0.2 0.02 50);
-	--sidebar-accent: oklch(0.25 0.02 55);
-	--sidebar-accent-foreground: oklch(0.97 0.005 80);
-	--sidebar-border: oklch(1 0 0 / 8%);
-	--sidebar-ring: oklch(0.76 0.17 58 / 60%);
+/* Every colour, the corner radius and the float shadow come from the active theme (lib/themes.ts), which appearance.ts
+   writes onto <html> as these variables before the app mounts. The only colour kept here is the page background for the
+   moment before any script has run on a first visit, so it does not flash white: it is Themis Default's background. */
+html {
+	background-color: var(--background, oklch(0.145 0.008 50));
 }
 
 /* Keep sizes variable-backed so appearance presets can adjust them at runtime. */
@@ -88,13 +28,24 @@
 	--text-lg: 1.0625rem;
 	--text-xl: 1.1875rem;
 	--text-2xl: 1.375rem;
-	/* What lies on top of the page (panels, dialogs, menus): the same glow on every side, no offset */
+	/* What lies on top of the page (panels, dialogs, menus): the same glow on every side, no offset. Declared here so
+	   Tailwind generates the shadow-float utility; the active theme sets the real value. */
 	--shadow-float: 0 0 28px 2px rgb(0 0 0 / 0.45);
 }
 
 @theme inline {
 	--font-sans: var(--appearance-font-sans);
 	--font-mono: var(--appearance-font-mono);
+	/* the brand accent and the meaning colours of a theme (lib/themes.ts): bg-tone-green/15, text-tone-yellow, ... */
+	--color-glow: var(--glow);
+	--color-code: var(--code);
+	--color-tone-green: var(--tone-green);
+	--color-tone-yellow: var(--tone-yellow);
+	--color-tone-amber: var(--tone-amber);
+	--color-tone-violet: var(--tone-violet);
+	--color-tone-sky: var(--tone-sky);
+	--color-tone-rose: var(--tone-rose);
+	--color-tone-teal: var(--tone-teal);
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -196,8 +147,8 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 
 .forge-glow {
 	background:
-		radial-gradient(60% 50% at 50% 0%, oklch(0.76 0.17 58 / 14%), transparent 70%),
-		radial-gradient(40% 40% at 90% 100%, oklch(0.65 0.19 40 / 10%), transparent 70%);
+		radial-gradient(60% 50% at 50% 0%, color-mix(in oklab, var(--glow) 14%, transparent), transparent 70%),
+		radial-gradient(40% 40% at 90% 100%, color-mix(in oklab, var(--glow) 10%, transparent), transparent 70%);
 }
 
 /* A pulse: the border fades in, a shine sweeps right to left, the border fades out (600ms by default). It is played on
@@ -283,8 +234,8 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 /* an approval gate waiting for a person: a steady amber ring, because nothing is moving */
 .run-ring.parked {
 	box-shadow:
-		inset 0 0 0 2px color-mix(in oklab, var(--color-amber-500) 70%, transparent),
-		0 0 16px -2px color-mix(in oklab, var(--color-amber-500) 50%, transparent);
+		inset 0 0 0 2px color-mix(in oklab, var(--tone-amber) 70%, transparent),
+		0 0 16px -2px color-mix(in oklab, var(--tone-amber) 50%, transparent);
 }
 .run-ring.parked::before {
 	display: none;
@@ -335,19 +286,19 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 @plugin "@tailwindcss/typography";
 
 .docs-prose {
-	--tw-prose-body: oklch(0.84 0.01 80);
+	--tw-prose-body: color-mix(in oklab, var(--foreground) 86%, var(--background));
 	--tw-prose-headings: var(--foreground);
 	--tw-prose-lead: var(--muted-foreground);
 	--tw-prose-links: var(--primary);
 	--tw-prose-bold: var(--foreground);
 	--tw-prose-counters: var(--muted-foreground);
-	--tw-prose-bullets: oklch(0.5 0.02 60);
+	--tw-prose-bullets: color-mix(in oklab, var(--muted-foreground) 65%, var(--background));
 	--tw-prose-hr: var(--border);
 	--tw-prose-quotes: var(--foreground);
 	--tw-prose-quote-borders: var(--border);
 	--tw-prose-captions: var(--muted-foreground);
 	--tw-prose-code: var(--foreground);
-	--tw-prose-pre-code: oklch(0.9 0.01 80);
+	--tw-prose-pre-code: color-mix(in oklab, var(--foreground) 93%, var(--background));
 	--tw-prose-pre-bg: transparent;
 	--tw-prose-th-borders: var(--border);
 	--tw-prose-td-borders: var(--border);
@@ -371,7 +322,7 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 }
 .docs-prose :not(pre) > code::before, .docs-prose :not(pre) > code::after { content: none; }
 
-.docs-code { margin: 1.4em 0; border: 1px solid var(--border); border-radius: 0.75rem; background: oklch(0.12 0.006 50); overflow: hidden; }
+.docs-code { margin: 1.4em 0; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--code); overflow: hidden; }
 .docs-code-head { display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.72rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; }
 .docs-code-head button { text-transform: none; letter-spacing: 0; border-radius: 0.375rem; padding: 0.15rem 0.5rem; transition: background 0.15s, color 0.15s; }
 .docs-code-head button:hover { background: var(--accent); color: var(--foreground); }
@@ -381,20 +332,20 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 .docs-table { margin: 1.4em 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 0.75rem; }
 .docs-table table { margin: 0; width: 100%; font-size: 0.9rem; }
 .docs-table :is(th, td) { padding: 0.55rem 0.9rem; vertical-align: top; }
-.docs-table thead { background: oklch(1 0 0 / 3%); }
+.docs-table thead { background: color-mix(in oklab, var(--foreground) 3%, transparent); }
 .docs-table thead th { color: var(--muted-foreground); font-weight: 500; font-size: 0.8rem; }
 .docs-table tbody tr:last-child td { border-bottom: 0; }
 .docs-table td:first-child { white-space: nowrap; }
 
-.docs-callout { margin: 1.4em 0; border: 1px solid var(--border); border-inline-start-width: 3px; border-radius: 0.75rem; padding: 0.8rem 1rem; background: oklch(1 0 0 / 3%); }
+.docs-callout { margin: 1.4em 0; border: 1px solid var(--border); border-inline-start-width: 3px; border-radius: 0.75rem; padding: 0.8rem 1rem; background: color-mix(in oklab, var(--foreground) 3%, transparent); }
 .docs-callout > strong { display: block; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.2rem; }
 .docs-callout > p { margin: 0.3em 0 0; }
-.docs-callout[data-kind='note'] { border-inline-start-color: oklch(0.72 0.12 235); }
-.docs-callout[data-kind='note'] > strong { color: oklch(0.78 0.12 235); }
-.docs-callout[data-kind='tip'] { border-inline-start-color: oklch(0.74 0.15 155); }
-.docs-callout[data-kind='tip'] > strong { color: oklch(0.78 0.15 155); }
-.docs-callout[data-kind='warning'] { border-inline-start-color: oklch(0.8 0.15 85); background: oklch(0.8 0.15 85 / 6%); }
-.docs-callout[data-kind='warning'] > strong { color: oklch(0.84 0.15 85); }
+.docs-callout[data-kind='note'] { border-inline-start-color: var(--tone-sky); }
+.docs-callout[data-kind='note'] > strong { color: var(--tone-sky); }
+.docs-callout[data-kind='tip'] { border-inline-start-color: var(--tone-green); }
+.docs-callout[data-kind='tip'] > strong { color: var(--tone-green); }
+.docs-callout[data-kind='warning'] { border-inline-start-color: var(--tone-yellow); background: color-mix(in oklab, var(--tone-yellow) 6%, transparent); }
+.docs-callout[data-kind='warning'] > strong { color: var(--tone-yellow); }
 
 /* diagrams written as plain HTML inside the markdown */
 .docs-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 1.2em 0 0.6em; }
@@ -402,17 +353,17 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 .docs-flow .label { font-size: 0.85rem; color: var(--muted-foreground); }
 .docs-flow .arrow { color: var(--muted-foreground); }
 .docs-flow .node { border-radius: 9999px; padding: 0.25rem 0.8rem; font-size: 0.85rem; font-weight: 500; background: var(--muted); color: var(--muted-foreground); }
-.docs-flow .node.sky { background: oklch(0.7 0.12 235 / 16%); color: oklch(0.82 0.1 235); }
-.docs-flow .node.amber { background: oklch(0.76 0.17 58 / 16%); color: oklch(0.82 0.15 58); }
-.docs-flow .node.violet { background: oklch(0.65 0.18 295 / 18%); color: oklch(0.8 0.12 295); }
-.docs-flow .node.green { background: oklch(0.7 0.15 155 / 16%); color: oklch(0.82 0.13 155); }
-.docs-flow .node.red { background: oklch(0.64 0.2 25 / 16%); color: oklch(0.78 0.15 25); }
-.docs-flow .node.yellow { background: oklch(0.8 0.15 85 / 16%); color: oklch(0.86 0.13 85); }
+.docs-flow .node.sky { background: color-mix(in oklab, var(--tone-sky) 16%, transparent); color: var(--tone-sky); }
+.docs-flow .node.amber { background: color-mix(in oklab, var(--glow) 16%, transparent); color: var(--glow); }
+.docs-flow .node.violet { background: color-mix(in oklab, var(--tone-violet) 16%, transparent); color: var(--tone-violet); }
+.docs-flow .node.green { background: color-mix(in oklab, var(--tone-green) 16%, transparent); color: var(--tone-green); }
+.docs-flow .node.red { background: color-mix(in oklab, var(--destructive) 16%, transparent); color: var(--destructive); }
+.docs-flow .node.yellow { background: color-mix(in oklab, var(--tone-yellow) 16%, transparent); color: var(--tone-yellow); }
 .docs-stack { display: grid; justify-items: center; gap: 0; margin: 1.6em 0; max-width: 34rem; margin-inline: auto; }
-.docs-stack .box { width: 100%; border: 1px solid var(--border); border-radius: 0.75rem; padding: 0.7rem 1rem; background: oklch(1 0 0 / 3%); text-align: center; }
+.docs-stack .box { width: 100%; border: 1px solid var(--border); border-radius: 0.75rem; padding: 0.7rem 1rem; background: color-mix(in oklab, var(--foreground) 3%, transparent); text-align: center; }
 .docs-stack .box b { display: block; font-size: 0.95rem; }
 .docs-stack .box span { display: block; font-size: 0.8rem; color: var(--muted-foreground); }
-.docs-stack .box.primary { border-color: oklch(0.76 0.17 58 / 50%); background: oklch(0.76 0.17 58 / 8%); }
+.docs-stack .box.primary { border-color: color-mix(in oklab, var(--glow) 50%, transparent); background: color-mix(in oklab, var(--glow) 8%, transparent); }
 .docs-stack .link { font-size: 0.75rem; color: var(--muted-foreground); padding: 0.35rem 0; }
 .docs-stack .link::before { content: '\2193  '; }
 .docs-stack .split { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; width: 100%; }
@@ -453,7 +404,7 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 }
 .svelte-flow__minimap.workflow-minimap:hover {
 	transform: scale(1.5);
-	border-color: oklch(0.76 0.17 58);
+	border-color: var(--glow);
 }
 @media (prefers-reduced-motion: reduce) {
 	.svelte-flow__minimap.workflow-minimap {
@@ -463,12 +414,12 @@ html[data-appearance='technical'] :is(code, pre, kbd, samp) {
 
 /* The folder points: square and teal, so a line that hands an agent a folder is not mistaken for a step. */
 .svelte-flow__handle.workflow-handle.mount-handle {
-	background: #2dd4bf;
+	background: var(--tone-teal);
 	border-radius: 4px;
 }
 .svelte-flow__handle.workflow-handle.mount-handle:hover,
 .svelte-flow__handle.workflow-handle.mount-handle.connectingfrom {
-	box-shadow: 0 0 0 4px color-mix(in oklab, #2dd4bf 30%, transparent);
+	box-shadow: 0 0 0 4px color-mix(in oklab, var(--tone-teal) 30%, transparent);
 }
 
 /* Sidebar tree: a branch line that reaches every sub page (like the `tree` command) and ends at the last one. A sub page
